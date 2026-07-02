@@ -31,6 +31,7 @@ import type {
 } from '../types';
 import { buildSceneSnapshot, type SceneSnapshotDetail } from './systemPrompt';
 import { graphToFeatherScript } from '../scripting/featherScript';
+import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { createThirdPersonTemplate } from '../project/thirdPersonTemplate';
 import { createFirstPersonTemplate } from '../project/firstPersonTemplate';
 import { createFilmModeTemplate } from '../project/filmModeTemplate';
@@ -3902,6 +3903,20 @@ const rawEngineTools = {
     execute: async ({ name, description, folderId }) => {
       const { blueprintId } = store().createBlueprintNamed(name, description, folderId);
       return `Created blueprint "${findBlueprint(blueprintId)?.name}" with blueprintId ${blueprintId}.`;
+    },
+  }),
+
+  attach_behavior: tool({
+    description: `Attach a one-click BEHAVIOR to an object: a prebuilt gameplay chunk (FeatherScript compiled into a real, editable blueprint — instances share the blueprint, per-instance vars keep state separate). It also applies the collider the behavior needs (trigger/solid) and creates any project variables it uses. Available behaviors: ${BEHAVIOR_PRESETS.map((preset) => `"${preset.id}" (${preset.name} — ${preset.description})`).join('; ')}. Returns the blueprintId — tune per-object values via set_object_variable (e.g. spin_speed, launch_power, value, health, speed/aggro_range, damage, slide).`,
+    inputSchema: z.object({
+      objectId: z.string(),
+      behaviorId: z.enum(BEHAVIOR_PRESETS.map((preset) => preset.id) as [string, ...string[]]),
+    }),
+    execute: async ({ objectId, behaviorId }) => {
+      if (!findObject(objectId)) return `No object with id ${objectId}.`;
+      const blueprintId = store().attachBehaviorPreset(objectId, behaviorId);
+      if (!blueprintId) return `Could not attach behavior ${behaviorId}.`;
+      return `Attached behavior "${behaviorId}" to ${objectId} (blueprintId ${blueprintId}). Edit it like any blueprint, or tweak this object's instance variables.`;
     },
   }),
 

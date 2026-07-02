@@ -55,6 +55,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Read blueprint script';
     case 'set_blueprint_script':
       return 'Wrote blueprint script';
+    case 'attach_behavior':
+      return `Attached behavior${input.behaviorId ? ` "${String(input.behaviorId)}"` : ''}`;
     case 'inspect_animator_controller':
       return 'Inspected controller';
     case 'list_scenes':

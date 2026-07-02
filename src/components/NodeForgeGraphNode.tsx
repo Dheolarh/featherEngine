@@ -1041,6 +1041,17 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
         </>
       )}
 
+      {/* Branch: the standard exec-out (above) is the True path; "False" fires when the condition is
+          false (Unreal Branch). Leaving False unwired keeps the classic gate behavior. */}
+      {data.nodeKind === 'logic.branch' && (
+        <>
+          <span className="nfn-pin-label" style={{ top: pinTop - 4 }}>
+            False
+          </span>
+          <Handle id="exec-false" className="node-port exec-port source" type="source" position={Position.Right} style={{ top: pinTop + 2 }} />
+        </>
+      )}
+
       {/* For Loop: the standard exec-out (above) is "Completed". These extra pins are the per-iteration
           "Body" exec output and the current loop index value-out (Unreal-style ForLoop). */}
       {data.nodeKind === 'logic.forLoop' && (

@@ -36,11 +36,22 @@ const variables: ProjectVariable[] = [
   { id: 'var-title', name: 'Title', type: 'string', defaultValue: '', persistent: false, createdAt: 1 },
 ];
 
+/** A second blueprint so cast()/find_actors(blueprint:) name resolution is exercised. */
+const guardBlueprint: ScriptBlueprint = {
+  id: 'bp-guard',
+  name: 'Guard Brain',
+  description: '',
+  graphId: 'graph-guard',
+  color: '#888888',
+  variables: [],
+  createdAt: 1,
+};
+
 const compile = (source: string): FeatherCompileResult =>
-  compileFeatherScriptToGraph({ blueprint, graph: emptyGraph, variables, source });
+  compileFeatherScriptToGraph({ blueprint, graph: emptyGraph, variables, blueprints: [blueprint, guardBlueprint], source });
 
 const print = (result: FeatherCompileResult): string =>
-  graphToFeatherScript({ blueprint: result.blueprint!, graph: result.graph!, variables, blueprints: [result.blueprint!] });
+  graphToFeatherScript({ blueprint: result.blueprint!, graph: result.graph!, variables, blueprints: [result.blueprint!, guardBlueprint] });
 
 const warningsOf = (result: FeatherCompileResult): string[] =>
   result.diagnostics.map((diagnostic) => `${diagnostic.severity}: ${diagnostic.message}`);
@@ -248,6 +259,186 @@ describe('FeatherScript round-trip: text -> graph -> text', () => {
     expect(printed).toContain('print(self.hp)');
     expect(printed).toContain('print(get_var(other, "shield"))');
     expect(printed).toContain('print("Score = 10")');
+  });
+
+  it('arithmetic with precedence, boolean operators, and conditional select', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Calc',
+        '',
+        'on receive_damage(amount):',
+        '    Game.Score = ((amount * 2) + 1)',
+        '    self.armed = ((amount > 5) and (not self.shielded))',
+        '    self.speed = (10 if self.is_grounded() else 2)',
+      ].join('\n'),
+    );
+
+    expect(printed).toContain('Game.Score = ((amount * 2) + 1)');
+    expect(printed).toContain('((amount > 5) and (not self.shielded))');
+    expect(printed).toContain('(10 if self.is_grounded() else 2)');
+    for (const kind of ['math.multiply', 'math.add', 'logic.and', 'logic.not', 'logic.select'] as GraphNodeKind[]) {
+      nodeOf(first.graph!, kind);
+    }
+  });
+
+  it('if/else joins back to shared statements; elif canonicalizes to nested if', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Fork',
+        '',
+        'on update(dt):',
+        '    if (Game.Score > 10):',
+        '        self.jump()',
+        '    else:',
+        '        self.rotate(axis: "y", amount: 90)',
+        '    print("after")',
+        '',
+        'on receive_damage(amount):',
+        '    if (amount > 20):',
+        '        destroy(self)',
+        '    elif (amount > 10):',
+        '        self.jump()',
+        '    else:',
+        '        print("tink")',
+      ].join('\n'),
+    );
+
+    // "after" must print dedented (the join), not inside either block.
+    expect(printed).toContain('\n    print("after")');
+    expect(printed).toContain('else:');
+    // The join node exists once and receives exec from BOTH paths.
+    const graph = first.graph!;
+    const after = graph.nodes.filter((node) => node.data.nodeKind === 'action.print' && node.data.message === 'after');
+    expect(after).toHaveLength(1);
+    expect(graph.edges.filter((edge) => edge.target === after[0].id && edge.targetHandle === 'exec-in').length).toBe(2);
+  });
+
+  it('for range loops with index binding; statements continue on Completed', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Spawner',
+        '',
+        'on start:',
+        '    for index in range(5):',
+        '        spawn_object("cube")',
+        '        self.last = index',
+        '    print("done")',
+      ].join('\n'),
+    );
+
+    expect(printed).toContain('for index in range(5):');
+    expect(printed).toContain('self.last = index');
+    expect(printed).toContain('\n    print("done")');
+    const graph = first.graph!;
+    const loop = nodeOf(graph, 'logic.forLoop');
+    expect(loop.data.loopCount).toBe(5);
+    const done = graph.nodes.find((node) => node.data.nodeKind === 'action.print')!;
+    expect(graph.edges.some((edge) => edge.source === loop.id && edge.sourceHandle === 'exec-out' && edge.target === done.id)).toBe(true);
+    const setLast = nodeOf(graph, 'variable.setObject');
+    expect(graph.edges.some((edge) => edge.source === loop.id && edge.sourceHandle === 'value-out' && edge.target === setLast.id)).toBe(true);
+  });
+
+  it('for each actor with wired statement targets', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Blast',
+        '',
+        'on event Boom(payload):',
+        '    for actor in find_actors(tag: "enemy"):',
+        '        apply_damage(actor, 10)',
+      ].join('\n'),
+    );
+
+    expect(printed).toContain('for actor in find_actors(tag: "enemy"):');
+    expect(printed).toContain('apply_damage(actor, 10)');
+    const graph = first.graph!;
+    const each = nodeOf(graph, 'logic.forEachActor');
+    const damage = nodeOf(graph, 'action.applyDamage');
+    // The loop actor must be WIRED into the damage target (not stored as a literal id).
+    expect(graph.edges.some((edge) => edge.source === each.id && edge.sourceHandle === 'value-out' && edge.target === damage.id && edge.targetHandle === 'target')).toBe(true);
+  });
+
+  it('cooldown/do_once/cast gates', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Gates',
+        '',
+        'on update(dt):',
+        '    if cooldown(0.5):',
+        '        fire_event("Tick")',
+        '    if do_once():',
+        '        print("setup")',
+        '',
+        'on trigger_enter(other):',
+        '    if cast(other, "Guard Brain"):',
+        '        set_var(cast_actor, "alerted", true)',
+      ].join('\n'),
+    );
+
+    expect(printed).toContain('if cooldown(0.5):');
+    expect(printed).toContain('if do_once():');
+    expect(printed).toContain('if cast(other, "Guard Brain"):');
+    expect(printed).toContain('set_var(cast_actor, "alerted", true)');
+    const cast = nodeOf(first.graph!, 'logic.cast');
+    expect(cast.data.castBlueprintId).toBe('bp-guard');
+    expect(cast.data.targetObjectId).toBe('$trigger');
+  });
+
+  it('builtin math/vector/actor value calls', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Math',
+        '',
+        'on receive_damage(amount):',
+        '    Game.Score = clamp(((amount * 2) + 1), 0, 100)',
+        '    self.dir = normalize(vec_sub(Player.location, position(self)))',
+        '    self.roll = random_int(1, 6)',
+        '    look_at(self, position(find_actor(tag: "boss", mode: "nearest")))',
+      ].join('\n'),
+    );
+
+    expect(printed).toContain('clamp(((amount * 2) + 1), 0, 100)');
+    expect(printed).toContain('normalize(vec_sub(Player.location, position(self)))');
+    expect(printed).toContain('random_int(1, 6)');
+    expect(printed).toContain('find_actor(tag: "boss", mode: "nearest")');
+    for (const kind of ['math.clamp', 'math.normalize', 'math.vectorSubtract', 'ai.playerLocation', 'action.getPosition', 'value.random', 'query.findActorByTag', 'action.lookAt'] as GraphNodeKind[]) {
+      nodeOf(first.graph!, kind);
+    }
+  });
+
+  it('UI, save, audio, camera, animator, spawn, and explode statements', () => {
+    const { printed } = roundTrip(
+      [
+        'blueprint Effects',
+        '',
+        'on interact(player):',
+        '    UI.show("doc-1")',
+        '    UI.set_text("doc-1", "label", "Hello")',
+        '    Save.write("slot1")',
+        '    Audio.play("snd-1")',
+        '    Camera.shake(0.5)',
+        '    Screen.flash(0.7, color: "#ff2200")',
+        '    Animator.trigger("Wave")',
+        '    spawn_prefab("prefab-1", location: self.position)',
+        '    explode(location: self.position, radius: 6, damage: 40)',
+        '    set_active(self, false)',
+      ].join('\n'),
+    );
+
+    for (const line of [
+      'UI.show("doc-1")',
+      'UI.set_text("doc-1", "label", "Hello")',
+      'Save.write("slot1")',
+      'Audio.play("snd-1")',
+      'Camera.shake(0.5)',
+      'Screen.flash(0.7, color: "#ff2200")',
+      'Animator.trigger("Wave")',
+      'spawn_prefab("prefab-1", location: self.position)',
+      'explode(location: self.position, radius: 6, damage: 40)',
+      'set_active(self, false)',
+    ]) {
+      expect(printed).toContain(line);
+    }
   });
 
   it('timer, interact, and custom-event firing', () => {

@@ -10,6 +10,7 @@ import { focusWorkspacePanel } from './workspacePanels';
 import { SocketPickerModal } from './SocketPickerModal';
 import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, CableComponent, CharacterControllerComponent, ClothComponent, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
 import { resolveVehicleWheels } from '../runtime/vehicleWheels';
+import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { particlePresetIds } from '../runtime/particlePresets';
 import { PHYSICS_MATERIAL_PRESETS, applyPhysicsMaterialPreset } from '../runtime/physicsMaterials';
 import { WATER_STYLE_PRESETS } from '../three/presets';
@@ -2707,6 +2708,7 @@ export function InspectorPanel() {
   // runtimeAnimators record — that record is replaced every Play tick and re-rendered this panel 60×/s.
   const liveAnimStateId = useEditorStore((state) => (object ? state.runtimeAnimators[object.id]?.stateId : undefined));
   const attachScript = useEditorStore((state) => state.attachScript);
+  const attachBehaviorPreset = useEditorStore((state) => state.attachBehaviorPreset);
   const detachScript = useEditorStore((state) => state.detachScript);
   const blueprints = useEditorStore((state) => state.blueprints);
   const setActiveBlueprint = useEditorStore((state) => state.setActiveBlueprint);
@@ -2940,6 +2942,24 @@ export function InspectorPanel() {
                 {blueprints.map((blueprint) => (
                   <option key={blueprint.id} value={blueprint.id}>
                     {blueprint.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-row">
+              <span>Add Behavior</span>
+              <select
+                value=""
+                onChange={(event) => {
+                  if (!event.target.value) return;
+                  const blueprintId = attachBehaviorPreset(object.id, event.target.value);
+                  if (blueprintId) setActiveBlueprint(blueprintId);
+                }}
+              >
+                <option value="">Pick a ready-made behavior…</option>
+                {BEHAVIOR_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id} title={preset.description}>
+                    {preset.icon} {preset.name}
                   </option>
                 ))}
               </select>

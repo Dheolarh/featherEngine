@@ -36,13 +36,23 @@ interface FeatherCompileOptions {
   blueprint: ScriptBlueprint;
   graph: ProjectGraph;
   variables: ProjectVariable[];
+  /** All project blueprints — used to resolve blueprint NAMES in cast()/find_actor()/find_actors(). */
+  blueprints?: ScriptBlueprint[];
   preserveSource?: boolean;
+}
+
+/** An execution continuation point: a node plus the exec pin the next statement chains from. */
+interface ExecSource {
+  nodeId: string;
+  handle: string;
 }
 
 interface CompiledChain {
   first?: string;
-  exits: string[];
+  exits: ExecSource[];
 }
+
+const out = (node: NodeForgeNode, handle = 'exec-out'): ExecSource => ({ nodeId: node.id, handle });
 
 interface ParsedCall {
   callee: string;
@@ -68,6 +78,7 @@ const RESERVED_CALLEES = new Set([
   'find_actor', 'find_actors', 'raycast', 'overlap_sphere', 'velocity', 'cable_tension', 'position', 'rotation',
   'scale', 'node_value', 'last_spawned', 'cycle', 'vec3', 'min', 'max', 'clamp', 'lerp', 'distance', 'normalize',
   'length', 'dot', 'map_range', 'abs', 'round', 'floor', 'sin', 'cos', 'pow', 'random', 'random_int', 'range',
+  'append', 'vec_add', 'vec_sub', 'vec_scale',
   'if', 'else', 'elif', 'for', 'while', 'match', 'return', 'pass', 'on', 'function', 'var', 'blueprint',
   'detached', 'none', 'true', 'false', 'self', 'other', 'payload',
 ]);
@@ -125,6 +136,118 @@ const splitTopLevel = (value: string, delimiter = ','): string[] => {
   const tail = value.slice(start).trim();
   if (tail) parts.push(tail);
   return parts;
+};
+
+/** Strip outer parentheses ONLY when they wrap the whole expression — "(a) + (b)" is untouched. */
+const stripOuterParens = (value: string): string => {
+  let result = value.trim();
+  while (result.startsWith('(') && result.endsWith(')')) {
+    let depth = 0;
+    let quote: '"' | "'" | null = null;
+    let escaped = false;
+    let wraps = true;
+    for (let i = 0; i < result.length - 1; i += 1) {
+      const ch = result[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (quote) {
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+        continue;
+      }
+      if (ch === '(') depth += 1;
+      if (ch === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          wraps = false;
+          break;
+        }
+      }
+    }
+    if (!wraps) break;
+    result = result.slice(1, -1).trim();
+  }
+  return result;
+};
+
+/** Scan quote/bracket-aware and report each top-level position where `matches` accepts a token. */
+const scanTopLevel = (value: string, matches: (index: number) => number): number[] => {
+  const hits: number[] = [];
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+  let depth = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+    if (ch === ')' || ch === ']' || ch === '}') depth = Math.max(0, depth - 1);
+    if (depth === 0) {
+      const length = matches(i);
+      if (length > 0) {
+        hits.push(i);
+        i += length - 1;
+      }
+    }
+  }
+  return hits;
+};
+
+/** Last top-level word operator (" and " / " or " / " if " / " else ") — split point for left associativity. */
+const findLastWordOp = (value: string, word: string): number => {
+  const token = ` ${word} `;
+  const hits = scanTopLevel(value, (i) => (value.slice(i, i + token.length) === token ? token.length : 0));
+  return hits.length ? hits[hits.length - 1] : -1;
+};
+
+const OPERATOR_CHARS = new Set(['+', '-', '*', '/', '%', '<', '>', '=', '!', '(', ',', ':']);
+
+/** Last top-level BINARY + or - (skips unary minus and exponent notation like 3e-5). */
+const findLastAdditive = (value: string): number => {
+  const hits = scanTopLevel(value, (i) => {
+    const ch = value[i];
+    if (ch !== '+' && ch !== '-') return 0;
+    const before = value.slice(0, i).trimEnd();
+    if (!before || OPERATOR_CHARS.has(before[before.length - 1])) return 0;
+    if (/[0-9]e$/i.test(before)) return 0;
+    return 1;
+  });
+  return hits.length ? hits[hits.length - 1] : -1;
+};
+
+/** Last top-level * / or % with a non-empty left side. */
+const findLastMultiplicative = (value: string): number => {
+  const hits = scanTopLevel(value, (i) => {
+    const ch = value[i];
+    if (ch !== '*' && ch !== '/' && ch !== '%') return 0;
+    const before = value.slice(0, i).trimEnd();
+    if (!before || OPERATOR_CHARS.has(before[before.length - 1])) return 0;
+    return 1;
+  });
+  return hits.length ? hits[hits.length - 1] : -1;
 };
 
 const findTopLevelToken = (value: string, token: string): number => {
@@ -221,15 +344,30 @@ class FeatherGraphBuilder {
   private readonly edges: Edge[] = [];
   private readonly diagnostics: FeatherDiagnostic[] = [];
   private readonly projectVariableByName: Map<string, ProjectVariable>;
+  private readonly blueprints: ScriptBlueprint[];
   /** The event/function root being compiled — binds its arg identifiers (payload/amount/a/b/c). */
   private currentRoot?: NodeForgeNode;
+  /** Innermost-first loop variable bindings ("index"/"actor" → the loop node's value-out). */
+  private readonly loopBindings: Array<{ name: string; ref: ValueRef }> = [];
   private cursorY = 60;
 
   constructor(
     private readonly blueprint: ScriptBlueprint,
     variables: ProjectVariable[],
+    blueprints?: ScriptBlueprint[],
   ) {
     this.projectVariableByName = new Map(variables.map((variable) => [sanitizeIdentifier(variable.name, variable.id), variable]));
+    this.blueprints = blueprints ?? [];
+  }
+
+  /** Resolve a blueprint display name (as the printer quotes it) back to its id. */
+  private blueprintIdByName(name: string | undefined): string | undefined {
+    if (!name) return undefined;
+    const wanted = name.trim();
+    const found = this.blueprints.find(
+      (item) => item.name === wanted || item.name === wanted.replace(/_/g, ' ') || item.id === wanted,
+    );
+    return found?.id;
   }
 
   graph(name: string, id: string): ProjectGraph {
@@ -278,13 +416,13 @@ class FeatherGraphBuilder {
 
   private compileStatements(statements: FeatherStatement[]): CompiledChain {
     let first: string | undefined;
-    let exits: string[] = [];
+    let exits: ExecSource[] = [];
 
     for (const statement of statements) {
       const compiled = this.compileStatement(statement);
       if (!compiled.first) continue;
       if (!first) first = compiled.first;
-      for (const exit of exits) this.exec(exit, compiled.first);
+      for (const exit of exits) this.exec(exit.nodeId, compiled.first, exit.handle);
       exits = compiled.exits;
     }
 
@@ -304,6 +442,7 @@ class FeatherGraphBuilder {
       case 'IfStatement':
         return this.compileIf(statement);
       case 'ForStatement':
+        return this.compileFor(statement);
       case 'WhileStatement':
       case 'MatchStatement':
       case 'LabelBlock':
@@ -315,16 +454,134 @@ class FeatherGraphBuilder {
   }
 
   private compileIf(statement: Extract<FeatherStatement, { kind: 'IfStatement' }>): CompiledChain {
+    // Gate tests (cooldown/do_once/cast) compile to their dedicated gate nodes — exec gates with no
+    // false pin, so `else` is not available on them.
+    const gate = this.gateForTest(statement.test.raw);
+    if (gate) {
+      const consequent = this.compileStatements(statement.consequent);
+      if (consequent.first) this.exec(gate.id, consequent.first);
+      if (statement.alternates.length) {
+        this.warning(statement, 'else/elif is not supported on cooldown()/do_once()/cast() gates — only on plain conditions.');
+      }
+      return { first: gate.id, exits: consequent.exits.length ? consequent.exits : [out(gate)] };
+    }
+
     const branch = this.addNode('logic.branch', { booleanValue: true }, 1);
     const condition = this.compileValueExpression(statement.test.raw, 'boolean', 0);
     if (condition) this.value(condition, branch.id, 'condition');
     const consequent = this.compileStatements(statement.consequent);
     if (consequent.first) this.exec(branch.id, consequent.first);
-    if (statement.alternates.length) {
-      this.warning(statement, 'Else/elif blocks are preserved as comments until FeatherScript gets a false-path graph pin.');
-      this.addNode('comment.note', { message: 'Unsupported else/elif branch from FeatherScript apply.' }, 1);
+
+    const alternate = this.compileAlternates(statement.alternates);
+    if (alternate.first) this.exec(branch.id, alternate.first, 'exec-false');
+
+    // Continue after the if from BOTH paths: the true chain's exits plus either the else chain's
+    // exits or (with no else) the branch's False pin — so following statements always run.
+    const exits: ExecSource[] = [
+      ...(consequent.exits.length ? consequent.exits : consequent.first ? [] : [out(branch)]),
+      ...(alternate.first ? alternate.exits : [out(branch, 'exec-false')]),
+    ];
+    return { first: branch.id, exits };
+  }
+
+  /** elif chains compile as a nested branch hanging off the previous branch's False pin. */
+  private compileAlternates(
+    alternates: Extract<FeatherStatement, { kind: 'IfStatement' }>['alternates'],
+  ): CompiledChain {
+    if (!alternates.length) return { exits: [] };
+    const [head, ...rest] = alternates;
+    if (head.kind === 'ElseClause' || !head.test) return this.compileStatements(head.body);
+
+    const branch = this.addNode('logic.branch', { booleanValue: true }, 1);
+    const condition = this.compileValueExpression(head.test.raw, 'boolean', 0);
+    if (condition) this.value(condition, branch.id, 'condition');
+    const consequent = this.compileStatements(head.body);
+    if (consequent.first) this.exec(branch.id, consequent.first);
+    const tail = this.compileAlternates(rest);
+    if (tail.first) this.exec(branch.id, tail.first, 'exec-false');
+    return {
+      first: branch.id,
+      exits: [
+        ...(consequent.exits.length ? consequent.exits : consequent.first ? [] : [out(branch)]),
+        ...(tail.first ? tail.exits : [out(branch, 'exec-false')]),
+      ],
+    };
+  }
+
+  /** cooldown(seconds) / do_once() / cast(target, "Blueprint") as a whole if-test → gate node. */
+  private gateForTest(raw: string): NodeForgeNode | undefined {
+    const call = parseCall(stripOuterParens(raw));
+    if (!call) return undefined;
+    if (call.callee === 'cooldown') {
+      const node = this.addNode('logic.cooldown', { numberValue: 1 }, 1);
+      this.attachValueOrLiteral(node, 'seconds', call.named.get('seconds') ?? call.positional[0], 'number', 'numberValue');
+      return node;
     }
-    return { first: branch.id, exits: consequent.exits.length ? consequent.exits : [branch.id] };
+    if (call.callee === 'do_once') return this.addNode('logic.doOnce', {}, 1);
+    if (call.callee === 'cast') {
+      const targetRaw = call.named.get('target') ?? call.positional[0];
+      const blueprintName = unquote(call.named.get('blueprint') ?? call.positional[1] ?? '');
+      const castBlueprintId = this.blueprintIdByName(blueprintName);
+      if (blueprintName && !castBlueprintId) this.warning({ line: 1, column: 1, length: 1 }, `Unknown blueprint "${blueprintName}" in cast().`);
+      const node = this.addNode('logic.cast', { targetObjectId: this.targetLiteral(targetRaw) ?? '$self', castBlueprintId }, 1);
+      if (targetRaw && !this.isTargetSentinel(targetRaw)) this.attachWiredValue(node, 'object', targetRaw, 'string');
+      return node;
+    }
+    return undefined;
+  }
+
+  /** for index in range(N): / for actor in find_actors(...): */
+  private compileFor(statement: Extract<FeatherStatement, { kind: 'ForStatement' }>): CompiledChain {
+    const iterable = stripOuterParens(statement.iterable.raw);
+    const call = parseCall(iterable);
+    let node: NodeForgeNode | undefined;
+    if (call?.callee === 'range') {
+      node = this.addNode('logic.forLoop', { loopCount: 4 }, 1);
+      this.attachValueOrLiteral(node, 'count', call.named.get('count') ?? call.positional[0], 'number', 'loopCount');
+    } else if (call?.callee === 'find_actors' || call?.callee === 'find_actor') {
+      node = this.addNode('logic.forEachActor', this.actorQueryData(call, 'find_actors'), 1);
+    }
+    if (!node) return this.comment(statement, `Unsupported loop iterable "${iterable}" — use range(N) or find_actors(...).`);
+
+    this.loopBindings.unshift({ name: statement.binding, ref: { nodeId: node.id, sourceHandle: 'value-out' } });
+    const body = this.compileStatements(statement.body);
+    this.loopBindings.shift();
+    if (body.first) this.exec(node.id, body.first, 'exec-body');
+    // Following statements chain from the loop's Completed pin (the default exec-out).
+    return { first: node.id, exits: [out(node)] };
+  }
+
+  /** Shared blueprint:/tag:/mode: parsing for find_actor (value) and find_actors (loop). */
+  private actorQueryData(call: ParsedCall, context: string): Partial<NodeForgeNodeData> {
+    const data: Partial<NodeForgeNodeData> = {};
+    const blueprintName = unquote(call.named.get('blueprint') ?? '');
+    const tag = unquote(call.named.get('tag') ?? '');
+    if (blueprintName) {
+      const id = this.blueprintIdByName(blueprintName);
+      if (id) data.castBlueprintId = id;
+      else this.warning({ line: 1, column: 1, length: 1 }, `Unknown blueprint "${blueprintName}" in ${context}().`);
+    } else if (tag !== undefined && call.named.has('tag')) {
+      data.stringValue = tag;
+    }
+    const mode = unquote(call.named.get('mode') ?? '');
+    if (mode === 'first' || mode === 'nearest') data.findMode = mode;
+    return data;
+  }
+
+  private isTargetSentinel(raw: string): boolean {
+    const value = unquote(raw) ?? raw.trim();
+    return value === 'self' || value === 'Player' || value === 'other' || value === 'cast_actor' || unquote(raw) !== undefined;
+  }
+
+  /** Route a statement's target argument: sentinels/quoted ids → targetObjectId; expressions
+   *  (loop actors, find_actor, a Cast's As pin) → wired into the node's "target" input. */
+  private applyTargetArg(node: NodeForgeNode, targetRaw: string | undefined) {
+    if (!targetRaw) return;
+    if (this.isTargetSentinel(targetRaw)) {
+      node.data = { ...node.data, targetObjectId: this.targetLiteral(targetRaw) };
+      return;
+    }
+    this.attachWiredValue(node, 'target', targetRaw, 'string');
   }
 
   private compileReturn(statement: Extract<FeatherStatement, { kind: 'ReturnStatement' }>): CompiledChain {
@@ -344,7 +601,7 @@ class FeatherGraphBuilder {
     if (statement.target === 'Time.scale') {
       const node = this.addNode('action.setTimeScale', {}, 1);
       this.attachValueOrLiteral(node, 'scale', statement.value.raw, 'number', 'numberValue');
-      return { first: node.id, exits: [node.id] };
+      return { first: node.id, exits: [out(node)] };
     }
 
     const gameVariable = statement.target.match(/^Game\.([A-Za-z_][A-Za-z0-9_]*)$/);
@@ -353,14 +610,14 @@ class FeatherGraphBuilder {
       if (!variable) return this.comment(statement, `Unknown project variable "${gameVariable[1]}".`);
       const node = this.addNode('variable.set', { variableId: variable.id, valueType: variable.type }, 1);
       this.attachValueOrLiteral(node, 'value', statement.value.raw, variable.type);
-      return { first: node.id, exits: [node.id] };
+      return { first: node.id, exits: [out(node)] };
     }
 
     const objectVariable = statement.target.match(/^self\.([A-Za-z_][A-Za-z0-9_]*)$/);
     if (objectVariable) {
       const node = this.addNode('variable.setObject', { objectKey: objectVariable[1], targetObjectId: '$self' }, 1);
       this.attachValueOrLiteral(node, 'value', statement.value.raw, inferLiteralType(statement.value.raw));
-      return { first: node.id, exits: [node.id] };
+      return { first: node.id, exits: [out(node)] };
     }
 
     return this.comment(statement, `Unsupported assignment target "${statement.target}".`);
@@ -372,7 +629,7 @@ class FeatherGraphBuilder {
 
     const node = this.nodeForCall(call);
     if (!node) return this.comment(expression, `Unsupported call: ${expression.raw}`);
-    return { first: node.id, exits: [node.id] };
+    return { first: node.id, exits: [out(node)] };
   }
 
   private nodeForCall(call: ParsedCall): NodeForgeNode | undefined {
@@ -415,6 +672,13 @@ class FeatherGraphBuilder {
       }
       case 'self.jump':
         return this.addNode('action.jump', {}, 1);
+      case 'self.move_to': {
+        const node = this.addNode('action.moveTo', {}, 1);
+        this.attachWiredValue(node, 'target', rawArg('target', 0), 'vector3');
+        this.attachValueOrLiteral(node, 'speed', call.named.get('speed'), 'number', 'amount');
+        this.attachValueOrLiteral(node, 'arrival', call.named.get('arrival'), 'number', 'numberValue');
+        return node;
+      }
       case 'wait': {
         const node = this.addNode('logic.delay', { numberValue: numberArg('seconds', 0, 1) }, 1);
         this.attachValueOrLiteral(node, 'seconds', rawArg('seconds', 0), 'number', 'numberValue');
@@ -424,14 +688,14 @@ class FeatherGraphBuilder {
         return this.addNode('action.destroyObject', { targetObjectId: this.targetLiteral(rawArg('target', 0)) }, 1);
       case 'fire_event': {
         const node = this.addNode('action.fireEvent', { eventName: stringArg('eventName', 0, 'CustomEvent') }, 1);
-        const target = call.named.get('target');
-        if (target) node.data = { ...node.data, targetObjectId: this.targetLiteral(target) };
+        this.applyTargetArg(node, call.named.get('target'));
         const payload = call.named.get('payload');
         if (payload) this.attachWiredValue(node, 'payload', payload, inferLiteralType(payload));
         return node;
       }
       case 'apply_damage': {
-        const node = this.addNode('action.applyDamage', { targetObjectId: this.targetLiteral(rawArg('target', 0)) }, 1);
+        const node = this.addNode('action.applyDamage', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
         this.attachValueOrLiteral(node, 'amount', rawArg('amount', 1), 'number', 'damageAmount');
         return node;
       }
@@ -448,8 +712,120 @@ class FeatherGraphBuilder {
         return node;
       }
       case 'set_var': {
-        const node = this.addNode('variable.setObject', { targetObjectId: this.targetLiteral(rawArg('target', 0)), objectKey: stringArg('key', 1, 'value') }, 1);
+        const node = this.addNode('variable.setObject', { objectKey: stringArg('key', 1, 'value') }, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
         this.attachValueOrLiteral(node, 'value', rawArg('value', 2), inferLiteralType(rawArg('value', 2) ?? '0'));
+        return node;
+      }
+      case 'self.face_player':
+        return this.addNode('action.facePlayer', {}, 1);
+      case 'set_position':
+      case 'set_rotation':
+      case 'set_scale': {
+        const kind: GraphNodeKind =
+          call.callee === 'set_position' ? 'action.setPosition' : call.callee === 'set_rotation' ? 'action.setRotation' : 'action.setScale';
+        const handle = call.callee === 'set_position' ? 'position' : call.callee === 'set_rotation' ? 'rotation' : 'scale';
+        const node = this.addNode(kind, {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachWiredValue(node, handle, rawArg(handle, 1), 'vector3');
+        return node;
+      }
+      case 'look_at': {
+        const node = this.addNode('action.lookAt', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachWiredValue(node, 'point', rawArg('point', 1), 'vector3');
+        return node;
+      }
+      case 'set_velocity': {
+        const node = this.addNode('action.setVelocity', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachWiredValue(node, 'vector', rawArg('vector', 1), 'vector3');
+        return node;
+      }
+      case 'apply_torque': {
+        const node = this.addNode('action.applyTorque', { targetObjectId: this.targetLiteral(rawArg('target', 0)) }, 1);
+        this.attachWiredValue(node, 'vector', rawArg('vector', 1), 'vector3');
+        this.attachValueOrLiteral(node, 'amount', rawArg('amount', 2) ?? call.named.get('amount'), 'number', 'amount');
+        return node;
+      }
+      case 'spawn_object':
+        return this.addNode('action.spawnObject', { spawnKind: stringArg('kind', 0, 'cube') as NodeForgeNodeData['spawnKind'] }, 1);
+      case 'spawn_prefab': {
+        const node = this.addNode('action.spawnPrefab', { prefabId: stringArg('prefabId', 0, '') || undefined }, 1);
+        this.attachWiredValue(node, 'location', call.named.get('location'), 'vector3');
+        return node;
+      }
+      case 'explode': {
+        const node = this.addNode('action.explode', {}, 1);
+        this.attachWiredValue(node, 'location', call.named.get('location'), 'vector3');
+        this.attachValueOrLiteral(node, 'radius', call.named.get('radius'), 'number', 'explodeRadius');
+        this.attachValueOrLiteral(node, 'damage', call.named.get('damage'), 'number', 'explodeDamage');
+        return node;
+      }
+      case 'set_visible': {
+        const node = this.addNode('action.setVisible', { targetObjectId: this.targetLiteral(rawArg('target', 0)) }, 1);
+        this.attachValueOrLiteral(node, 'visible', rawArg('visible', 1), 'boolean', 'visible');
+        return node;
+      }
+      case 'set_active': {
+        const node = this.addNode('action.setActive', { targetObjectId: this.targetLiteral(rawArg('target', 0)) }, 1);
+        this.attachValueOrLiteral(node, 'on', rawArg('on', 1), 'boolean', 'booleanValue');
+        return node;
+      }
+      case 'UI.show':
+        return this.addNode('ui.show', { documentId: stringArg('documentId', 0, '') || undefined }, 1);
+      case 'UI.hide':
+        return this.addNode('ui.hide', { documentId: stringArg('documentId', 0, '') || undefined }, 1);
+      case 'UI.set_text': {
+        const node = this.addNode('ui.setText', { documentId: stringArg('documentId', 0, '') || undefined, elementId: stringArg('elementId', 1, '') || undefined }, 1);
+        this.attachValueOrLiteral(node, 'text', rawArg('text', 2), 'string', 'stringValue');
+        return node;
+      }
+      case 'Save.write':
+        return this.addNode('save.write', { saveSlot: stringArg('slot', 0, 'slot1') }, 1);
+      case 'Save.load':
+        return this.addNode('save.load', { saveSlot: stringArg('slot', 0, 'slot1') }, 1);
+      case 'Save.clear':
+        return this.addNode('save.clear', { saveSlot: stringArg('slot', 0, 'slot1') }, 1);
+      case 'Audio.play':
+        return this.addNode('action.playSound', { assetId: stringArg('assetId', 0, '') || undefined }, 1);
+      case 'Cinematic.play':
+        return this.addNode('action.playCinematic', { cinematicId: stringArg('cinematicId', 0, '') || undefined }, 1);
+      case 'Scene.load':
+        return this.addNode('action.loadScene', { targetSceneId: stringArg('sceneId', 0, '') || undefined }, 1);
+      case 'Quality.set':
+        return this.addNode('action.setQuality', { qualityLevel: stringArg('level', 0, 'High') as NodeForgeNodeData['qualityLevel'] }, 1);
+      case 'Camera.shake': {
+        const node = this.addNode('action.cameraShake', {}, 1);
+        this.attachValueOrLiteral(node, 'amount', rawArg('amount', 0), 'number', 'shakeAmount');
+        return node;
+      }
+      case 'Screen.flash': {
+        const color = unquote(call.named.get('color') ?? '');
+        const node = this.addNode('action.screenFlash', color ? { flashColor: color } : {}, 1);
+        this.attachValueOrLiteral(node, 'amount', rawArg('amount', 0), 'number', 'flashAmount');
+        return node;
+      }
+      case 'Animator.set_float': {
+        const node = this.addNode('animator.setFloat', { paramName: stringArg('param', 0, 'param') }, 1);
+        this.attachValueOrLiteral(node, 'value', rawArg('value', 1), 'number', 'numberValue');
+        return node;
+      }
+      case 'Animator.set_bool': {
+        const node = this.addNode('animator.setBool', { paramName: stringArg('param', 0, 'param') }, 1);
+        this.attachValueOrLiteral(node, 'value', rawArg('value', 1), 'boolean', 'booleanValue');
+        return node;
+      }
+      case 'Animator.trigger':
+        return this.addNode('animator.setTrigger', { paramName: stringArg('param', 0, 'param') }, 1);
+      case 'Material.set_color': {
+        const node = this.addNode('action.setMaterialColor', { materialColorTarget: stringArg('target', 0, 'base') as NodeForgeNodeData['materialColorTarget'] }, 1);
+        this.attachValueOrLiteral(node, 'color', rawArg('color', 1), 'string', 'materialColor');
+        return node;
+      }
+      case 'Material.set': {
+        const node = this.addNode('action.setMaterialProperty', { materialProperty: stringArg('property', 0, 'metalness') as NodeForgeNodeData['materialProperty'] }, 1);
+        this.attachValueOrLiteral(node, 'value', rawArg('value', 1), 'number', 'numberValue');
         return node;
       }
       default:
@@ -498,9 +874,26 @@ class FeatherGraphBuilder {
     if (valueRef) this.value(valueRef, node.id, handle);
   }
 
+  /** Build a binary-operator node with left/right compiled into the a/b (or custom) input handles. */
+  private binaryNode(
+    kind: GraphNodeKind,
+    data: Partial<NodeForgeNodeData>,
+    left: string,
+    right: string,
+    depth: number,
+    handles: [string, string] = ['a', 'b'],
+  ): ValueRef {
+    const node = this.addNode(kind, data, depth);
+    const a = this.compileValueExpression(left, 'number', depth);
+    const b = this.compileValueExpression(right, 'number', depth);
+    if (a) this.value(a, node.id, handles[0]);
+    if (b) this.value(b, node.id, handles[1]);
+    return { nodeId: node.id, sourceHandle: 'value-out' };
+  }
+
   private compileValueExpression(raw: string | undefined, fallbackType: GraphValueType, depth: number): ValueRef | undefined {
     if (!raw) return undefined;
-    const trimmed = raw.trim().replace(/^\((.*)\)$/, '$1').trim();
+    const trimmed = stripOuterParens(raw);
     const ref = (node: NodeForgeNode): ValueRef => ({ nodeId: node.id, sourceHandle: 'value-out' });
     const literal = parseLiteral(trimmed);
     if (literal !== undefined) {
@@ -517,17 +910,25 @@ class FeatherGraphBuilder {
       return ref(this.addNode('variable.get', { variableId: found.id, valueType: found.type }, depth));
     }
 
+    // Runtime defaults the printer surfaces as pseudo-values: leaving these UNWIRED is the correct
+    // compilation (the node falls back to the owner's position/forward at runtime).
+    if (trimmed === 'self.position' || trimmed === 'self.forward') return undefined;
+
     const objectVariable = trimmed.match(/^self\.([A-Za-z_][A-Za-z0-9_]*)$/);
     if (objectVariable) return ref(this.addNode('variable.getObject', { objectKey: objectVariable[1], targetObjectId: '$self' }, depth));
 
-    // Identifiers bound by the enclosing event/function root: the custom-event payload, the
-    // incoming damage amount, and function arguments read straight off the root's output pins.
-    if (IDENTIFIER.test(trimmed) && this.currentRoot) {
-      const rootKind = this.currentRoot.data.nodeKind;
-      if (trimmed === 'payload' && rootKind === 'event.custom') return { nodeId: this.currentRoot.id, sourceHandle: 'value-out' };
-      if (trimmed === 'amount' && rootKind === 'event.receiveDamage') return { nodeId: this.currentRoot.id, sourceHandle: 'value-out' };
-      if ((trimmed === 'a' || trimmed === 'b' || trimmed === 'c') && rootKind === 'event.functionEntry') {
-        return { nodeId: this.currentRoot.id, sourceHandle: `arg-${trimmed}` };
+    // Identifiers bound by the innermost loop (for index / for actor), then by the enclosing
+    // event/function root: custom-event payload, damage amount, function args a/b/c.
+    if (IDENTIFIER.test(trimmed)) {
+      const bound = this.loopBindings.find((binding) => binding.name === trimmed);
+      if (bound) return bound.ref;
+      if (this.currentRoot) {
+        const rootKind = this.currentRoot.data.nodeKind;
+        if (trimmed === 'payload' && rootKind === 'event.custom') return { nodeId: this.currentRoot.id, sourceHandle: 'value-out' };
+        if (trimmed === 'amount' && rootKind === 'event.receiveDamage') return { nodeId: this.currentRoot.id, sourceHandle: 'value-out' };
+        if ((trimmed === 'a' || trimmed === 'b' || trimmed === 'c') && rootKind === 'event.functionEntry') {
+          return { nodeId: this.currentRoot.id, sourceHandle: `arg-${trimmed}` };
+        }
       }
     }
 
@@ -535,35 +936,201 @@ class FeatherGraphBuilder {
     if (trimmed === 'Input.drive()') return ref(this.addNode('input.driveInput', {}, depth));
     if (trimmed === 'self.is_grounded()') return ref(this.addNode('query.grounded', {}, depth));
     if (trimmed === 'self.vehicle_speed()') return ref(this.addNode('query.vehicleSpeed', {}, depth));
+    if (trimmed === 'Player.location') return ref(this.addNode('ai.playerLocation', {}, depth));
+    if (trimmed === 'AI.distance_to_player()') return ref(this.addNode('ai.distanceToPlayer', {}, depth));
+    if (trimmed === 'AI.direction_to_player()') return ref(this.addNode('ai.directionToPlayer', {}, depth));
+    if (trimmed === 'AI.has_line_of_sight()') return ref(this.addNode('ai.hasLineOfSight', {}, depth));
+    if (trimmed === 'Animator.state()') return ref(this.addNode('animator.getState', {}, depth));
+    if (trimmed === 'Material.color()') return ref(this.addNode('action.getMaterialColor', {}, depth));
+
+    // Multi-output queries read via a pin suffix: raycast(...).actor, overlap_sphere(...).count.
+    const suffixed = trimmed.match(/^(raycast|overlap_sphere)\((.*)\)\.(hit|actor|point|distance|count)$/);
+    if (suffixed) {
+      const call = parseCall(`${suffixed[1]}(${suffixed[2]})`);
+      const sourceHandle = suffixed[3] === 'hit' ? 'value-out' : suffixed[3];
+      if (call?.callee === 'raycast') {
+        const node = this.addNode('query.raycast', {}, depth);
+        this.attachWiredValue(node, 'direction', call.named.get('direction'), 'vector3');
+        this.attachValueOrLiteral(node, 'distance', call.named.get('distance'), 'number', 'numberValue');
+        return { nodeId: node.id, sourceHandle };
+      }
+      if (call?.callee === 'overlap_sphere') {
+        const node = this.addNode('query.overlapSphere', {}, depth);
+        this.attachWiredValue(node, 'location', call.named.get('location'), 'vector3');
+        this.attachValueOrLiteral(node, 'radius', call.named.get('radius'), 'number', 'numberValue');
+        return { nodeId: node.id, sourceHandle };
+      }
+    }
 
     const call = parseCall(trimmed);
-    if (call?.callee === 'vec3') {
-      const values = call.positional.map((item) => Number(parseLiteral(item) ?? 0));
-      return ref(this.addNode('value.vector3', { vectorValue: [values[0] || 0, values[1] || 0, values[2] || 0] as Vector3Tuple }, depth));
+    if (call) {
+      const arg = (name: string, index: number) => call.named.get(name) ?? call.positional[index];
+      const wireAll = (kind: GraphNodeKind, data: Partial<NodeForgeNodeData>, handles: Array<[string, string | undefined]>): ValueRef => {
+        const node = this.addNode(kind, data, depth);
+        handles.forEach(([handle, value]) => {
+          if (value !== undefined) this.attachWiredValue(node, handle, value, 'number');
+        });
+        return ref(node);
+      };
+      switch (call.callee) {
+        case 'vec3': {
+          const values = call.positional.map((item) => parseLiteral(item));
+          if (values.length === 3 && values.every((item) => typeof item === 'number')) {
+            return ref(this.addNode('value.vector3', { vectorValue: values as unknown as Vector3Tuple }, depth));
+          }
+          return wireAll('math.makeVector', {}, [['x', arg('x', 0)], ['y', arg('y', 1)], ['z', arg('z', 2)]]);
+        }
+        case 'get_var': {
+          const key = unquote(call.named.get('key') ?? call.positional[1] ?? '') ?? 'value';
+          const node = this.addNode('variable.getObject', { objectKey: key, targetObjectId: '$self' }, depth);
+          this.applyTargetArg(node, call.named.get('target') ?? call.positional[0]);
+          return ref(node);
+        }
+        case 'min':
+        case 'max':
+          return wireAll(call.callee === 'min' ? 'math.min' : 'math.max', {}, [['a', arg('a', 0)], ['b', arg('b', 1)]]);
+        case 'clamp':
+          return wireAll('math.clamp', {}, [['value', arg('value', 0)], ['min', arg('min', 1)], ['max', arg('max', 2)]]);
+        case 'lerp':
+          return wireAll('math.lerp', {}, [['a', arg('a', 0)], ['b', arg('b', 1)], ['t', arg('t', 2)]]);
+        case 'pow':
+          return wireAll('math.power', {}, [['a', arg('a', 0)], ['b', arg('b', 1)]]);
+        case 'distance':
+          return wireAll('math.distance', {}, [['a', arg('a', 0)], ['b', arg('b', 1)]]);
+        case 'dot':
+          return wireAll('math.dot', {}, [['a', arg('a', 0)], ['b', arg('b', 1)]]);
+        case 'normalize':
+          return wireAll('math.normalize', {}, [['value', arg('value', 0)]]);
+        case 'length':
+          return wireAll('math.vectorLength', {}, [['vector', arg('vector', 0)]]);
+        case 'map_range':
+          return wireAll('math.mapRange', {}, [
+            ['value', arg('value', 0)],
+            ['inMin', arg('inMin', 1)],
+            ['inMax', arg('inMax', 2)],
+            ['outMin', arg('outMin', 3)],
+            ['outMax', arg('outMax', 4)],
+          ]);
+        case 'abs':
+        case 'round':
+        case 'floor':
+        case 'sin':
+        case 'cos':
+          return wireAll(`math.${call.callee}` as GraphNodeKind, {}, [['value', arg('value', 0)]]);
+        case 'vec_add':
+          return wireAll('math.vectorAdd', {}, [['a', arg('a', 0)], ['b', arg('b', 1)]]);
+        case 'vec_sub':
+          return wireAll('math.vectorSubtract', {}, [['a', arg('a', 0)], ['b', arg('b', 1)]]);
+        case 'vec_scale':
+          return wireAll('math.vectorScale', {}, [['vector', arg('vector', 0)], ['scale', arg('scale', 1)]]);
+        case 'append':
+          return wireAll('string.append', {}, [['a', arg('a', 0)], ['b', arg('b', 1)]]);
+        case 'random':
+        case 'random_int': {
+          const node = this.addNode('value.random', call.callee === 'random_int' ? { randomInteger: true } : {}, depth);
+          this.attachValueOrLiteral(node, 'min', arg('min', 0), 'number', 'randomMin');
+          this.attachValueOrLiteral(node, 'max', arg('max', 1), 'number', 'randomMax');
+          return ref(node);
+        }
+        case 'position':
+        case 'rotation':
+        case 'scale': {
+          const kind: GraphNodeKind =
+            call.callee === 'position' ? 'action.getPosition' : call.callee === 'rotation' ? 'action.getRotation' : 'action.getScale';
+          return ref(this.targetedValueNode(kind, arg('target', 0), depth));
+        }
+        case 'velocity':
+          return ref(this.targetedValueNode('query.velocity', arg('target', 0), depth));
+        case 'cable_tension':
+          return ref(this.addNode('query.cableTension', { targetObjectId: this.targetLiteral(arg('target', 0)) }, depth));
+        case 'find_actor': {
+          const data = this.actorQueryData(call, 'find_actor');
+          const kind: GraphNodeKind = data.castBlueprintId ? 'query.findActorByBlueprint' : 'query.findActorByTag';
+          return ref(this.addNode(kind, data, depth));
+        }
+        case 'Save.has':
+          return ref(this.addNode('save.has', { saveSlot: unquote(arg('slot', 0) ?? '') ?? 'slot1' }, depth));
+        case 'Animator.get':
+          return ref(this.addNode('animator.getParam', { paramName: unquote(arg('param', 0) ?? '') ?? 'param' }, depth));
+        case 'Material.get':
+          return ref(
+            this.addNode('action.getMaterialProperty', { materialProperty: (unquote(arg('property', 0) ?? '') ?? 'metalness') as NodeForgeNodeData['materialProperty'] }, depth),
+          );
+        case 'Data.get': {
+          const node = this.addNode(
+            'data.tableGet',
+            { tableId: unquote(arg('table', 0) ?? '') || undefined, columnId: unquote(arg('column', 2) ?? '') || undefined },
+            depth,
+          );
+          this.attachValueOrLiteral(node, 'rowKey', arg('rowKey', 1), 'string', 'rowKey');
+          return ref(node);
+        }
+        default:
+          if (IDENTIFIER.test(call.callee) && !RESERVED_CALLEES.has(call.callee)) {
+            return ref(this.buildCallFunction(call, depth));
+          }
+      }
     }
-    if (call?.callee === 'get_var') {
-      const target = this.targetLiteral(call.named.get('target') ?? call.positional[0]) ?? '$self';
-      const key = unquote(call.named.get('key') ?? call.positional[1] ?? '') ?? 'value';
-      return ref(this.addNode('variable.getObject', { objectKey: key, targetObjectId: target }, depth));
+
+    // Operators, lowest precedence first so the tree splits correctly: Python conditional,
+    // or, and, not, comparisons, additive, multiplicative.
+    const ifIdx = findLastWordOp(trimmed, 'if');
+    if (ifIdx > 0) {
+      const elseIdx = findLastWordOp(trimmed.slice(ifIdx), 'else');
+      if (elseIdx > 0) {
+        const node = this.addNode('logic.select', {}, depth);
+        const a = this.compileValueExpression(trimmed.slice(0, ifIdx), fallbackType, depth);
+        const condition = this.compileValueExpression(trimmed.slice(ifIdx + 4, ifIdx + elseIdx), 'boolean', depth);
+        const b = this.compileValueExpression(trimmed.slice(ifIdx + elseIdx + 6), fallbackType, depth);
+        if (a) this.value(a, node.id, 'a');
+        if (condition) this.value(condition, node.id, 'condition');
+        if (b) this.value(b, node.id, 'b');
+        return ref(node);
+      }
     }
-    if (call && IDENTIFIER.test(call.callee) && !RESERVED_CALLEES.has(call.callee)) {
-      return ref(this.buildCallFunction(call, depth));
+    const orIdx = findLastWordOp(trimmed, 'or');
+    if (orIdx > 0) return this.binaryNode('logic.or', {}, trimmed.slice(0, orIdx), trimmed.slice(orIdx + 4), depth);
+    const andIdx = findLastWordOp(trimmed, 'and');
+    if (andIdx > 0) return this.binaryNode('logic.and', {}, trimmed.slice(0, andIdx), trimmed.slice(andIdx + 5), depth);
+    if (trimmed.startsWith('not ')) {
+      const node = this.addNode('logic.not', {}, depth);
+      const value = this.compileValueExpression(trimmed.slice(4), 'boolean', depth);
+      if (value) this.value(value, node.id, 'value');
+      return ref(node);
     }
 
     for (const op of COMPARATORS) {
       const index = findTopLevelToken(trimmed, op);
       if (index > 0) {
-        const node = this.addNode('logic.compare', { compareOp: op }, depth);
-        const a = this.compileValueExpression(trimmed.slice(0, index), 'number', depth);
-        const b = this.compileValueExpression(trimmed.slice(index + op.length), 'number', depth);
-        if (a) this.value(a, node.id, 'a');
-        if (b) this.value(b, node.id, 'b');
-        return ref(node);
+        return this.binaryNode('logic.compare', { compareOp: op }, trimmed.slice(0, index), trimmed.slice(index + op.length), depth);
       }
+    }
+
+    const addIdx = findLastAdditive(trimmed);
+    if (addIdx > 0) {
+      const kind: GraphNodeKind = trimmed[addIdx] === '+' ? 'math.add' : 'math.subtract';
+      return this.binaryNode(kind, {}, trimmed.slice(0, addIdx), trimmed.slice(addIdx + 1), depth);
+    }
+    const mulIdx = findLastMultiplicative(trimmed);
+    if (mulIdx > 0) {
+      const kind: GraphNodeKind =
+        trimmed[mulIdx] === '*' ? 'math.multiply' : trimmed[mulIdx] === '/' ? 'math.divide' : 'math.modulo';
+      return this.binaryNode(kind, {}, trimmed.slice(0, mulIdx), trimmed.slice(mulIdx + 1), depth);
     }
 
     this.warning({ line: 1, column: 1, length: trimmed.length || 1 }, `Unsupported value expression "${trimmed}".`);
     return undefined;
+  }
+
+  /** A target-aware value node (Get Position/Rotation/Scale/Velocity): sentinels/ids go to
+   *  targetObjectId; expressions (a Cast's As pin, find_actor) wire into the "target" input. */
+  private targetedValueNode(kind: GraphNodeKind, targetRaw: string | undefined, depth: number): NodeForgeNode {
+    if (!targetRaw || this.isTargetSentinel(targetRaw)) {
+      return this.addNode(kind, { targetObjectId: this.targetLiteral(targetRaw) }, depth);
+    }
+    const node = this.addNode(kind, {}, depth);
+    this.attachWiredValue(node, 'target', targetRaw, 'string');
+    return node;
   }
 
   private createEventNode(handler: FeatherEventHandler): NodeForgeNode {
@@ -603,6 +1170,7 @@ class FeatherGraphBuilder {
     if (value === 'self') return '$self';
     if (value === 'Player') return '$player';
     if (value === 'other') return '$trigger';
+    if (value === 'cast_actor') return '$cast';
     return value;
   }
 
@@ -657,7 +1225,7 @@ class FeatherGraphBuilder {
   private comment(loc: FeatherExpression | FeatherStatement, message: string): CompiledChain {
     this.warning('loc' in loc ? loc.loc : loc, message);
     const node = this.addNode('comment.note', { message }, 1);
-    return { first: node.id, exits: [node.id] };
+    return { first: node.id, exits: [out(node)] };
   }
 }
 
@@ -680,7 +1248,7 @@ export const compileFeatherScriptToGraph = (options: FeatherCompileOptions): Fea
   const errors = parsed.diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
   if (errors.length) return { ok: false, diagnostics: parsed.diagnostics };
 
-  const builder = new FeatherGraphBuilder(options.blueprint, options.variables);
+  const builder = new FeatherGraphBuilder(options.blueprint, options.variables, options.blueprints);
   for (const handler of parsed.program.handlers) builder.compileHandler(handler);
   for (const fn of parsed.program.functions) builder.compileFunction(fn);
   if (parsed.program.detached) builder.compileDetached(parsed.program.detached.body);

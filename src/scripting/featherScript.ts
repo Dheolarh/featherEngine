@@ -30,6 +30,15 @@ const SYSTEM_DATA_KEYS = new Set([
 
 const DEFAULT_EXEC_HANDLE = 'exec-out';
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** Instance-var keys that would read as transform pseudo-values — printed as get_var/set_var instead. */
+const AMBIGUOUS_SELF_KEYS = new Set(['position', 'rotation', 'scale', 'forward']);
+
+/** Block boundary marker for structured if/else printing: nodes in `set` are NOT printed inside the
+ *  current block — they're recorded in `hits` so the block's owner prints them after it. */
+interface BlockStop {
+  set: Set<string>;
+  hits: string[];
+}
 
 interface RawExpression {
   raw: string;
@@ -207,7 +216,13 @@ class FeatherScriptPrinter {
     }
   }
 
-  private printNode(nodeId: string, depth: number, stack: Set<string>, lines: string[]) {
+  private printNode(nodeId: string, depth: number, stack: Set<string>, lines: string[], stop?: BlockStop) {
+    if (stop?.set.has(nodeId)) {
+      // This node is the join after an if/else (or an outer block boundary): the caller prints it
+      // at the right indentation instead.
+      if (!stop.hits.includes(nodeId)) stop.hits.push(nodeId);
+      return;
+    }
     if (stack.has(nodeId)) {
       lines.push(`${this.indent(depth)}# cycle to ${this.nodeName(nodeId)}`);
       return;
@@ -223,20 +238,20 @@ class FeatherScriptPrinter {
         this.printComment(node, depth, lines);
         break;
       case 'logic.branch':
-        this.printIf(node, depth, stack, lines);
+        this.printIf(node, depth, stack, lines, stop);
         break;
       case 'logic.cast':
-        this.printCast(node, depth, stack, lines);
+        this.printCast(node, depth, stack, lines, stop);
         break;
       case 'logic.cooldown':
-        this.printGate(node, depth, stack, lines, `cooldown(${this.valueInput(node, 'seconds', Number(node.data.numberValue ?? 1))})`);
+        this.printGate(node, depth, stack, lines, `cooldown(${this.valueInput(node, 'seconds', Number(node.data.numberValue ?? 1))})`, stop);
         break;
       case 'logic.doOnce':
-        this.printGate(node, depth, stack, lines, `do_once(${quote(node.id)})`);
+        this.printGate(node, depth, stack, lines, 'do_once()', stop);
         break;
       case 'logic.delay':
         lines.push(`${this.indent(depth)}wait(${this.valueInput(node, 'seconds', Number(node.data.numberValue ?? 1))})`);
-        this.printTargets(node.id, depth, stack, lines);
+        this.printTargets(node.id, depth, stack, lines, DEFAULT_EXEC_HANDLE, stop);
         break;
       case 'logic.switch':
         this.printSwitch(node, depth, stack, lines);
@@ -248,10 +263,10 @@ class FeatherScriptPrinter {
         this.printFlipFlop(node, depth, stack, lines);
         break;
       case 'logic.forLoop':
-        this.printForLoop(node, depth, stack, lines);
+        this.printForLoop(node, depth, stack, lines, stop);
         break;
       case 'logic.forEachActor':
-        this.printForEachActor(node, depth, stack, lines);
+        this.printForEachActor(node, depth, stack, lines, stop);
         break;
       case 'logic.functionReturn': {
         const returned = this.linkedValueInput(node, 'value');
@@ -260,39 +275,84 @@ class FeatherScriptPrinter {
       }
       case 'logic.callFunction':
         lines.push(`${this.indent(depth)}${this.callFunctionExpression(node)}`);
-        this.printTargets(node.id, depth, stack, lines);
+        this.printTargets(node.id, depth, stack, lines, DEFAULT_EXEC_HANDLE, stop);
         break;
       case 'action.tweenProperty':
         this.printStatement(node, depth, lines);
-        this.printTargets(node.id, depth, stack, lines);
+        this.printTargets(node.id, depth, stack, lines, DEFAULT_EXEC_HANDLE, stop);
         this.printHandleBlock(node.id, 'exec-done', 'done', depth, stack, lines);
         break;
       default:
         this.printStatement(node, depth, lines);
-        this.printTargets(node.id, depth, stack, lines);
+        this.printTargets(node.id, depth, stack, lines, DEFAULT_EXEC_HANDLE, stop);
         break;
     }
 
     stack.delete(nodeId);
   }
 
-  private printIf(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[]) {
-    lines.push(`${this.indent(depth)}if ${this.valueInput(node, 'condition', node.data.booleanValue ?? true)}:`);
-    this.printTargets(node.id, depth + 1, stack, lines);
-    this.ensureBlockBody(depth + 1, lines);
+  /** Every node reachable from `roots` along execution edges (any exec pin). */
+  private execReachable(roots: string[]): Set<string> {
+    const seen = new Set<string>();
+    const queue = [...roots];
+    while (queue.length) {
+      const id = queue.shift()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const compiled = this.runtime.compiledNodesById.get(id);
+      if (!compiled) continue;
+      for (const targets of compiled.outgoingByHandle.values()) queue.push(...targets);
+      queue.push(...compiled.outgoing);
+    }
+    return seen;
   }
 
-  private printCast(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[]) {
+  private printIf(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[], stop?: BlockStop) {
+    const trueTargets = this.targets(node.id);
+    const falseTargets = this.targets(node.id, 'exec-false');
+    // The join = nodes both paths eventually reach (the code AFTER the if/else). Each block stops
+    // there; the join then prints once at this depth — reconstructing structured control flow.
+    const join =
+      falseTargets.length > 0
+        ? new Set([...this.execReachable(trueTargets)].filter((id) => this.execReachable(falseTargets).has(id)))
+        : new Set<string>();
+    const blockStop: BlockStop = { set: new Set([...join, ...(stop?.set ?? [])]), hits: [] };
+
+    lines.push(`${this.indent(depth)}if ${this.valueInput(node, 'condition', node.data.booleanValue ?? true)}:`);
+    for (const targetId of trueTargets) this.printNode(targetId, depth + 1, stack, lines, blockStop);
+    this.ensureBlockBody(depth + 1, lines);
+
+    const elseTargets = falseTargets.filter((id) => !join.has(id));
+    if (elseTargets.length) {
+      lines.push(`${this.indent(depth)}else:`);
+      for (const targetId of elseTargets) this.printNode(targetId, depth + 1, stack, lines, blockStop);
+      this.ensureBlockBody(depth + 1, lines);
+    } else {
+      for (const targetId of falseTargets) if (join.has(targetId) && !blockStop.hits.includes(targetId)) blockStop.hits.push(targetId);
+    }
+
+    // Continue after the block: join nodes print here; anything belonging to an OUTER join is
+    // handed back up to that caller.
+    for (const hit of blockStop.hits) {
+      if (stop?.set.has(hit)) {
+        if (!stop.hits.includes(hit)) stop.hits.push(hit);
+      } else {
+        this.printNode(hit, depth, stack, lines, stop);
+      }
+    }
+  }
+
+  private printCast(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[], stop?: BlockStop) {
     const target = this.valueInput(node, 'object', raw(this.targetLiteral(node.data.targetObjectId)));
     const bp = blueprintName(this.blueprints, node.data.castBlueprintId) ?? 'Blueprint';
     lines.push(`${this.indent(depth)}if cast(${target}, ${quote(bp)}):`);
-    this.printTargets(node.id, depth + 1, stack, lines);
+    this.printTargets(node.id, depth + 1, stack, lines, DEFAULT_EXEC_HANDLE, stop);
     this.ensureBlockBody(depth + 1, lines);
   }
 
-  private printGate(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[], condition: string) {
+  private printGate(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[], condition: string, stop?: BlockStop) {
     lines.push(`${this.indent(depth)}if ${condition}:`);
-    this.printTargets(node.id, depth + 1, stack, lines);
+    this.printTargets(node.id, depth + 1, stack, lines, DEFAULT_EXEC_HANDLE, stop);
     this.ensureBlockBody(depth + 1, lines);
   }
 
@@ -327,14 +387,14 @@ class FeatherScriptPrinter {
     this.ensureBlockBody(depth + 1, lines);
   }
 
-  private printForLoop(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[]) {
+  private printForLoop(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[], stop?: BlockStop) {
     lines.push(`${this.indent(depth)}for index in range(${this.valueInput(node, 'count', Number(node.data.loopCount ?? 4))}):`);
     this.printTargets(node.id, depth + 1, stack, lines, 'exec-body');
     this.ensureBlockBody(depth + 1, lines);
-    this.printTargets(node.id, depth, stack, lines);
+    this.printTargets(node.id, depth, stack, lines, DEFAULT_EXEC_HANDLE, stop);
   }
 
-  private printForEachActor(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[]) {
+  private printForEachActor(node: NodeForgeNode, depth: number, stack: Set<string>, lines: string[], stop?: BlockStop) {
     const source = node.data.castBlueprintId
       ? `blueprint: ${quote(blueprintName(this.blueprints, node.data.castBlueprintId) ?? node.data.castBlueprintId)}`
       : `tag: ${quote(node.data.stringValue ?? '')}`;
@@ -342,7 +402,7 @@ class FeatherScriptPrinter {
     lines.push(`${this.indent(depth)}for actor in find_actors(${source}${mode}):`);
     this.printTargets(node.id, depth + 1, stack, lines, 'exec-body');
     this.ensureBlockBody(depth + 1, lines);
-    this.printTargets(node.id, depth, stack, lines);
+    this.printTargets(node.id, depth, stack, lines, DEFAULT_EXEC_HANDLE, stop);
   }
 
   private printHandleBlock(
@@ -360,8 +420,8 @@ class FeatherScriptPrinter {
     this.ensureBlockBody(depth + 2, lines);
   }
 
-  private printTargets(nodeId: string, depth: number, stack: Set<string>, lines: string[], handle = DEFAULT_EXEC_HANDLE) {
-    for (const targetId of this.targets(nodeId, handle)) this.printNode(targetId, depth, stack, lines);
+  private printTargets(nodeId: string, depth: number, stack: Set<string>, lines: string[], handle = DEFAULT_EXEC_HANDLE, stop?: BlockStop) {
+    for (const targetId of this.targets(nodeId, handle)) this.printNode(targetId, depth, stack, lines, stop);
   }
 
   private printStatement(node: NodeForgeNode, depth: number, lines: string[]) {
@@ -385,6 +445,11 @@ class FeatherScriptPrinter {
         return `self.move(${this.valueInput(node, 'vector', [0, 0, 1])}, speed: ${this.valueInput(node, 'speed', Number(node.data.amount ?? 4))})`;
       case 'action.jump':
         return 'self.jump()';
+      case 'action.moveTo': {
+        const args = [this.valueInput(node, 'target', raw('Player.location')), `speed: ${this.valueInput(node, 'speed', Number(node.data.amount ?? 3.4))}`];
+        if (node.data.numberValue !== undefined) args.push(`arrival: ${formatNumber(Number(node.data.numberValue))}`);
+        return `self.move_to(${args.join(', ')})`;
+      }
       case 'action.drive':
         return `self.drive(${this.valueInput(node, 'vector', raw('Input.drive()'))})`;
       case 'action.setPosition':
@@ -418,7 +483,7 @@ class FeatherScriptPrinter {
         const key = node.data.objectKey || 'value';
         const wiredTarget = this.linkedValueInput(node, 'target');
         const value = this.valueInput(node, 'value', this.literalForType(node.data.valueType as GraphValueType | undefined, node));
-        if (!wiredTarget && (!node.data.targetObjectId || node.data.targetObjectId === '$self') && IDENTIFIER.test(key)) {
+        if (!wiredTarget && (!node.data.targetObjectId || node.data.targetObjectId === '$self') && IDENTIFIER.test(key) && !AMBIGUOUS_SELF_KEYS.has(key)) {
           return `self.${key} = ${value}`;
         }
         return `set_var(${wiredTarget ?? this.targetLiteral(node.data.targetObjectId)}, ${quote(key)}, ${value})`;
@@ -466,7 +531,7 @@ class FeatherScriptPrinter {
       case 'action.setVisible':
         return `set_visible(${this.targetArgument(node)}, ${this.valueInput(node, 'visible', node.data.visible ?? true)})`;
       case 'action.setActive':
-        return `set_active(${this.targetArgument(node)}, ${this.valueInput(node, 'on', node.data.visible ?? true)})`;
+        return `set_active(${this.targetArgument(node)}, ${this.valueInput(node, 'on', node.data.booleanValue ?? true)})`;
       case 'action.setTimeScale':
         return `Time.scale = ${this.valueInput(node, 'scale', Number(node.data.numberValue ?? 1))}`;
       case 'action.setQuality':
@@ -525,7 +590,7 @@ class FeatherScriptPrinter {
         const key = node.data.objectKey || 'value';
         const wiredTarget = this.linkedValueInput(node, 'target', stack);
         result =
-          !wiredTarget && (!node.data.targetObjectId || node.data.targetObjectId === '$self') && IDENTIFIER.test(key)
+          !wiredTarget && (!node.data.targetObjectId || node.data.targetObjectId === '$self') && IDENTIFIER.test(key) && !AMBIGUOUS_SELF_KEYS.has(key)
             ? `self.${key}`
             : `get_var(${wiredTarget ?? this.targetLiteral(node.data.targetObjectId)}, ${quote(key)})`;
         break;
@@ -608,13 +673,13 @@ class FeatherScriptPrinter {
         result = call('distance', [this.valueInput(node, 'a', [0, 0, 0], stack), this.valueInput(node, 'b', [0, 0, 0], stack)]);
         break;
       case 'math.vectorAdd':
-        result = binary('+', [0, 0, 0], [0, 0, 0]);
+        result = call('vec_add', [this.valueInput(node, 'a', [0, 0, 0], stack), this.valueInput(node, 'b', [0, 0, 0], stack)]);
         break;
       case 'math.vectorSubtract':
-        result = binary('-', [0, 0, 0], [0, 0, 0]);
+        result = call('vec_sub', [this.valueInput(node, 'a', [0, 0, 0], stack), this.valueInput(node, 'b', [0, 0, 0], stack)]);
         break;
       case 'math.vectorScale':
-        result = `(${this.valueInput(node, 'vector', [0, 0, 0], stack)} * ${this.valueInput(node, 'scale', 1, stack)})`;
+        result = call('vec_scale', [this.valueInput(node, 'vector', [0, 0, 0], stack), this.valueInput(node, 'scale', 1, stack)]);
         break;
       case 'math.makeVector':
         result = `vec3(${this.valueInput(node, 'x', 0, stack)}, ${this.valueInput(node, 'y', 0, stack)}, ${this.valueInput(node, 'z', 0, stack)})`;
@@ -648,7 +713,7 @@ class FeatherScriptPrinter {
         result = call('pow', [this.valueInput(node, 'a', 0, stack), this.valueInput(node, 'b', 2, stack)]);
         break;
       case 'string.append':
-        result = `(${this.valueInput(node, 'a', node.data.stringValue ?? '', stack)} + ${this.valueInput(node, 'b', '', stack)})`;
+        result = call('append', [this.valueInput(node, 'a', node.data.stringValue ?? '', stack), this.valueInput(node, 'b', '', stack)]);
         break;
       case 'input.move':
         result = 'Input.move()';
@@ -663,10 +728,12 @@ class FeatherScriptPrinter {
         result = 'self.is_grounded()';
         break;
       case 'query.findActorByBlueprint':
-        result = `find_actor(blueprint: ${quote(blueprintName(this.blueprints, node.data.castBlueprintId) ?? node.data.castBlueprintId ?? 'Blueprint')})`;
+        result = `find_actor(blueprint: ${quote(blueprintName(this.blueprints, node.data.castBlueprintId) ?? node.data.castBlueprintId ?? 'Blueprint')}${
+          node.data.findMode ? `, mode: ${quote(node.data.findMode)}` : ''
+        })`;
         break;
       case 'query.findActorByTag':
-        result = `find_actor(tag: ${quote(node.data.stringValue ?? '')})`;
+        result = `find_actor(tag: ${quote(node.data.stringValue ?? '')}${node.data.findMode ? `, mode: ${quote(node.data.findMode)}` : ''})`;
         break;
       case 'query.raycast': {
         const suffix = sourceHandle === 'actor' || sourceHandle === 'point' || sourceHandle === 'distance' ? sourceHandle : 'hit';

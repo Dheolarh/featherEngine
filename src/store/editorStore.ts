@@ -222,6 +222,8 @@ import { getGraphRuntimeMap, layoutGraphNodes } from './editor/graphRuntime';
 import { buildContactIndex, contactMatches, contactOthers, contactTouches, firstContactOther, toIdSet, toLowerCaseSet } from './editor/runtimeIndexes';
 import { makeId, stripUndefined } from './editor/ids';
 import { compileFeatherScriptToGraph, type FeatherCompileResult } from '../scripting/featherCompiler';
+import { buildNavGrid, findNavPath, type NavGrid, type NavObstacle } from '../runtime/navGrid';
+import { findBehaviorPreset } from '../project/behaviors';
 import { createArrayIndexer } from './editor/arrayIndex';
 import { mergePrefabInstances, prefabWouldCycle } from './editor/prefabMerge';
 import {
@@ -768,6 +770,9 @@ interface EditorState {
   playCinematic: (cinematicId: string) => void;
   stopCinematic: () => void;
   attachScript: (id: string, nextBlueprintId?: string) => void;
+  /** One-click behavior: compile the preset's FeatherScript into a (shared) blueprint, apply the
+   *  collider it needs, ensure its project variables, and attach it. Returns the blueprintId. */
+  attachBehaviorPreset: (objectId: string, presetId: string) => string | undefined;
   detachScript: (id: string) => void;
   setActiveBlueprint: (id: string) => void;
   createBlueprint: () => void;
@@ -1087,6 +1092,42 @@ const mapActiveSceneObjects = (
   ),
   isDirty: true,
 });
+
+/**
+ * Per-Play navmesh cache (module-level so tickRuntime never stores it in React state). The grid is
+ * baked from static fixed colliders the first time a Move To runs, keyed by scene so Load Scene
+ * rebuilds it; per-(object:node) paths re-plan when the target moves or goes stale.
+ */
+let navGridForScene: { sceneId: string; grid: NavGrid | undefined } | null = null;
+const navPathsForPlay = new Map<string, { target: [number, number]; waypoints: Array<[number, number]>; plannedAt: number }>();
+
+export const resetNavCache = () => {
+  navGridForScene = null;
+  navPathsForPlay.clear();
+};
+
+const ensureNavGrid = (sceneId: string, objects: Iterable<SceneObject>): NavGrid | undefined => {
+  if (navGridForScene && navGridForScene.sceneId === sceneId) return navGridForScene.grid;
+  const boxes: NavObstacle[] = [];
+  for (const object of objects) {
+    // Static solid colliders only: walls, crates, pillars. Dynamic/kinematic props move (the
+    // steering ray-fan handles them); triggers and pawns don't block walking.
+    if (!object.physics?.enabled || object.physics.bodyType !== 'fixed' || object.physics.isTrigger) continue;
+    if (object.character?.enabled) continue;
+    const [px, py, pz] = object.transform.position;
+    const [sx, sy, sz] = object.transform.scale;
+    const halfX = Math.abs(sx) / 2;
+    const halfY = Math.abs(sy) / 2;
+    const halfZ = Math.abs(sz) / 2;
+    // Only obstacles intersecting the walking band count — floors below and canopies above don't.
+    if (py + halfY < 0.35 || py - halfY > 2.4) continue;
+    // Huge slabs (ground platforms) would block everything — they're floor, not walls.
+    if (halfX * halfZ * 4 > 1600) continue;
+    boxes.push({ minX: px - halfX, maxX: px + halfX, minZ: pz - halfZ, maxZ: pz + halfZ });
+  }
+  navGridForScene = { sceneId, grid: boxes.length ? buildNavGrid(boxes) : undefined };
+  return navGridForScene.grid;
+};
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   scenes: starterScenes,
@@ -3900,6 +3941,40 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         activeBlueprintId: blueprint.id,
       };
     }),
+  attachBehaviorPreset: (objectId, presetId) => {
+    const preset = findBehaviorPreset(presetId);
+    if (!preset) return undefined;
+    const state = get();
+    const object = selectActiveObjects(state).find((item) => item.id === objectId);
+    if (!object) return undefined;
+
+    for (const wanted of preset.ensureProjectVariables ?? []) {
+      if (!state.variables.some((variable) => variable.name === wanted.name)) {
+        const variableId = get().createVariable(wanted.name, wanted.type, true);
+        if (wanted.defaultValue !== undefined) get().updateVariable(variableId, { defaultValue: wanted.defaultValue });
+      }
+    }
+
+    // Behaviors are shared classes: reuse the blueprint if this preset was attached before, so all
+    // instances run ONE editable blueprint while `var` state stays per-object.
+    const displayName = preset.script.match(/^blueprint\s+(\S+)/)?.[1].replace(/_/g, ' ') ?? preset.name;
+    let blueprintId = get().blueprints.find((blueprint) => blueprint.name === displayName)?.id;
+    if (!blueprintId) {
+      blueprintId = get().createBlueprintNamed(displayName, preset.description).blueprintId;
+      const compiled = get().applyBlueprintFeatherSource(blueprintId, preset.script);
+      if (!compiled.ok) {
+        get().deleteBlueprint(blueprintId);
+        return undefined;
+      }
+    }
+
+    if (preset.physics) {
+      if (!object.physics) get().togglePhysics(objectId); // seeds a default enabled component
+      get().updatePhysics(objectId, { enabled: true, bodyType: 'fixed', isTrigger: preset.physics === 'trigger' });
+    }
+    get().attachScript(objectId, blueprintId);
+    return blueprintId;
+  },
   addBlueprintVariable: (blueprintId, opts = {}) => {
     const blueprint = get().blueprints.find((b) => b.id === blueprintId);
     if (!blueprint) return undefined;
@@ -4172,7 +4247,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         diagnostics: [{ severity: 'error', message: 'Blueprint graph not found.', line: 1, column: 1, length: 1 }],
       };
     }
-    const result = compileFeatherScriptToGraph({ source, blueprint, graph, variables: state.variables, preserveSource: true });
+    const result = compileFeatherScriptToGraph({ source, blueprint, graph, variables: state.variables, blueprints: state.blueprints, preserveSource: true });
     if (!result.ok || !result.graph || !result.blueprint) return result;
     set((current) => ({
       blueprints: current.blueprints.map((item) => (item.id === id ? result.blueprint! : item)),
@@ -4192,7 +4267,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         diagnostics: [{ severity: 'error', message: 'Blueprint graph not found.', line: 1, column: 1, length: 1 }],
       };
     }
-    const result = compileFeatherScriptToGraph({ source, blueprint, graph, variables: state.variables });
+    const result = compileFeatherScriptToGraph({ source, blueprint, graph, variables: state.variables, blueprints: state.blueprints });
     if (!result.ok || !result.graph || !result.blueprint) return result;
     set((current) => ({
       blueprints: current.blueprints.map((item) => (item.id === id ? result.blueprint! : item)),
@@ -5245,6 +5320,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         detachedParts.clear();
         pendingPartKicks.clear();
         pendingPartRestores.clear();
+        resetNavCache(); // rebake the Move To navmesh from this run's static colliders
         return {
           isPlaying,
           runtimeTime: 0,
@@ -6724,6 +6800,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               return;
             }
 
+            // Branch: True continues along the default exec-out; False fires the "exec-false" pin (the
+            // Unreal Branch False path). With nothing wired to False, a false condition just stops — the
+            // long-standing gate behavior — so existing graphs are unaffected.
+            if (node.data.nodeKind === 'logic.branch') {
+              const pass = toBoolean(valueInput(node, 'condition', node.data.booleanValue ?? true));
+              const targets = pass ? compiled.outgoing : execTargetsFromHandle(nodeId, 'exec-false');
+              for (const targetId of targets) executeFrom(targetId, visited);
+              return;
+            }
+
             // Switch: route execution by VALUE — the state-machine node. The wired value is stringified
             // and matched against the editable case list; the matching case pin fires, else Default.
             if (node.data.nodeKind === 'logic.switch') {
@@ -6851,10 +6937,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           };
 
           const applyAction = (node: NodeForgeNode, visited: Set<string>): boolean => {
-            if (node.data.nodeKind === 'logic.branch') {
-              return toBoolean(valueInput(node, 'condition', node.data.booleanValue ?? true));
-            }
-
             // Cast (Unreal-style): gate the chain on the target running a specific blueprint. The object to test
             // comes from the wired "object" reference input (e.g. another Cast's "As" pin) or the targetObjectId
             // sentinel. On success, record it as "$cast" AND expose it from this node's value-out (the "As" pin).
@@ -7507,11 +7589,38 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                 const cc = object.character;
                 const speed = toNumber(valueInput(node, 'speed', Number(node.data.amount ?? cc?.moveSpeed ?? 3.4)));
                 const arrival = Math.max(0.2, Number(node.data.numberValue ?? 1.2));
-                const dx = target[0] - position[0];
-                const dz = target[2] - position[2];
-                const dist = Math.hypot(dx, dz);
+                const finalDx = target[0] - position[0];
+                const finalDz = target[2] - position[2];
+                const dist = Math.hypot(finalDx, finalDz); // arrival is measured against the REAL target
+                // Navmesh: plan an A* path over the static-collider grid and head for the next
+                // waypoint; the ray-fan below still steers around DYNAMIC obstacles on the way.
+                let waypointX = target[0];
+                let waypointZ = target[2];
                 if (dist > arrival) {
-                  let yaw = Math.atan2(dx, dz); // desired heading toward the target
+                  const navGrid = ensureNavGrid(state.activeSceneId, activeObjectById.values());
+                  if (navGrid) {
+                    const pathKey = `${object.id}:${node.id}`;
+                    const cached = navPathsForPlay.get(pathKey);
+                    const targetMoved = !cached || Math.hypot(cached.target[0] - target[0], cached.target[1] - target[2]) > 1.5;
+                    const stale = !cached || runtimeTime - cached.plannedAt > 1.5;
+                    let waypoints = cached?.waypoints;
+                    if (targetMoved || stale || !waypoints?.length) {
+                      waypoints = findNavPath(navGrid, position[0], position[2], target[0], target[2]) ?? [];
+                      navPathsForPlay.set(pathKey, { target: [target[0], target[2]], waypoints, plannedAt: runtimeTime });
+                    }
+                    while (waypoints.length > 1 && Math.hypot(waypoints[0][0] - position[0], waypoints[0][1] - position[2]) < 0.7) {
+                      waypoints.shift();
+                    }
+                    if (waypoints.length) {
+                      waypointX = waypoints[0][0];
+                      waypointZ = waypoints[0][1];
+                    }
+                  }
+                }
+                const dx = waypointX - position[0];
+                const dz = waypointZ - position[2];
+                if (dist > arrival) {
+                  let yaw = Math.atan2(dx, dz); // desired heading toward the next waypoint
                   const phys = getActivePhysics();
                   const probe = 2.6; // how far ahead we look for obstacles (units)
                   // Only steer around obstacles when we're farther than the probe — when close to the target

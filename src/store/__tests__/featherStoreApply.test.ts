@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { useEditorStore } from '../editorStore';
+import { selectActiveObjects, useEditorStore } from '../editorStore';
 import { graphToFeatherScript } from '../../scripting/featherScript';
 
 /**
@@ -43,6 +43,79 @@ describe('applyBlueprintFeatherSource — store + runtime', () => {
     useEditorStore.getState().setPlaying(true);
     for (let frame = 0; frame < 10; frame += 1) useEditorStore.getState().tickRuntime(1 / 60);
     expect(useEditorStore.getState().runtimeObjectVariables[objectId]?.hits).toBe(1);
+  });
+
+  it('executes else branches and for loops during Play', () => {
+    const store = useEditorStore.getState();
+    const { blueprintId } = store.createBlueprintNamed('Flow Probe');
+    const result = useEditorStore.getState().applyBlueprintFeatherSource(
+      blueprintId,
+      [
+        'blueprint Flow_Probe',
+        '',
+        'var armed: boolean = false',
+        '',
+        'on update(dt):',
+        '    if self.armed:',
+        '        self.a = 1',
+        '    else:',
+        '        self.b = 2',
+        '    self.after = 3',
+        '',
+        'on start:',
+        '    for index in range(3):',
+        '        self.n = index',
+        '    self.loop_done = 1',
+      ].join('\n'),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning')).toEqual([]);
+
+    const objectId = useEditorStore.getState().createObjectWithProps('cube');
+    useEditorStore.getState().attachScript(objectId, blueprintId);
+    useEditorStore.getState().setPlaying(true);
+    for (let frame = 0; frame < 5; frame += 1) useEditorStore.getState().tickRuntime(1 / 60);
+
+    const vars = useEditorStore.getState().runtimeObjectVariables[objectId] ?? {};
+    expect(vars.a).toBeUndefined(); // armed=false → true path must NOT run
+    expect(vars.b).toBe(2); // else path ran (the new Branch False pin)
+    expect(vars.after).toBe(3); // the join after if/else ran on the false path too
+    expect(vars.n).toBe(2); // for index in range(3) → last index written is 2
+    expect(vars.loop_done).toBe(1); // Completed pin continued the chain
+  });
+
+  it('attaches one-click behaviors that really run: shared blueprint, physics, vars, Play', () => {
+    const store = useEditorStore.getState();
+    const spinnerId = store.createObjectWithProps('cube');
+    const blueprintId = useEditorStore.getState().attachBehaviorPreset(spinnerId, 'rotating-prop');
+    expect(blueprintId).toBeTruthy();
+
+    const state = useEditorStore.getState();
+    const blueprint = state.blueprints.find((item) => item.id === blueprintId)!;
+    expect(blueprint.name).toBe('Behavior Rotating Prop');
+    const spinner = selectActiveObjects(state).find((item) => item.id === spinnerId)!;
+    expect(spinner.script?.blueprintId).toBe(blueprintId);
+    expect(spinner.variables?.spin_speed).toBe(90); // per-instance var seeded from the script
+
+    // Attaching the same behavior to a second object REUSES the blueprint (shared class).
+    const secondId = useEditorStore.getState().createObjectWithProps('cube');
+    expect(useEditorStore.getState().attachBehaviorPreset(secondId, 'rotating-prop')).toBe(blueprintId);
+
+    // Collectible: creates the Score project variable and makes the object a trigger.
+    const coinId = useEditorStore.getState().createObjectWithProps('sphere');
+    expect(useEditorStore.getState().attachBehaviorPreset(coinId, 'collectible')).toBeTruthy();
+    const after = useEditorStore.getState();
+    expect(after.variables.some((variable) => variable.name === 'Score')).toBe(true);
+    const coin = selectActiveObjects(after).find((item) => item.id === coinId)!;
+    expect(coin.physics?.enabled).toBe(true);
+    expect(coin.physics?.isTrigger).toBe(true);
+
+    // Play: the rotating prop actually spins.
+    useEditorStore.getState().setPlaying(true);
+    for (let frame = 0; frame < 30; frame += 1) useEditorStore.getState().tickRuntime(1 / 60);
+    const playing = useEditorStore.getState();
+    const spun = selectActiveObjects(playing).find((item) => item.id === spinnerId)!;
+    expect(spun.transform.rotation[1]).toBeGreaterThan(0.3);
   });
 
   it('rejects a broken script without touching the blueprint', () => {
