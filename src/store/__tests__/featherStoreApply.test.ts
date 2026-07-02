@@ -118,6 +118,40 @@ describe('applyBlueprintFeatherSource — store + runtime', () => {
     expect(spun.transform.rotation[1]).toBeGreaterThan(0.3);
   });
 
+  it('activation streaming freezes far objects and wakes them when the player approaches', () => {
+    const store = useEditorStore.getState();
+    // A camera-follow player at the origin — the streaming center.
+    const playerId = store.createObjectWithProps('capsule', { position: [0, 1, 0] });
+    useEditorStore.getState().toggleCharacterController(playerId);
+    useEditorStore.getState().updateCharacterController(playerId, { cameraFollow: true });
+
+    // Two spinning props: one near, one far outside the streaming radius.
+    const nearId = useEditorStore.getState().createObjectWithProps('cube', { position: [5, 0, 5] });
+    const farId = useEditorStore.getState().createObjectWithProps('cube', { position: [500, 0, 500] });
+    useEditorStore.getState().attachBehaviorPreset(nearId, 'rotating-prop');
+    useEditorStore.getState().attachBehaviorPreset(farId, 'rotating-prop');
+    useEditorStore.getState().updateSceneStreaming({ enabled: true, radius: 100 });
+
+    useEditorStore.getState().setPlaying(true);
+    for (let frame = 0; frame < 40; frame += 1) useEditorStore.getState().tickRuntime(1 / 60);
+
+    let objects = selectActiveObjects(useEditorStore.getState());
+    expect(objects.find((item) => item.id === nearId)!.transform.rotation[1]).toBeGreaterThan(0.3);
+    expect(objects.find((item) => item.id === farId)!.transform.rotation[1]).toBe(0); // frozen
+    expect(useEditorStore.getState().runtimeDisabled).toContain(farId);
+    expect(useEditorStore.getState().runtimeHidden).toContain(farId); // not rendered either
+
+    // Walk the player next to the far prop: it must wake and start spinning.
+    useEditorStore.getState().updateTransform(playerId, 'position', [495, 1, 495]);
+    for (let frame = 0; frame < 60; frame += 1) useEditorStore.getState().tickRuntime(1 / 60);
+
+    objects = selectActiveObjects(useEditorStore.getState());
+    expect(useEditorStore.getState().runtimeDisabled).not.toContain(farId);
+    expect(objects.find((item) => item.id === farId)!.transform.rotation[1]).toBeGreaterThan(0.3);
+    // And the near prop (now far away) streamed OUT.
+    expect(useEditorStore.getState().runtimeDisabled).toContain(nearId);
+  });
+
   it('rejects a broken script without touching the blueprint', () => {
     const store = useEditorStore.getState();
     const { blueprintId } = store.createBlueprintNamed('Feather Reject');

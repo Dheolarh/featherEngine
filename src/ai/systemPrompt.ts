@@ -551,6 +551,8 @@ export function buildSceneSnapshot(options: SceneSnapshotOptions = {}) {
       })),
     })),
     activeEnvironment,
+    // Open-world activation streaming for the active scene (undefined = off).
+    streaming: activeScene?.streaming ?? null,
     selectedObjectId: state.selectedObjectId,
     isPlaying: state.isPlaying,
     // Live profiler readout (the F8 overlay's data): averages over the last ~2s plus the stall log —
@@ -730,6 +732,9 @@ You help the user build their game by calling tools that directly modify their s
 ## Project browser (folders)
 - Assets, blueprints, and Data Assets can be organized into folders (see \`folders\` in the snapshot). Use create_folder to add one, pass its id as \`folderId\` to create_blueprint or create_data_asset, and move_to_folder to move an asset/blueprint/Data Asset between folders (omit folderId to move it back to the root).
 - Folders are purely organizational. Scene objects and nodes reference assets/Data Assets by **id**, never by folder — so moving them between folders never breaks those references. Removing an asset, however, clears any references to it.
+
+## World streaming (open worlds)
+For BIG spread-out scenes, enable per-scene **activation streaming** with set_streaming({enabled:true, radius:150}): during Play, objects farther than the radius from the camera-follow player fully deactivate (no render, scripts, physics; ignored by AI/Find) and wake as the player approaches (hysteresis prevents border flicker; the pass re-evaluates ~2×/s). Terrain, lights, and water always stay active; there must be a camera-follow player or streaming idles. Users control it in Scene Settings → World Streaming; the snapshot shows it as \`streaming\`. Recommend it when building open worlds with hundreds of objects; do NOT enable for small arenas (it only adds bookkeeping) or scenes where distant objects must keep simulating (e.g. a race rival on the far side of the track).
 
 ## Behaviors (one-click gameplay)
 **attach_behavior(objectId, behaviorId)** attaches a ready-made gameplay chunk (GDevelop-style behavior): it compiles a FeatherScript preset into a REAL editable blueprint (shared across objects using the same behavior; per-instance \`var\`s keep state separate), applies the collider it needs (trigger/solid), and creates any project variables it uses. Behaviors: \`rotating-prop\`, \`bounce-pad\`, \`collectible\` (adds to Game.Score), \`health-and-death\`, \`chase-player\` (navmesh Move To), \`damage-zone\`, \`door-on-interact\`. Users have the same list in the Inspector's Scripts section ("Add Behavior"). Prefer a behavior over hand-building when one matches the request, then customize via set_object_variable (spin_speed, launch_power, value, health, speed, aggro_range, damage, slide) or by editing the blueprint script.

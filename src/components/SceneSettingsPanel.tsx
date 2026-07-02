@@ -26,6 +26,7 @@ export function SceneSettingsPanel() {
   const renameScene = useEditorStore((state) => state.renameScene);
   const setSceneAudio = useEditorStore((state) => state.setSceneAudio);
   const updateSceneEnvironment = useEditorStore((state) => state.updateSceneEnvironment);
+  const updateSceneStreaming = useEditorStore((state) => state.updateSceneStreaming);
   const updateRenderSettings = useEditorStore((state) => state.updateRenderSettings);
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const audioAssets = useMemo(() => assets.filter((asset) => asset.type === 'audio'), [assets]);
@@ -316,6 +317,32 @@ export function SceneSettingsPanel() {
               />
             </label>
           </>
+        )}
+      </section>
+
+      <section className="inspector-section">
+        <h3>World Streaming</h3>
+        <label className="field-row">
+          <span title="Open-world activation streaming: objects farther than the radius from the player fully deactivate (no render, scripts, or physics) and wake as the player approaches. Terrain, lights, and water always stay active. Needs a camera-follow player.">
+            Streaming
+          </span>
+          <input
+            type="checkbox"
+            checked={scene.streaming?.enabled ?? false}
+            onChange={(event) => updateSceneStreaming({ enabled: event.target.checked })}
+          />
+        </label>
+        {scene.streaming?.enabled && (
+          <label className="field-row">
+            <span title="Deactivation distance in world units. Objects re-activate at ~85% of this so the border doesn't flicker.">Radius</span>
+            <input
+              type="number"
+              min={20}
+              step={10}
+              value={scene.streaming?.radius ?? 120}
+              onChange={(event) => updateSceneStreaming({ radius: Math.max(20, num(event.target.value, scene.streaming?.radius ?? 120)) })}
+            />
+          </label>
         )}
       </section>
 

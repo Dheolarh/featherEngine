@@ -1397,6 +1397,20 @@ const rawEngineTools = {
     },
   }),
 
+  set_streaming: tool({
+    description:
+      "Configure the active scene's WORLD STREAMING (open-world activation streaming): objects farther than `radius` from the camera-follow player fully deactivate (no render, no scripts, no physics, ignored by AI) and wake as the player approaches (~85% hysteresis). Terrain, lights, and water never stream. Enable for big open worlds with many spread-out objects; keep off for small arenas. Requires a camera-follow player during Play. Current settings appear in the snapshot's `streaming` field.",
+    inputSchema: z.object({
+      enabled: z.boolean().optional(),
+      radius: z.number().min(20).optional().describe('Deactivation distance in world units (default 120).'),
+    }),
+    execute: async ({ enabled, radius }) => {
+      store().updateSceneStreaming({ ...(enabled !== undefined ? { enabled } : {}), ...(radius !== undefined ? { radius } : {}) });
+      const streaming = store().scenes.find((scene) => scene.id === store().activeSceneId)?.streaming;
+      return `Scene streaming: ${streaming?.enabled ? `ON, radius ${streaming.radius}u` : 'off'}.`;
+    },
+  }),
+
   set_scene_environment: tool({
     description:
       'Set the active scene sky/fog/base lighting. Use this for mood, time of day, sunset/night/daylight, panorama skyboxes, fog, and Unreal-style volumetric fog/light shafts (volumetricFog* fields — atmospheric mist, sun glow, god rays). This is scene-level World Settings, not a Blueprint node.',

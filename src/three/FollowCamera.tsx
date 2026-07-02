@@ -51,6 +51,26 @@ export function resolveCameraConfig(object: SceneObject | undefined): CharacterC
 /** Reusable zero vector for relaxing the look-ahead offset back to center when idle (avoids per-frame allocs). */
 const ZERO = new THREE.Vector3();
 
+/**
+ * Floating-origin support: when tickRuntime rebases the world (runtimeRebase.seq bumps), every
+ * cached world-space vector this rig smooths across frames must shift by the same (dx, dz) — else
+ * the camera lerp-swings kilometers to catch up. Call at the top of a useFrame with the rig's
+ * world-position vectors; applies each rebase exactly once.
+ */
+function applyOriginRebase(lastSeq: { current: number }, vectors: Array<THREE.Vector3 | null | undefined>) {
+  const rebase = useEditorStore.getState().runtimeRebase;
+  if (!rebase || rebase.seq === lastSeq.current) return;
+  lastSeq.current = rebase.seq;
+  for (const vector of vectors) {
+    if (vector) vector.set(vector.x - rebase.dx, vector.y, vector.z - rebase.dz);
+  }
+}
+
+/** Seed the rebase seq at mount so a shift from BEFORE this rig existed is never applied to it. */
+function useRebaseSeqRef() {
+  return useRef(useEditorStore.getState().runtimeRebase?.seq ?? 0);
+}
+
 /** True if `object3d` (or any ancestor) is the rendered group of scene object `objectId`. */
 function belongsToObject(object3d: THREE.Object3D | null, objectId: string): boolean {
   let node: THREE.Object3D | null = object3d;
@@ -159,11 +179,13 @@ function CameraViewModel({ object }: { object: SceneObject }) {
 function CameraViewModelMount({ object, owner }: { object: SceneObject; owner: SceneObject }) {
   const groupRef = useRef<THREE.Group>(null);
   const bobTarget = useRef(new THREE.Vector3());
+  const rebaseSeq = useRebaseSeqRef();
   const runtimeKeys = useEditorStore((state) => state.runtimeKeys);
 
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group) return;
+    applyOriginRebase(rebaseSeq, [group.position, bobTarget.current]);
     const cc = resolveCharacter(owner.character);
     const moving = Boolean(
       runtimeKeys[cc.keyForward] ||

@@ -2140,6 +2140,30 @@ class PhysicsRuntime {
   }
 
   /** Live body counts for the profiler. `sleeping` bodies are at rest (Rapier deactivates them — near-zero CPU). */
+  /**
+   * Floating-origin rebase: translate EVERY body by (-dx, 0, -dz) in one atomic step between
+   * frames. Velocities, joints (local anchors), and contacts are relative, so the simulation is
+   * unaffected — this exists purely to keep Rapier's f32 coordinates small in huge worlds. Bodies
+   * are not woken (nothing changed physically); sleeping stacks stay asleep.
+   */
+  shiftOrigin(dx: number, dz: number) {
+    const seen = new Set<number>();
+    const shift = (body: RigidBody) => {
+      if (seen.has(body.handle)) return;
+      seen.add(body.handle);
+      const t = body.translation();
+      body.setTranslation({ x: t.x - dx, y: t.y, z: t.z - dz }, false);
+    };
+    for (const entry of this.entries.values()) shift(entry.body);
+    for (const entry of this.charEntries.values()) shift(entry.body);
+    for (const entry of this.terrainEntries.values()) shift(entry.body);
+    for (const entry of this.vehicleEntries.values()) {
+      shift(entry.body);
+      // Flip-recovery teleports back to the spawn pose — keep it in the rebased frame.
+      entry.spawnPos = [entry.spawnPos[0] - dx, entry.spawnPos[1], entry.spawnPos[2] - dz];
+    }
+  }
+
   getStats(): { bodies: number; sleeping: number; characters: number; terrain: number; joints: number } {
     let sleeping = 0;
     for (const entry of this.entries.values()) if (entry.body.isSleeping()) sleeping += 1;

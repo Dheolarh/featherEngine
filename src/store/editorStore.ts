@@ -39,6 +39,7 @@ import {
   type RenderSettings,
   type QualityLevel,
   type SceneEnvironmentSettings,
+  type SceneStreamingSettings,
   type ProjectVariable,
   type RigidBodyType,
   type Scene,
@@ -368,6 +369,8 @@ interface EditorState {
   /** Camera-shake trauma (0..1). Bumped by the Camera Shake node, the player firing/being hurt, and
    *  explosions; decayed every tick. The follow camera turns it into a positional + rotational jitter. */
   runtimeCameraShake: number;
+  /** Floating-origin rebase event: bumped each time the world shifts; consumers subtract (dx, dz) from cached world positions. */
+  runtimeRebase?: { seq: number; dx: number; dz: number };
   /** Character-controller object ids standing on the ground last frame (drives jump + grounded). */
   runtimeGrounded: string[];
   /** Character ids currently inside a water volume (swim mode) / on a climb volume (climb mode). Maintained
@@ -773,6 +776,8 @@ interface EditorState {
   /** One-click behavior: compile the preset's FeatherScript into a (shared) blueprint, apply the
    *  collider it needs, ensure its project variables, and attach it. Returns the blueprintId. */
   attachBehaviorPreset: (objectId: string, presetId: string) => string | undefined;
+  /** Patch the ACTIVE scene's activation-streaming settings (open-world distance deactivation). */
+  updateSceneStreaming: (patch: Partial<SceneStreamingSettings>) => void;
   detachScript: (id: string) => void;
   setActiveBlueprint: (id: string) => void;
   createBlueprint: () => void;
@@ -1106,6 +1111,21 @@ export const resetNavCache = () => {
   navPathsForPlay.clear();
 };
 
+/**
+ * Activation streaming (world sectors, per-Play): ids currently streamed OUT by distance from the
+ * player. They ride the Set Active machinery (no render/scripts/physics/AI) but are undone at the
+ * top of every tick and re-derived on an interval, so walking back toward them wakes them up.
+ */
+const streamedOutIds = new Set<string>();
+let streamEvalAt = -1;
+let streamEvalScene = '';
+
+export const resetStreamingCache = () => {
+  streamedOutIds.clear();
+  streamEvalAt = -1;
+  streamEvalScene = '';
+};
+
 const ensureNavGrid = (sceneId: string, objects: Iterable<SceneObject>): NavGrid | undefined => {
   if (navGridForScene && navGridForScene.sceneId === sceneId) return navGridForScene.grid;
   const boxes: NavObstacle[] = [];
@@ -1175,6 +1195,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   runtimeAnimators: {},
   runtimeCameraOverrides: {},
   runtimeCameraShake: 0,
+  runtimeRebase: undefined,
   runtimeFlash: 0,
   runtimeFlashColor: '#ffffff',
   runtimeGrounded: [],
@@ -3941,6 +3962,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         activeBlueprintId: blueprint.id,
       };
     }),
+  updateSceneStreaming: (patch) =>
+    set((state) => ({
+      scenes: state.scenes.map((scene) =>
+        scene.id === state.activeSceneId
+          ? { ...scene, streaming: { enabled: false, radius: 120, ...scene.streaming, ...patch } }
+          : scene,
+      ),
+      isDirty: true,
+    })),
   attachBehaviorPreset: (objectId, presetId) => {
     const preset = findBehaviorPreset(presetId);
     if (!preset) return undefined;
@@ -5321,6 +5351,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         pendingPartKicks.clear();
         pendingPartRestores.clear();
         resetNavCache(); // rebake the Move To navmesh from this run's static colliders
+        resetStreamingCache(); // fresh activation-streaming set for this run
         return {
           isPlaying,
           runtimeTime: 0,
@@ -5528,6 +5559,53 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   tickRuntime: (delta) =>
     set((state) => {
       if (!state.isPlaying) return state;
+      // ---- Floating origin (huge worlds) --------------------------------------------------------
+      // When the camera-follow player wanders beyond REBASE_TRIGGER of the origin, shift the WHOLE
+      // world back by a 1024-snapped offset in one atomic frame: every object transform, every
+      // physics body (relative state — velocities/contacts/joints — is untouched), and the caches
+      // that hold world positions. Keeps three.js instancing/shadows and Rapier's f32 coordinates
+      // precise no matter how far the player travels. Play-Stop restores the pre-Play snapshot, so
+      // authored scenes are never altered. Small worlds (every template) never hit the threshold.
+      {
+        const player = selectActiveObjects(state).find((o) => o.character?.enabled && o.character.cameraFollow);
+        const px = player?.transform.position[0] ?? 0;
+        const pz = player?.transform.position[2] ?? 0;
+        const REBASE_TRIGGER = 2048;
+        if (player && (Math.abs(px) > REBASE_TRIGGER || Math.abs(pz) > REBASE_TRIGGER)) {
+          const dx = Math.round(px / 1024) * 1024;
+          const dz = Math.round(pz / 1024) * 1024;
+          if (dx !== 0 || dz !== 0) {
+            getActivePhysics()?.shiftOrigin(dx, dz);
+            clearTransformBuffer(); // render interpolation restarts from the rebased transforms
+            prevTransformEntryPool.clear();
+            resetNavCache(); // grid + cached waypoints hold world coords — rebuild in the new frame
+            const rebased = state.scenes.map((scene) =>
+              scene.id === state.activeSceneId
+                ? {
+                    ...scene,
+                    objects: scene.objects.map((object) => ({
+                      ...object,
+                      transform: {
+                        ...object.transform,
+                        position: [
+                          object.transform.position[0] - dx,
+                          object.transform.position[1],
+                          object.transform.position[2] - dz,
+                        ] as Vector3Tuple,
+                      },
+                    })),
+                  }
+                : scene,
+            );
+            // Rebase-only frame (a once-per-2km 16ms hold): the next tick simulates from the new frame.
+            return {
+              scenes: rebased,
+              runtimeRebase: { seq: (state.runtimeRebase?.seq ?? 0) + 1, dx, dz },
+            };
+          }
+        }
+      }
+      // -------------------------------------------------------------------------------------------
       // Global time scale (Set Time Scale node): scales scripts, timers, physics and motion in one place.
       // At 0 (paused) the tick still RUNS — key/UI events keep firing so the pause menu can unpause —
       // but nothing advances and the physics step is skipped (physics.frame early-outs on dt <= 0).
@@ -5841,6 +5919,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Deactivated objects (Set Active off): no render, no script, no physics body, ignored by AI. Persisted
       // across frames; toggled by the action.setActive node. Disabled ids are merged into runtimeHidden on output.
       const nextDisabled = new Set<string>(state.runtimeDisabled);
+      // ---- Activation streaming (open worlds) -------------------------------------------------
+      // Undo LAST tick's automatic deactivations first, then re-derive the streamed set (throttled)
+      // and re-apply it below — so objects wake as the player approaches. Streamed ids share the
+      // Set Active pipeline (render/scripts/physics/AI all skip them). Known v1 edge: an object both
+      // explicitly Set Active(false) AND streamed re-enables when unstreamed.
+      for (const id of streamedOutIds) {
+        nextDisabled.delete(id);
+        nextHidden.delete(id);
+      }
+      const streamingSettings = state.scenes.find((scene) => scene.id === state.activeSceneId)?.streaming;
+      if (streamingSettings?.enabled && streamingSettings.radius > 0 && playerId) {
+        if (runtimeTime - streamEvalAt > 0.5 || streamEvalAt < 0 || streamEvalScene !== state.activeSceneId) {
+          streamEvalAt = runtimeTime;
+          if (streamEvalScene !== state.activeSceneId) streamedOutIds.clear();
+          streamEvalScene = state.activeSceneId;
+          const center = activeObjects.find((o) => o.id === playerId)?.transform.position;
+          if (center) {
+            const outR2 = streamingSettings.radius * streamingSettings.radius;
+            const inR2 = outR2 * 0.72; // ~85% of the radius: hysteresis so border objects don't flicker
+            for (const object of activeObjects) {
+              // Never stream the player, or scene-wide actors: terrain, lights, water, sky-scale props.
+              if (object.id === playerId || object.terrain || object.light || object.water || object.kind === 'terrain') continue;
+              const dx = object.transform.position[0] - center[0];
+              const dz = object.transform.position[2] - center[2];
+              const d2 = dx * dx + dz * dz;
+              if (streamedOutIds.has(object.id)) {
+                if (d2 < inR2) streamedOutIds.delete(object.id);
+              } else if (d2 > outR2) {
+                streamedOutIds.add(object.id);
+              }
+            }
+          }
+        }
+        for (const id of streamedOutIds) nextDisabled.add(id);
+      } else if (streamedOutIds.size) {
+        streamedOutIds.clear();
+      }
+      // -----------------------------------------------------------------------------------------
       // Cable runtime control (Cut Cable / Set Cable Length nodes). Cut owners persist for the session;
       // length overrides hold until changed again (a winch keeps its reeled length).
       const nextCutCables = new Set<string>(state.runtimeCutCables);

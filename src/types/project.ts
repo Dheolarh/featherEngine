@@ -7,6 +7,14 @@ import type { CinematicSequence } from './cinematics';
 import type { NodeForgeNode } from './graph';
 import type { ParticleSystemDefinition, SceneObject } from './gameplay';
 
+/** World streaming for big scenes: objects beyond `radius` of the player fully deactivate
+ *  (no render/scripts/physics) and wake as the player approaches. */
+export interface SceneStreamingSettings {
+  enabled: boolean;
+  /** Deactivation distance in world units (re-activation uses ~85% for hysteresis). */
+  radius: number;
+}
+
 /** A single scene within a project. Also the content of a `scenes/<id>.scene.json` file. */
 export interface Scene {
   id: string;
@@ -14,6 +22,8 @@ export interface Scene {
   objects: SceneObject[];
   /** World sky/fog/base lighting for this scene. */
   environment?: SceneEnvironmentSettings;
+  /** Distance-based activation streaming for open worlds (off when undefined). */
+  streaming?: SceneStreamingSettings;
   /** Audio asset id looped quietly as the ambient bed (wind/room tone) while this scene plays. */
   ambientSoundId?: string;
   /** Audio asset id looped as background music while this scene plays. */
