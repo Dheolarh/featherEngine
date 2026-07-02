@@ -221,6 +221,7 @@ import {
 import { getGraphRuntimeMap, layoutGraphNodes } from './editor/graphRuntime';
 import { buildContactIndex, contactMatches, contactOthers, contactTouches, firstContactOther, toIdSet, toLowerCaseSet } from './editor/runtimeIndexes';
 import { makeId, stripUndefined } from './editor/ids';
+import { compileFeatherScriptToGraph, type FeatherCompileResult } from '../scripting/featherCompiler';
 import { createArrayIndexer } from './editor/arrayIndex';
 import { mergePrefabInstances, prefabWouldCycle } from './editor/prefabMerge';
 import {
@@ -793,6 +794,9 @@ interface EditorState {
   deleteFolder: (id: string) => void;
   moveToFolder: (kind: 'asset' | 'blueprint' | 'dataAsset' | 'material' | 'particleSystem' | 'uiDocument' | 'prefab', id: string, folderId?: string) => void;
   renameBlueprint: (id: string, name: string) => void;
+  updateBlueprintFeatherSource: (id: string, source?: string) => void;
+  syncBlueprintFeatherSource: (id: string, source: string) => FeatherCompileResult;
+  applyBlueprintFeatherSource: (id: string, source: string) => FeatherCompileResult;
   deleteBlueprint: (id: string) => void;
   renameAsset: (id: string, name: string) => void;
   createVariable: (name?: string, type?: GraphValueType, persistent?: boolean) => string;
@@ -4153,6 +4157,51 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         isDirty: true,
       };
     }),
+  updateBlueprintFeatherSource: (id, source) =>
+    set((state) => ({
+      blueprints: state.blueprints.map((item) => (item.id === id ? { ...item, featherSource: source } : item)),
+      isDirty: true,
+    })),
+  syncBlueprintFeatherSource: (id, source) => {
+    const state = get();
+    const blueprint = state.blueprints.find((item) => item.id === id);
+    const graph = state.graphs.find((item) => item.id === blueprint?.graphId);
+    if (!blueprint || !graph) {
+      return {
+        ok: false,
+        diagnostics: [{ severity: 'error', message: 'Blueprint graph not found.', line: 1, column: 1, length: 1 }],
+      };
+    }
+    const result = compileFeatherScriptToGraph({ source, blueprint, graph, variables: state.variables, preserveSource: true });
+    if (!result.ok || !result.graph || !result.blueprint) return result;
+    set((current) => ({
+      blueprints: current.blueprints.map((item) => (item.id === id ? result.blueprint! : item)),
+      graphs: current.graphs.map((item) => (item.id === graph.id ? result.graph! : item)),
+      selectedGraphNodeId: undefined,
+      isDirty: true,
+    }));
+    return result;
+  },
+  applyBlueprintFeatherSource: (id, source) => {
+    const state = get();
+    const blueprint = state.blueprints.find((item) => item.id === id);
+    const graph = state.graphs.find((item) => item.id === blueprint?.graphId);
+    if (!blueprint || !graph) {
+      return {
+        ok: false,
+        diagnostics: [{ severity: 'error', message: 'Blueprint graph not found.', line: 1, column: 1, length: 1 }],
+      };
+    }
+    const result = compileFeatherScriptToGraph({ source, blueprint, graph, variables: state.variables });
+    if (!result.ok || !result.graph || !result.blueprint) return result;
+    set((current) => ({
+      blueprints: current.blueprints.map((item) => (item.id === id ? result.blueprint! : item)),
+      graphs: current.graphs.map((item) => (item.id === graph.id ? result.graph! : item)),
+      selectedGraphNodeId: undefined,
+      isDirty: true,
+    }));
+    return result;
+  },
   deleteBlueprint: (id) =>
     set((state) => {
       const blueprint = state.blueprints.find((item) => item.id === id);

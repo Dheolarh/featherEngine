@@ -1,6 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Background, Controls, MiniMap, ReactFlow, useReactFlow, type Connection, type Edge, type NodeTypes } from '@xyflow/react';
-import { Boxes, Database, GitBranch, LayoutDashboard, LayoutGrid, MousePointer2, Plus, Save, Search, Send, Sigma, Table2, Trash2, Waypoints, Zap } from 'lucide-react';
+import {
+  AlertTriangle,
+  Boxes,
+  CheckCircle2,
+  Code2,
+  Copy,
+  Database,
+  Download,
+  GitBranch,
+  LayoutDashboard,
+  LayoutGrid,
+  MousePointer2,
+  Plus,
+  RotateCcw,
+  Save,
+  Search,
+  Send,
+  Sigma,
+  Table2,
+  Trash2,
+  Waypoints,
+  Zap,
+} from 'lucide-react';
 import { useEditorStore } from '../store/editorStore';
 import { useSceneOptions, useStableActiveObjects, useStableActiveScene } from '../store/stableSelectors';
 import { nodeDescriptions, nodeKindByLabel } from '../store/editor/graph';
@@ -12,6 +34,9 @@ import { QUALITY_LEVELS } from '../three/quality';
 import { KEY_CODE_OPTIONS, keyLabelByCode } from '../utils/keyboardCodes';
 import { execTrace, setExecTraceEnabled } from '../runtime/execTrace';
 import { valueTrace, setValueTraceEnabled, formatTraceValue } from '../runtime/valueTrace';
+import { FEATHER_SIDEBAR_API, getFeatherCompletions, type FeatherApiEntry, type FeatherCompletion } from '../scripting/featherApi';
+import { parseFeatherScript } from '../scripting/featherParser';
+import { graphToFeatherScript } from '../scripting/featherScript';
 
 const nodeTypes: NodeTypes = {
   nodeforge: NodeForgeGraphNode,
@@ -115,6 +140,11 @@ export const baseNodeChoices: NodeChoice[] = nodeGroups.flatMap((group) =>
     };
   }),
 );
+
+const featherFileName = (name: string) => {
+  const base = name.trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'Blueprint';
+  return `${base}.feather`;
+};
 
 const spawnKinds: Array<['cube' | 'sphere' | 'capsule' | 'plane', string]> = [
   ['cube', 'Cube'],
@@ -2177,13 +2207,21 @@ export function VisualScriptingPanel() {
   const deleteGraphNodes = useEditorStore((state) => state.deleteGraphNodes);
   const pasteGraphNodes = useEditorStore((state) => state.pasteGraphNodes);
   const autoLayoutActiveGraph = useEditorStore((state) => state.autoLayoutActiveGraph);
+  const updateBlueprintFeatherSource = useEditorStore((state) => state.updateBlueprintFeatherSource);
+  const syncBlueprintFeatherSource = useEditorStore((state) => state.syncBlueprintFeatherSource);
   const selectedGraphNode = useEditorStore((state) => state.selectedGraphNode());
   const selectGraphNode = useEditorStore((state) => state.selectGraphNode);
   const instanceCount = sceneObjects.filter((object) => object.script?.blueprintId === activeBlueprintId).length;
   const selectedNodeDetail = selectedGraphNode?.data.label ?? 'Blueprint Graph';
+  const [editorMode, setEditorMode] = useState<'blueprint' | 'script'>('blueprint');
+  const [scriptCopied, setScriptCopied] = useState(false);
+  const [scriptSyncMessage, setScriptSyncMessage] = useState<{ kind: 'success' | 'error' | 'pending'; text: string } | null>(null);
+  const [featherSelection, setFeatherSelection] = useState({ start: 0, end: 0 });
+  const [featherCompletionIndex, setFeatherCompletionIndex] = useState(0);
 
   const { screenToFlowPosition } = useReactFlow();
   const flowShellRef = useRef<HTMLDivElement | null>(null);
+  const featherEditorRef = useRef<HTMLTextAreaElement | null>(null);
   // When the search menu was opened by dragging a wire into empty space, `pending` holds the socket the
   // drag started from, so picking a node auto-wires it (Unreal-style). null = opened via right-click.
   const [searchMenu, setSearchMenu] = useState<{
@@ -2191,6 +2229,9 @@ export function VisualScriptingPanel() {
     y: number;
     pending?: { nodeId: string; handleId: string | null; handleType: 'source' | 'target' };
   } | null>(null);
+  useEffect(() => {
+    if (editorMode === 'script') setSearchMenu(null);
+  }, [editorMode]);
   // Set on connect-start, cleared by a successful onConnect; if still set at connect-end the drag landed
   // on empty canvas, which is our cue to open the node menu with that source connection pending.
   const connectingRef = useRef<{ nodeId: string; handleId: string | null; handleType: 'source' | 'target' } | null>(
@@ -2204,6 +2245,34 @@ export function VisualScriptingPanel() {
 
   // Palette quick-filter: type to narrow the node list by name, description, or category.
   const [paletteFilter, setPaletteFilter] = useState('');
+  const featherScript = useMemo(
+    () =>
+      graph && activeBlueprint
+        ? graphToFeatherScript({
+            blueprint: activeBlueprint,
+            graph,
+            variables,
+            blueprints,
+          })
+        : '',
+    [activeBlueprint, blueprints, graph, variables],
+  );
+  const featherSource = activeBlueprint?.featherSource ?? featherScript;
+  const featherParse = useMemo(() => parseFeatherScript(featherSource), [featherSource]);
+  const featherDiagnostics = featherParse.diagnostics;
+  const featherErrorCount = featherDiagnostics.filter((item) => item.severity === 'error').length;
+  const featherCompletions = useMemo(
+    () =>
+      featherSelection.start === featherSelection.end
+        ? getFeatherCompletions(featherSource, featherSelection.start, {
+            blueprintVariables: activeBlueprint?.variables ?? [],
+            projectVariables: variables,
+            limit: 6,
+          })
+        : [],
+    [activeBlueprint?.variables, featherSelection.end, featherSelection.start, featherSource, variables],
+  );
+  const activeFeatherCompletion = featherCompletions[Math.min(featherCompletionIndex, featherCompletions.length - 1)];
   const filteredNodeGroups = useMemo(() => {
     const query = paletteFilter.trim().toLowerCase();
     if (!query) return nodeGroups;
@@ -2219,6 +2288,144 @@ export function VisualScriptingPanel() {
       }))
       .filter((group) => group.nodes.length > 0);
   }, [paletteFilter]);
+
+  useEffect(() => {
+    if (!scriptCopied) return;
+    const timeout = window.setTimeout(() => setScriptCopied(false), 1400);
+    return () => window.clearTimeout(timeout);
+  }, [scriptCopied]);
+
+  const copyFeatherScript = async () => {
+    if (!featherSource || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(featherSource);
+      setScriptCopied(true);
+    } catch {
+      setScriptCopied(false);
+    }
+  };
+
+  const downloadFeatherScript = () => {
+    if (!activeBlueprint || !featherSource) return;
+    const blob = new Blob([featherSource], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = featherFileName(activeBlueprint.name);
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const updateFeatherSource = (source: string) => {
+    setScriptSyncMessage({ kind: 'pending', text: 'Syncing' });
+    updateBlueprintFeatherSource(activeBlueprintId, source);
+  };
+
+  const syncFeatherSelection = (target: HTMLTextAreaElement) => {
+    setFeatherSelection({ start: target.selectionStart, end: target.selectionEnd });
+  };
+
+  const insertFeatherText = (text: string) => {
+    const editor = featherEditorRef.current;
+    const start = editor?.selectionStart ?? featherSelection.start;
+    const end = editor?.selectionEnd ?? featherSelection.end;
+    const next = `${featherSource.slice(0, start)}${text}${featherSource.slice(end)}`;
+    const nextCaret = start + text.length;
+    updateFeatherSource(next);
+    window.requestAnimationFrame(() => {
+      featherEditorRef.current?.focus();
+      if (!featherEditorRef.current) return;
+      featherEditorRef.current.selectionStart = nextCaret;
+      featherEditorRef.current.selectionEnd = nextCaret;
+      setFeatherSelection({ start: nextCaret, end: nextCaret });
+    });
+  };
+
+  const insertFeatherSnippet = (entry: FeatherApiEntry) => insertFeatherText(entry.insertText);
+
+  const acceptFeatherCompletion = (completion: FeatherCompletion | undefined) => {
+    if (!completion) return;
+    const next = `${featherSource.slice(0, completion.replacementStart)}${completion.insertText}${featherSource.slice(completion.replacementEnd)}`;
+    const nextCaret = completion.replacementStart + completion.caretOffset;
+    updateFeatherSource(next);
+    setFeatherCompletionIndex(0);
+    window.requestAnimationFrame(() => {
+      featherEditorRef.current?.focus();
+      if (!featherEditorRef.current) return;
+      featherEditorRef.current.selectionStart = nextCaret;
+      featherEditorRef.current.selectionEnd = nextCaret;
+      setFeatherSelection({ start: nextCaret, end: nextCaret });
+    });
+  };
+
+  const onFeatherEditorKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (featherCompletions.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setFeatherCompletionIndex((index) => (index + 1) % featherCompletions.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setFeatherCompletionIndex((index) => (index - 1 + featherCompletions.length) % featherCompletions.length);
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        acceptFeatherCompletion(activeFeatherCompletion);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setFeatherCompletionIndex(0);
+        return;
+      }
+    }
+
+    if (event.key !== 'Tab' || !activeBlueprint) return;
+    event.preventDefault();
+    const target = event.currentTarget;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    const indent = '    ';
+    const next = `${featherSource.slice(0, start)}${indent}${featherSource.slice(start)}`;
+    updateFeatherSource(next);
+    window.requestAnimationFrame(() => {
+      target.selectionStart = start + indent.length;
+      target.selectionEnd = end + indent.length;
+    });
+  };
+
+  useEffect(() => {
+    setFeatherCompletionIndex(0);
+  }, [featherSelection.start, featherSource]);
+
+  useEffect(() => {
+    if (!activeBlueprint || activeBlueprint.featherSource === undefined) {
+      setScriptSyncMessage(null);
+      return;
+    }
+    if (featherErrorCount > 0) {
+      setScriptSyncMessage({ kind: 'error', text: 'Not synced' });
+      return;
+    }
+
+    setScriptSyncMessage({ kind: 'pending', text: 'Syncing' });
+    const timeout = window.setTimeout(() => {
+      const result = syncBlueprintFeatherSource(activeBlueprint.id, featherSource);
+      const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
+      const warnings = result.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length;
+      if (!result.ok || errors) {
+        setScriptSyncMessage({ kind: 'error', text: `${errors || 1} error${errors === 1 ? '' : 's'}` });
+        return;
+      }
+      setScriptSyncMessage({
+        kind: 'success',
+        text: warnings ? `Synced with ${warnings} warning${warnings === 1 ? '' : 's'}` : 'Synced',
+      });
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [activeBlueprint?.id, activeBlueprint?.featherSource, featherErrorCount, featherSource, syncBlueprintFeatherSource]);
 
   // Exec-flow visualization (Unreal-style): while Play runs with this editor open, the runtime marks
   // every exec node it runs (see runtime/execTrace); we poll that trace and pulse the nodes + wires
@@ -2505,6 +2712,28 @@ export function VisualScriptingPanel() {
         <div>
           <span className="eyebrow">Reusable Blueprint</span>
           <h2>{activeBlueprint.name}</h2>
+          <div className="scripting-mode-toggle" role="tablist" aria-label="Scripting mode">
+            <button
+              className={editorMode === 'blueprint' ? 'active' : ''}
+              type="button"
+              role="tab"
+              aria-selected={editorMode === 'blueprint'}
+              onClick={() => setEditorMode('blueprint')}
+            >
+              <Waypoints size={13} aria-hidden />
+              <span>Blueprint</span>
+            </button>
+            <button
+              className={editorMode === 'script' ? 'active' : ''}
+              type="button"
+              role="tab"
+              aria-selected={editorMode === 'script'}
+              onClick={() => setEditorMode('script')}
+            >
+              <Code2 size={13} aria-hidden />
+              <span>Script</span>
+            </button>
+          </div>
         </div>
         <div className="panel-actions graph-actions">
           <span className="blueprint-instances">
@@ -2523,40 +2752,201 @@ export function VisualScriptingPanel() {
               </option>
             ))}
           </select>
-          <button
-            className="icon-button compact"
-            title="Auto-arrange nodes on a grid"
-            onClick={autoLayoutActiveGraph}
-          >
-            <LayoutGrid size={14} aria-hidden />
-          </button>
+          {editorMode === 'blueprint' && (
+            <button
+              className="icon-button compact"
+              title="Auto-arrange nodes on a grid"
+              onClick={autoLayoutActiveGraph}
+            >
+              <LayoutGrid size={14} aria-hidden />
+            </button>
+          )}
           <button className="icon-button compact" title="Create reusable Blueprint" onClick={createBlueprint}>
             <Plus size={14} aria-hidden />
           </button>
         </div>
       </div>
 
-      <div className="scripting-body">
-        <aside className="node-palette">
-          <div className="blueprint-card graph-overview-card">
-            <div>
-              <strong>{activeBlueprint.name}</strong>
-              <span>{activeBlueprint.description}</span>
+      {editorMode === 'script' ? (
+        <div className="feather-script-body">
+          <aside className="node-palette feather-script-sidebar">
+            <div className="blueprint-card graph-overview-card">
+              <div>
+                <strong>{activeBlueprint.name}</strong>
+                <span>{activeBlueprint.description}</span>
+              </div>
+              <div className="graph-overview-stats">
+                <span>{graph.nodes.length} nodes</span>
+                <span>{(activeBlueprint.variables ?? []).length} vars</span>
+              </div>
             </div>
-            <div className="graph-overview-stats">
-              <span>{graph.nodes.length} nodes</span>
-              <span>{graph.edges.length} wires</span>
+            <section className="feather-symbols">
+              <h3>
+                <Code2 size={13} aria-hidden />
+                <span>Symbols</span>
+                <small>{(activeBlueprint.variables ?? []).length}</small>
+              </h3>
+              <div>
+                {(activeBlueprint.variables ?? []).map((variable) => (
+                  <span key={variable.id} className="feather-symbol">
+                    <strong>{variable.name}</strong>
+                    <small>{variable.type}</small>
+                  </span>
+                ))}
+                {(activeBlueprint.variables ?? []).length === 0 && <span className="feather-symbol empty">No variables</span>}
+              </div>
+            </section>
+            <section className="feather-api">
+              <h3>
+                <Code2 size={13} aria-hidden />
+                <span>API</span>
+                <small>{FEATHER_SIDEBAR_API.length}</small>
+              </h3>
+              <div>
+                {FEATHER_SIDEBAR_API.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className="feather-api-entry"
+                    title={entry.description}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => insertFeatherSnippet(entry)}
+                  >
+                    <strong>{entry.signature}</strong>
+                    <small>{entry.description}</small>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="feather-diagnostics">
+              <h3>
+                <AlertTriangle size={13} aria-hidden />
+                <span>Diagnostics</span>
+                <small>{featherDiagnostics.length}</small>
+              </h3>
+              <div>
+                {featherDiagnostics.length === 0 ? (
+                  <span className="feather-diagnostic empty">No issues</span>
+                ) : (
+                  featherDiagnostics.slice(0, 8).map((diagnostic, index) => (
+                    <span
+                      key={`${diagnostic.line}:${diagnostic.column}:${diagnostic.message}:${index}`}
+                      className={`feather-diagnostic ${diagnostic.severity}`}
+                    >
+                      <strong>
+                        {diagnostic.line}:{diagnostic.column}
+                      </strong>
+                      <span>{diagnostic.message}</span>
+                    </span>
+                  ))
+                )}
+                {featherDiagnostics.length > 8 && <span className="feather-diagnostic empty">+{featherDiagnostics.length - 8} more</span>}
+              </div>
+            </section>
+          </aside>
+
+          <div className="feather-script-shell">
+            <div className="feather-script-toolbar">
+              <div className="feather-script-title">
+                <Code2 size={15} aria-hidden />
+                <span>{featherFileName(activeBlueprint.name)}</span>
+              </div>
+              <div className="panel-actions">
+                <span className={`feather-status${featherErrorCount ? ' has-errors' : ''}`}>
+                  {featherErrorCount ? <AlertTriangle size={13} aria-hidden /> : <CheckCircle2 size={13} aria-hidden />}
+                  <span>
+                    {featherErrorCount
+                      ? `${featherErrorCount} error${featherErrorCount === 1 ? '' : 's'}`
+                      : featherDiagnostics.length
+                        ? `${featherDiagnostics.length} warning${featherDiagnostics.length === 1 ? '' : 's'}`
+                        : 'Parsed'}
+                  </span>
+                </span>
+                {scriptSyncMessage && <span className={`feather-sync-message ${scriptSyncMessage.kind}`}>{scriptSyncMessage.text}</span>}
+                <button
+                  className="icon-button compact"
+                  title={scriptCopied ? 'Copied' : 'Copy FeatherScript'}
+                  onClick={() => void copyFeatherScript()}
+                  disabled={!featherSource}
+                >
+                  <Copy size={14} aria-hidden />
+                </button>
+                <button
+                  className="icon-button compact"
+                  title="Reset from Blueprint graph"
+                  onClick={() => updateBlueprintFeatherSource(activeBlueprintId, undefined)}
+                  disabled={activeBlueprint.featherSource === undefined}
+                >
+                  <RotateCcw size={14} aria-hidden />
+                </button>
+                <button
+                  className="icon-button compact"
+                  title="Download FeatherScript"
+                  onClick={downloadFeatherScript}
+                  disabled={!featherSource}
+                >
+                  <Download size={14} aria-hidden />
+                </button>
+              </div>
             </div>
-          </div>
-          <label className="search-field palette-search">
-            <Search size={14} aria-hidden />
-            <input
-              value={paletteFilter}
-              onChange={(event) => setPaletteFilter(event.target.value)}
-              placeholder="Search nodes…"
+            <textarea
+              ref={featherEditorRef}
+              className="feather-code feather-code-editor"
+              value={featherSource}
+              onChange={(event) => {
+                syncFeatherSelection(event.currentTarget);
+                updateFeatherSource(event.target.value);
+              }}
+              onClick={(event) => syncFeatherSelection(event.currentTarget)}
+              onKeyDown={onFeatherEditorKeyDown}
+              onKeyUp={(event) => syncFeatherSelection(event.currentTarget)}
+              onSelect={(event) => syncFeatherSelection(event.currentTarget)}
               spellCheck={false}
+              aria-invalid={featherErrorCount > 0}
+              aria-label="FeatherScript source"
             />
-          </label>
+            {featherCompletions.length > 0 && (
+              <div className="feather-completions" role="listbox" aria-label="FeatherScript completions">
+                {featherCompletions.map((completion, index) => (
+                  <button
+                    key={`${completion.id}:${completion.insertText}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === featherCompletionIndex}
+                    className={index === featherCompletionIndex ? 'active' : ''}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => acceptFeatherCompletion(completion)}
+                  >
+                    <strong>{completion.signature}</strong>
+                    <small>{completion.description}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="scripting-body">
+          <aside className="node-palette">
+            <div className="blueprint-card graph-overview-card">
+              <div>
+                <strong>{activeBlueprint.name}</strong>
+                <span>{activeBlueprint.description}</span>
+              </div>
+              <div className="graph-overview-stats">
+                <span>{graph.nodes.length} nodes</span>
+                <span>{graph.edges.length} wires</span>
+              </div>
+            </div>
+            <label className="search-field palette-search">
+              <Search size={14} aria-hidden />
+              <input
+                value={paletteFilter}
+                onChange={(event) => setPaletteFilter(event.target.value)}
+                placeholder="Search nodes…"
+                spellCheck={false}
+              />
+            </label>
           {filteredNodeGroups.length === 0 && (
             <div className="empty-state compact">No nodes match “{paletteFilter}”</div>
           )}
@@ -2654,6 +3044,7 @@ export function VisualScriptingPanel() {
         </div>
         <NodeInspector node={selectedGraphNode} />
       </div>
+      )}
 
       {searchMenu && (
         <NodeSearchMenu

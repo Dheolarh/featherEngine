@@ -132,6 +132,8 @@ export interface ScriptBlueprint {
   folderId?: string;
   /** Typed per-instance variables this blueprint declares (each object running it gets its own copy). */
   variables?: BlueprintVariable[];
+  /** Editable FeatherScript source. Undefined means the Script tab mirrors the visual graph. */
+  featherSource?: string;
   createdAt: number;
 }
 

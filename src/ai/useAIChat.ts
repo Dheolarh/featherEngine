@@ -51,6 +51,10 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Inspected object';
     case 'inspect_blueprint':
       return 'Inspected blueprint';
+    case 'get_blueprint_script':
+      return 'Read blueprint script';
+    case 'set_blueprint_script':
+      return 'Wrote blueprint script';
     case 'inspect_animator_controller':
       return 'Inspected controller';
     case 'list_scenes':

@@ -30,6 +30,7 @@ import type {
   WaterVolumeComponent,
 } from '../types';
 import { buildSceneSnapshot, type SceneSnapshotDetail } from './systemPrompt';
+import { graphToFeatherScript } from '../scripting/featherScript';
 import { createThirdPersonTemplate } from '../project/thirdPersonTemplate';
 import { createFirstPersonTemplate } from '../project/firstPersonTemplate';
 import { createFilmModeTemplate } from '../project/filmModeTemplate';
@@ -726,6 +727,42 @@ const rawEngineTools = {
       const found = findBlueprintGraph(blueprintId);
       if (!found) return `No blueprint with id ${blueprintId}.`;
       return JSON.stringify({ blueprint: found.blueprint, nodes: found.graph.nodes, edges: found.graph.edges });
+    },
+  }),
+
+  get_blueprint_script: tool({
+    description:
+      "Read a blueprint's logic as FeatherScript — the text view of the same node graph (Python-like: `on start:` / `on update(dt):` handlers, `if cond:` blocks, calls like self.jump()). MUCH easier to read and reason about than inspect_blueprint's raw nodes/edges. PREFER get_blueprint_script + set_blueprint_script over add_graph_node/connect_graph_nodes when writing or rewriting whole behaviors.",
+    inputSchema: z.object({ blueprintId: z.string() }),
+    execute: async ({ blueprintId }) => {
+      const found = findBlueprintGraph(blueprintId);
+      if (!found) return `No blueprint with id ${blueprintId}.`;
+      const state = store();
+      return graphToFeatherScript({
+        blueprint: found.blueprint,
+        graph: found.graph,
+        variables: state.variables,
+        blueprints: state.blueprints,
+      });
+    },
+  }),
+
+  set_blueprint_script: tool({
+    description:
+      'REPLACE a blueprint\'s entire logic by compiling FeatherScript source into its node graph (the fastest way to author behavior — one call instead of many add_graph_node/connect calls). See the FeatherScript section of the engine guide for the language. The source must be the COMPLETE script (start from get_blueprint_script when editing). Compile errors reject the change and are returned; warnings mean some lines became comment nodes — rewrite those lines onto the supported surface. Returns the resulting node/edge counts.',
+    inputSchema: z.object({
+      blueprintId: z.string(),
+      source: z.string().describe('Complete FeatherScript source, e.g. "blueprint Guard\\n\\non update(dt):\\n    if (AI.distance_to_player() < 5):\\n        self.jump()"'),
+    }),
+    execute: async ({ blueprintId, source }) => {
+      if (!findBlueprintGraph(blueprintId)) return `No blueprint with id ${blueprintId}.`;
+      const result = store().applyBlueprintFeatherSource(blueprintId, source);
+      const notes = result.diagnostics
+        .map((diagnostic) => `${diagnostic.severity} L${diagnostic.line}:${diagnostic.column} ${diagnostic.message}`)
+        .join('\n');
+      if (!result.ok) return `Script rejected — fix these and retry:\n${notes}`;
+      const summary = `Applied script to blueprint ${blueprintId}: ${result.graph?.nodes.length ?? 0} nodes, ${result.graph?.edges.length ?? 0} edges.`;
+      return notes ? `${summary}\nWarnings (these lines were NOT compiled into behavior):\n${notes}` : summary;
     },
   }),
 
