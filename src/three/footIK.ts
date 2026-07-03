@@ -3,18 +3,21 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { isRagdoll } from '../runtime/ragdollState';
+import { getActivePhysics } from '../runtime/physicsWorld';
 import { createTerrainHeightSampler } from '../terrain/terrain';
 
 /**
- * Terrain foot IK for skinned characters.
+ * Foot IK for skinned characters.
  *
- * After the animation mixer poses the skeleton each frame, this nudges each foot down onto the terrain
+ * After the animation mixer poses the skeleton each frame, this nudges each foot down onto the ground
  * surface beneath it (analytic two-bone IK on the thigh→calf→foot chain) so a character's feet plant on
- * uneven ground instead of floating above a slope or sinking into a rise. It is deliberately conservative
- * and self-disabling — it only runs in Play, only while the character is grounded, only over terrain, and
- * only adjusts feet that are already near the ground (planted), leaving mid-stride lifted feet untouched.
- * If the rig has no detectable foot bones it does nothing, so it can never make a character look worse than
- * the raw animation.
+ * uneven ground instead of floating above a slope or sinking into a rise. The ground is found via the
+ * procedural terrain heightfield if present, otherwise a downward physics raycast — so feet also plant on
+ * ordinary LEVEL GEOMETRY (mesh floors, stairs, ramps, platforms), not just terrain. It is deliberately
+ * conservative and self-disabling — it only runs in Play, only while the character is grounded, and only
+ * adjusts feet that are already near the ground (planted), leaving mid-stride lifted feet untouched. If the
+ * rig has no detectable foot bones it does nothing, so it can never make a character look worse than the raw
+ * animation.
  */
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -54,6 +57,9 @@ const axis = new THREE.Vector3();
 const rootWorld = new THREE.Vector3();
 const footWorld = new THREE.Vector3();
 const target = new THREE.Vector3();
+/** Reused exclude-set for the ground raycast (never hit the character's own collider). */
+const footIKExclude = new Set<string>();
+const DOWN: [number, number, number] = [0, -1, 0];
 const qParent = new THREE.Quaternion();
 const qCur = new THREE.Quaternion();
 const qDelta = new THREE.Quaternion();
@@ -132,13 +138,25 @@ export function useFootIK(model: THREE.Object3D, registerId?: string) {
     const objects = selectActiveObjects(state);
     // Filter terrain objects once, then memoize the body + per-foot height queries this frame.
     const sampleTerrainHeight = createTerrainHeightSampler(objects);
+    const phys = getActivePhysics();
+    footIKExclude.clear();
+    footIKExclude.add(registerId); // the downward ray must never hit the character's own collider
+    // Ground height under (x,z): the terrain heightfield if present, else a downward physics raycast so
+    // feet also plant on mesh floors / stairs / ramps / platforms. `fromY` is a point at/above the surface.
+    const groundAt = (x: number, z: number, fromY: number): number | undefined => {
+      const t = sampleTerrainHeight(x, z);
+      if (t !== undefined) return t;
+      if (!phys) return undefined;
+      const hit = phys.castRay([x, fromY + 0.7, z], DOWN, 1.8, footIKExclude);
+      return hit ? fromY + 0.7 - hit.distance : undefined;
+    };
     model.getWorldPosition(rootWorld);
-    const bodyFloor = sampleTerrainHeight(rootWorld.x, rootWorld.z);
-    if (bodyFloor === undefined) return; // no terrain under this character → leave the animation as-authored
+    const bodyFloor = groundAt(rootWorld.x, rootWorld.z, rootWorld.y);
+    if (bodyFloor === undefined) return; // no ground found under this character → leave the animation as-authored
 
     for (const leg of legs) {
       leg.foot.getWorldPosition(footWorld);
-      const groundUnder = sampleTerrainHeight(footWorld.x, footWorld.z);
+      const groundUnder = groundAt(footWorld.x, footWorld.z, footWorld.y);
       if (groundUnder === undefined) continue;
       const clearance = footWorld.y - bodyFloor; // how high this foot sits above the body's ground in the pose
       if (clearance > 0.5) continue; // a lifted, mid-stride foot — don't yank it onto the ground

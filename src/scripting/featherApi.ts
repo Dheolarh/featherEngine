@@ -149,6 +149,7 @@ export const FEATHER_API_ENTRIES: FeatherApiEntry[] = [
   call('call.spawn_object', 'spawn_object(kind)', 'spawn_object("cube")', 'Spawns a primitive at the owner.', 'action.spawnObject', ['create']),
   call('call.spawn_prefab', 'spawn_prefab(prefabId, location)', 'spawn_prefab("prefab-id", location: self.position)', 'Instantiates a prefab during Play.', 'action.spawnPrefab', ['create', 'wave']),
   call('call.explode', 'explode(location, radius, damage)', 'explode(location: self.position, radius: 6, damage: 40)', 'Detonates a physics blast with damage.', 'action.explode', ['blast', 'grenade']),
+  call('call.spawn_decal', 'spawn_decal(location, normal, kind, size)', 'spawn_decal(location: self.position, normal: [0, 1, 0], kind: "bullet", size: 0.3)', 'Stamps a bullet-hole/blood/scorch mark on a surface (wire a hit Point + Normal).', 'action.spawnDecal', ['vfx', 'decal']),
   call('call.set_visible', 'set_visible(target, bool)', 'set_visible(self, false)', 'Shows/hides an actor mesh.', 'action.setVisible', ['hide']),
   call('call.set_joint_motor', 'set_joint_motor(target, position/velocity)', 'set_joint_motor(self, position: 1.57)', 'Drives a hinge/slider joint: position servo (doors) or constant velocity (windmills).', 'action.setJointMotor', ['physics', 'door', 'motor']),
   call('call.set_active', 'set_active(target, bool)', 'set_active(self, false)', 'Fully enables/disables an actor.', 'action.setActive', ['disable']),

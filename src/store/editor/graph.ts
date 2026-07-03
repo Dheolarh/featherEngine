@@ -285,6 +285,7 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Spawn Particle System': 'action.spawnParticleSystem',
   'Camera Shake': 'action.cameraShake',
   'Screen Flash': 'action.screenFlash',
+  'Spawn Decal': 'action.spawnDecal',
   Explode: 'action.explode',
   'Move To': 'action.moveTo',
   Fracture: 'action.fractureObject',
@@ -569,6 +570,12 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
         label: `Screen Flash ${Number(data.flashAmount ?? 0.7)}`,
         description:
           'Pops a full-screen color flash that fades in ~0.3s — muzzle/explosion bloom, an ability blink, a damage blink. Amount = peak opacity 0..1 (wire a number into "amount"); set flashColor (white default, hot orange for blasts, red for damage). Explosions already add a flash automatically, so reserve this for scripted moments.',
+      };
+    case 'action.spawnDecal':
+      return {
+        label: `Spawn Decal (${String(data.decalKind ?? 'bullet')})`,
+        description:
+          'Stamps a persistent surface mark — a bullet hole, blood splat, or scorch/burn — onto whatever a shot hit. Wire Location + Normal (typically from a Raycast or Sphere Cast hit: its Point → Location, Normal → Normal); unwired it uses the owner\'s position facing up. Fields: kind (bullet/blood/scorch), size (half-width in world units), life (seconds before it fades; 0 = permanent), color (optional hex tint). Marks are pooled and the oldest recycle after a cap, so it\'s cheap to spray. Weapon/projectile impacts already drop bullet-hole/blood decals automatically — use this node for scripted marks (footprints, paint, magic runes).',
       };
     case 'action.explode':
       return {
@@ -1024,6 +1031,12 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
     if (typeof normalized.explodeRadius !== 'number') normalized.explodeRadius = 5;
     if (typeof normalized.explodeForce !== 'number') normalized.explodeForce = 16;
     if (typeof normalized.explodeDamage !== 'number') normalized.explodeDamage = 50;
+  }
+
+  if (nodeKind === 'action.spawnDecal') {
+    if (normalized.decalKind !== 'bullet' && normalized.decalKind !== 'blood' && normalized.decalKind !== 'scorch') normalized.decalKind = 'bullet';
+    if (typeof normalized.decalSize !== 'number') normalized.decalSize = 0.4;
+    if (typeof normalized.decalLife !== 'number') normalized.decalLife = 0;
   }
 
   if (nodeKind === 'action.applyTorque') {

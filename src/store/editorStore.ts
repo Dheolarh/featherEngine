@@ -33,6 +33,7 @@ import {
   type ProjectGraph,
   type ProjectileComponent,
   type LightComponent,
+  type ReflectionProbeComponent,
   type ParticleSystemComponent,
   type ParticleConfig,
   type ParticleSystemDefinition,
@@ -94,6 +95,7 @@ import {
 } from '../types';
 import { getActivePhysics, startPhysics, stopPhysics, type PhysicsContactEvent, type VehicleWheelState } from '../runtime/physicsWorld';
 import { pushExplosion, clearExplosions } from '../runtime/explosionBus';
+import { addDecal, clearDecals, type DecalKind } from '../runtime/decalBus';
 import { cameraPitch as mouseCameraPitch, cameraYaw as mouseCameraYaw } from '../runtime/mouseLook';
 import { gamepadInput } from '../runtime/gamepadInput';
 import { markExec } from '../runtime/execTrace';
@@ -135,6 +137,7 @@ import {
   defaultCloth,
   defaultJoint,
   defaultLight,
+  defaultReflectionProbe,
   defaultPhysics,
   defaultRagdollSettings,
   defaultRenderSettings,
@@ -284,6 +287,7 @@ const indexTableRowsByKey = createArrayIndexer((r: DataAssetRow) => r.key);
 export {
   defaultCharacter,
   defaultLight,
+  defaultReflectionProbe,
   defaultRagdollSettings,
   defaultRenderSettings,
   defaultVehicle,
@@ -675,6 +679,12 @@ interface EditorState {
   updateRenderSettings: (patch: Partial<RenderSettings>) => void;
   /** Configure a `kind: 'light'` object's light (type/color/intensity/distance/angle). Creates the component if absent. */
   setObjectLight: (objectId: string, patch: Partial<LightComponent>) => void;
+  /** Add/patch a local reflection probe on an object (captures a cubemap for nearby reflective surfaces). Creates it if absent. */
+  setReflectionProbe: (objectId: string, patch: Partial<ReflectionProbeComponent>) => void;
+  /** Force a static reflection probe to re-capture its cubemap (bumps bakeNonce). */
+  rebakeReflectionProbe: (objectId: string) => void;
+  /** Remove an object's reflection probe. */
+  removeReflectionProbe: (objectId: string) => void;
   /** Add an authored particle emitter to an object (optionally seeded from a preset). Creates the component if absent. */
   addParticles: (objectId: string, preset?: ParticlePresetId) => void;
   /** Patch an object's particle emitter (no-op if it has none). */
@@ -2692,6 +2702,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             ? { ...object, kind: 'light', light: { ...defaultLight(), ...object.light, ...stripUndefined(patch) } }
             : object,
         ),
+      ),
+    ),
+  setReflectionProbe: (objectId, patch) =>
+    set((state) =>
+      mapActiveSceneObjects(state, (objects) =>
+        objects.map((object) =>
+          object.id === objectId
+            ? { ...object, reflectionProbe: { ...defaultReflectionProbe(), ...object.reflectionProbe, ...stripUndefined(patch) } }
+            : object,
+        ),
+      ),
+    ),
+  rebakeReflectionProbe: (objectId) =>
+    set((state) =>
+      mapActiveSceneObjects(state, (objects) =>
+        objects.map((object) =>
+          object.id === objectId && object.reflectionProbe
+            ? { ...object, reflectionProbe: { ...object.reflectionProbe, bakeNonce: (object.reflectionProbe.bakeNonce ?? 0) + 1 } }
+            : object,
+        ),
+      ),
+    ),
+  removeReflectionProbe: (objectId) =>
+    set((state) =>
+      mapActiveSceneObjects(state, (objects) =>
+        objects.map((object) => (object.id === objectId ? { ...object, reflectionProbe: undefined } : object)),
       ),
     ),
   addParticles: (objectId, preset) =>
@@ -5461,6 +5497,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Tear the physics world down so the next play session starts clean.
       stopPhysics();
       clearExplosions();
+      clearDecals();
       clearTransformBuffer();
       clearPerception();
       clearVehicleDents();
@@ -7576,6 +7613,27 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               });
             }
 
+            if (node.data.nodeKind === 'action.spawnDecal') {
+              // Stamp a surface mark (bullet hole / blood / scorch) at a wired Location facing a wired Normal
+              // (e.g. from a Raycast/Sphere Cast hit), else the owner's position facing up.
+              const loc = valueInput(node, 'location');
+              let pos: Vector3Tuple;
+              if (Array.isArray(loc) && loc.length === 3) {
+                pos = [Number(loc[0]) || 0, Number(loc[1]) || 0, Number(loc[2]) || 0];
+              } else {
+                const targetId = resolveTarget(node.data.targetObjectId);
+                const targetObj = targetId && targetId !== object.id ? activeObjectById.get(targetId) : null;
+                pos = targetObj ? ([...targetObj.transform.position] as Vector3Tuple) : [position[0], position[1], position[2]];
+              }
+              const nrm = valueInput(node, 'normal');
+              const n: Vector3Tuple = Array.isArray(nrm) && nrm.length === 3 ? [Number(nrm[0]) || 0, Number(nrm[1]) || 0, Number(nrm[2]) || 0] : [0, 1, 0];
+              const kind = (node.data.decalKind as DecalKind) ?? 'bullet';
+              const size = Math.max(0.02, toNumber(valueInput(node, 'size', Number(node.data.decalSize ?? 0.4))));
+              const lifeSec = Number(node.data.decalLife ?? 0);
+              const color = typeof node.data.decalColor === 'string' && node.data.decalColor ? node.data.decalColor : null;
+              addDecal(pos[0], pos[1], pos[2], n[0], n[1], n[2], kind, size, color, lifeSec > 0 ? lifeSec : Infinity);
+            }
+
             if (node.data.nodeKind === 'action.setTimeScale') {
               // Clamped 0..4: 0 pauses (tick keeps running so the graph can unpause), <1 slow-mo, >1 fast-forward.
               pendingTimeScale = Math.min(4, Math.max(0, toNumber(valueInput(node, 'scale', Number(node.data.numberValue ?? 1)))));
@@ -8109,6 +8167,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                       }
                     }
                     spawned.push(makeImpactObject(hitPoint, setup.color));
+                    // Leave a mark on the surface: blood on a living target, a bullet hole on a wall/prop.
+                    // castRay gives no surface normal, so face the decal back down the shot (fine for flat hits).
+                    {
+                      const bled = target.variables?.health !== undefined || nextObjectVariables[hit.objectId]?.health !== undefined;
+                      addDecal(hitPoint[0], hitPoint[1], hitPoint[2], -dirNorm[0], -dirNorm[1], -dirNorm[2], bled ? 'blood' : 'bullet', bled ? 0.5 : 0.28);
+                    }
                     if (setup.debug) prints.push(`Hitscan shot hit ${target.name}: ${target.variables?.health !== undefined ? `-${damage} hp` : 'impact'}`);
                   }
                 } else if (setup.debug) {
@@ -10423,7 +10487,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         if (proj.explosive) detonate();
         // A bullet that struck a living thing (has health) throws a BLOOD-red burst; a wall/prop throws
         // the neutral warm spark. Reads as a real hit-vs-miss tell, the way AAA shooters do.
-        else spawned.push(makeImpactObject(obj.transform.position, hasHealth ? '#a01515' : '#ffd27f'));
+        else {
+          spawned.push(makeImpactObject(obj.transform.position, hasHealth ? '#a01515' : '#ffd27f'));
+          // ...and a persistent surface mark, faced back down the projectile's travel direction.
+          const vsp = Math.hypot(proj.velocity[0], proj.velocity[1], proj.velocity[2]) || 1;
+          const p = obj.transform.position;
+          addDecal(p[0], p[1], p[2], -proj.velocity[0] / vsp, -proj.velocity[1] / vsp, -proj.velocity[2] / vsp, hasHealth ? 'blood' : 'bullet', hasHealth ? 0.5 : 0.28);
+        }
         destroyedIds.add(obj.id);
       }
 

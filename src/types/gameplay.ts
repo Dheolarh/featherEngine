@@ -2,7 +2,7 @@ import type { GraphValue, SceneObjectKind, Vector3Tuple } from './common';
 import type { MeshRendererComponent, TerrainComponent, TransformComponent } from './geometry';
 import type { AnimatorComponent, CharacterControllerComponent } from './animation';
 import type { CableComponent, ClothComponent, JointComponent, PhysicsComponent, WaterVolumeComponent } from './physics';
-import type { AttachmentComponent, LightComponent, ScriptGraphComponent, UIComponent, ViewModelComponent } from './environment';
+import type { AttachmentComponent, LightComponent, ReflectionProbeComponent, ScriptGraphComponent, UIComponent, ViewModelComponent } from './environment';
 import type { VehicleComponent } from './vehicle';
 
 export interface SceneObject {
@@ -41,6 +41,8 @@ export interface SceneObject {
   particles?: ParticleSystemComponent;
   /** Lighting for a `kind: 'light'` object — configurable point / spot / directional light. */
   light?: LightComponent;
+  /** Local reflection probe — captures a cubemap here so nearby reflective surfaces show real local reflections. */
+  reflectionProbe?: ReflectionProbeComponent;
   /** Weapon/item inventory — drives the on-screen slot bar and click-to-equip (spawn attached + montage). */
   inventory?: InventoryComponent;
   /** Set on EVERY object stamped from a prefab — the source prefab's id. Lets the editor find all
@@ -203,6 +205,11 @@ export interface ParticleConfig {
   textureAssetId?: string;
   /** Emit a soft point-light pulse tinted to startColor (nice for fire/explosions). */
   light?: boolean;
+  /** GPU MODE: simulate every particle analytically in the vertex shader from one time uniform instead of
+   *  on the CPU. Near-zero CPU cost, so maxParticles can go far higher (10k–100k) for dense fire/smoke/
+   *  magic/snow/waterfalls. It's a CONTINUOUS looping fountain in the emitter's LOCAL space — it ignores
+   *  discrete bursts (Burst Particles) and worldSpace. Leave off for interactive/burst effects. */
+  gpu?: boolean;
 }
 
 /**

@@ -417,6 +417,7 @@ const NODE_LABELS = [
   'Random',
   'Load Scene',
   'Camera Shake',
+  'Spawn Decal',
   'Explode',
   'Set Quality',
   'Move To',
@@ -557,6 +558,7 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   Random: 'Values',
   'Load Scene': 'Runtime',
   'Camera Shake': 'Runtime',
+  'Spawn Decal': 'Runtime',
   Explode: 'Physics',
   'Set Quality': 'Runtime',
   'Move To': 'Runtime',
@@ -1603,7 +1605,8 @@ const rawEngineTools = {
       looping: z.boolean().optional(),
       rate: z.number().optional().describe('Particles per second while looping.'),
       burst: z.number().optional().describe('Particles per one-shot burst (non-looping / Burst / Spawn nodes).'),
-      maxParticles: z.number().optional().describe('Pool cap (1–4000).'),
+      maxParticles: z.number().optional().describe('Pool cap. CPU mode 1–4000; GPU mode up to 100000.'),
+      gpu: z.boolean().optional().describe('GPU mode: simulate every particle analytically in the vertex shader (near-zero CPU cost), so maxParticles can reach 10k–100k for dense fire/smoke/magic/snow/waterfalls/dust storms. It is a CONTINUOUS looping fountain in LOCAL space that ignores discrete bursts. Leave off for interactive/burst effects (bullet impacts, one-shot explosions).'),
       shape: z.enum(['point', 'sphere', 'hemisphere', 'cone', 'box', 'disc']).optional(),
       shapeRadius: z.number().optional(),
       coneAngle: z.number().optional().describe('Spread half-angle in degrees.'),
@@ -1688,15 +1691,21 @@ const rawEngineTools = {
 
   set_animator: tool({
     description:
-      'Play or stop a skeletal animation on a rigged object. animationId must belong to the same skeleton; speed/loop are optional.',
+      'Play or stop a skeletal animation on a rigged object, and configure AIM / LOOK-AT IK. animationId must belong to the same skeleton; speed/loop are optional. Aim IK (aimEnabled) rotates the head to track a target on top of the animation — great for enemies that watch/aim at the player or NPCs whose eyes follow you.',
     inputSchema: z.object({
       objectId: z.string(),
       enabled: z.boolean().optional(),
       animationId: z.string().optional().describe('Animation asset id, or empty to clear (bind pose).'),
       speed: z.number().optional(),
       loop: z.boolean().optional(),
+      aimEnabled: z.boolean().optional().describe('Turn on head look-at/aim IK (additive on top of the clip).'),
+      aimTargetObjectId: z.string().optional().describe('What to track: an object id, "$player" (default), or "$camera".'),
+      aimBone: z.string().optional().describe('Bone to rotate; empty auto-detects the head (else neck).'),
+      aimAxis: z.enum(['z', '-z', 'x', '-x', 'y', '-y']).optional().describe('Which LOCAL axis of the bone points out of the face (glTF usually +z, the default; flip if the head aims the wrong way).'),
+      aimWeight: z.number().optional().describe('0..1 blend between the animated pose and full tracking (default 1).'),
+      aimMaxAngle: z.number().optional().describe('Max tracking cone in degrees so the head never snaps unnaturally (default 80).'),
     }),
-    execute: async ({ objectId, enabled, animationId, speed, loop }) => {
+    execute: async ({ objectId, enabled, animationId, speed, loop, aimEnabled, aimTargetObjectId, aimBone, aimAxis, aimWeight, aimMaxAngle }) => {
       const object = findObject(objectId);
       if (!object) return `No object with id ${objectId}.`;
       if (animationId && !store().animations.some((anim) => anim.id === animationId)) {
@@ -1712,6 +1721,12 @@ const rawEngineTools = {
       }
       if (speed !== undefined) patch.speed = speed;
       if (loop !== undefined) patch.loop = loop;
+      if (aimEnabled !== undefined) patch.aimEnabled = aimEnabled;
+      if (aimTargetObjectId !== undefined) patch.aimTargetObjectId = aimTargetObjectId || undefined;
+      if (aimBone !== undefined) patch.aimBone = aimBone || undefined;
+      if (aimAxis !== undefined) patch.aimAxis = aimAxis;
+      if (aimWeight !== undefined) patch.aimWeight = aimWeight;
+      if (aimMaxAngle !== undefined) patch.aimMaxAngle = aimMaxAngle;
       if (Object.keys(patch).length) store().updateAnimator(objectId, patch);
       return `Updated animator on ${objectId}.`;
     },
@@ -3522,6 +3537,29 @@ const rawEngineTools = {
     },
   }),
 
+  set_reflection_probe: tool({
+    description:
+      'Add or configure a LOCAL reflection probe on an object (Unity Reflection Probe / Unreal Sphere Reflection Capture). It captures a cubemap of the surroundings at the object\'s position and feeds it as the reflection/environment map for every metallic/glossy mesh within `radius` — so mirrors, polished floors, chrome, glass, and cars reflect their REAL local surroundings (room walls, nearby props) instead of only the single global scene sky. Nearest probe wins where several overlap. Place a probe in the middle of each reflective area (a room, a showroom, a puddle) and set radius to cover it. Use enabled:false to remove it. Default refresh is "static" (baked once — near-free at runtime); use "realtime" only when the surroundings move.',
+    inputSchema: z.object({
+      objectId: z.string(),
+      enabled: z.boolean().optional().describe('false removes the probe from the object.'),
+      radius: z.number().optional().describe('Influence radius in world units — meshes within this sphere reflect this probe. Cover the reflective area.'),
+      resolution: z.number().optional().describe('Cubemap face resolution: 128 (fast), 256 (balanced, default), or 512 (sharp).'),
+      intensity: z.number().optional().describe('Reflection strength multiplier (~0.5–2, default 1).'),
+      refresh: z.enum(['static', 'realtime']).optional().describe('static = bake once (default, cheap); realtime = re-capture continuously (for moving surroundings, costs a scene re-render).'),
+      giIntensity: z.number().optional().describe('Diffuse GI bounce strength (0 = off, default). > 0 turns the captured environment into soft SCENE-WIDE ambient bounce light (a red room tints objects red) — use one GI probe per area.'),
+    }),
+    execute: async ({ objectId, enabled, radius, resolution, intensity, refresh, giIntensity }) => {
+      if (!findObject(objectId)) return `No object with id ${objectId}.`;
+      if (enabled === false) {
+        store().removeReflectionProbe(objectId);
+        return `Removed reflection probe from ${objectId}.`;
+      }
+      store().setReflectionProbe(objectId, { enabled: true, radius, resolution, intensity, refresh, giIntensity });
+      return `Configured reflection probe on ${objectId}${radius ? ` (radius ${radius})` : ''}.`;
+    },
+  }),
+
   set_render_settings: tool({
     description:
       'Set project-wide bloom/vignette post-processing + the GTA-style minimap/radar, used in Play and export. The radar draws the player (or driven car) at center with building footprints (objects with a `minimapShape` instance var) + colored blips (objects with a `minimapBlip` color var) + health/armor arcs + a cash readout from the player\'s health/maxHealth/armor/money instance vars.',
@@ -4123,6 +4161,10 @@ const rawEngineTools = {
       explodeRadius: z.number().optional().describe('Explode: blast radius in world units.'),
       explodeForce: z.number().optional().describe('Explode: outward physics impulse that flings nearby dynamic bodies (0 = damage/FX only).'),
       explodeDamage: z.number().optional().describe('Explode: HP dealt to objects with a health var inside the radius.'),
+      decalKind: z.enum(['bullet', 'blood', 'scorch']).optional().describe('Spawn Decal: mark type — bullet hole, blood splat, or scorch/burn.'),
+      decalSize: z.number().optional().describe('Spawn Decal: half-width in world units (~0.2–0.6 for bullet holes).'),
+      decalLife: z.number().optional().describe('Spawn Decal: seconds before it fades (0 = permanent, recycled by the pool after a cap).'),
+      decalColor: z.string().optional().describe('Spawn Decal: optional hex tint multiplied over the preset (white = preset default).'),
       startingHealth: z.number().optional().describe('On Receive Damage: give the owning object this HP pool (dies at 0) without a manual health var. 0 = react-only (never dies).'),
       qualityLevel: z.enum(['Low', 'Medium', 'High', 'Epic']).optional().describe('Set Quality: scalability preset to apply at runtime.'),
       damageAmount: z.number().optional().describe('Apply Damage: HP to subtract from the target\'s health variable. Default 10. Use targetObjectId ($self/$player/$trigger/$cast or an id) to pick who takes it.'),
@@ -4194,6 +4236,10 @@ const rawEngineTools = {
       explodeRadius,
       explodeForce,
       explodeDamage,
+      decalKind,
+      decalSize,
+      decalLife,
+      decalColor,
       startingHealth,
       qualityLevel,
       damageAmount,
@@ -4271,6 +4317,10 @@ const rawEngineTools = {
         explodeRadius,
         explodeForce,
         explodeDamage,
+        decalKind,
+        decalSize,
+        decalLife,
+        decalColor,
         startingHealth,
         qualityLevel,
         damageAmount,
@@ -4366,6 +4416,10 @@ const rawEngineTools = {
       explodeRadius: z.number().optional().describe('Explode: blast radius.'),
       explodeForce: z.number().optional().describe('Explode: outward physics impulse.'),
       explodeDamage: z.number().optional().describe('Explode: radial damage.'),
+      decalKind: z.enum(['bullet', 'blood', 'scorch']).optional().describe('Spawn Decal: mark type.'),
+      decalSize: z.number().optional().describe('Spawn Decal: half-width in world units.'),
+      decalLife: z.number().optional().describe('Spawn Decal: fade seconds (0 = permanent).'),
+      decalColor: z.string().optional().describe('Spawn Decal: optional hex tint.'),
       startingHealth: z.number().optional().describe('On Receive Damage: HP pool for the owning object (dies at 0); 0 = react-only.'),
       qualityLevel: z.enum(['Low', 'Medium', 'High', 'Epic']).optional().describe('Set Quality: scalability preset to apply at runtime.'),
       damageAmount: z.number().optional().describe('Apply Damage: HP to subtract from the target\'s health variable.'),

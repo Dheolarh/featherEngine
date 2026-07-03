@@ -29,6 +29,21 @@ export interface AnimatorComponent {
   speed: number;
   /** Loop the clip, or play once and hold the final frame. */
   loop: boolean;
+  /** AIM / LOOK-AT IK: after the clip poses the skeleton, rotate the head (or a chosen bone) to track a
+   *  target — enemies that watch/aim at the player, NPCs that follow you with their eyes, turrets. Off by
+   *  default (purely additive to the animation). See the aim* fields below. */
+  aimEnabled?: boolean;
+  /** What to look at: an object id, "$player" (the camera-follow pawn, default), or "$camera". */
+  aimTargetObjectId?: string;
+  /** Bone to rotate. Empty = auto-detect (first head, else neck bone). */
+  aimBone?: string;
+  /** Which LOCAL axis of the aim bone points OUT OF THE FACE. glTF rigs are usually +Z (default); flip if
+   *  the head aims sideways/backwards. */
+  aimAxis?: 'z' | '-z' | 'x' | '-x' | 'y' | '-y';
+  /** Blend 0..1 between the animated pose and full tracking (default 1). */
+  aimWeight?: number;
+  /** Max tracking cone in degrees from the animated facing, so the head never snaps unnaturally (default 80). */
+  aimMaxAngle?: number;
 }
 
 /**

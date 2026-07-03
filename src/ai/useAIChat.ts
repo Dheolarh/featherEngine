@@ -259,6 +259,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return input.enabled === false ? 'Removed destructible' : 'Made destructible';
     case 'set_light':
       return `Configured ${String(input.type ?? '')} light`.replace('  ', ' ');
+    case 'set_reflection_probe':
+      return input.enabled === false ? 'Removed reflection probe' : 'Added reflection probe';
     case 'set_render_settings':
       return input.compressTextures !== undefined
         ? `Texture compression ${input.compressTextures ? 'on' : 'off'}`

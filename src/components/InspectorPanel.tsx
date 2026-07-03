@@ -2,13 +2,13 @@ import { ChevronRight, Link2, MousePointer2, Palette, Settings2, Unlink } from '
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useGLTF } from '@react-three/drei';
-import { defaultCharacter, defaultLight, defaultVehicle, selectActiveObjects, useEditorStore } from '../store/editorStore';
+import { defaultCharacter, defaultLight, defaultReflectionProbe, defaultVehicle, selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { objectToken, useStableActiveObjects } from '../store/stableSelectors';
 import { useAssetUrl } from '../three/ModelAsset';
 import { DRACO_DECODER_PATH, extendGLTFLoader } from '../three/gltfDecoders';
 import { focusWorkspacePanel } from './workspacePanels';
 import { SocketPickerModal } from './SocketPickerModal';
-import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
+import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, ReflectionProbeComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
 import { resolveVehicleWheels } from '../runtime/vehicleWheels';
 import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { particlePresetIds } from '../runtime/particlePresets';
@@ -531,6 +531,41 @@ function AnimatorSection({
               </label>
             </>
           ) : null}
+
+          {/* Aim / Look-At IK — applies in both controller and manual modes (post-mixer, additive). */}
+          {animator?.enabled && (
+            <>
+              <label className="field-row">
+                <span>Aim / Look-At IK</span>
+                <input type="checkbox" checked={animator.aimEnabled ?? false} onChange={(event) => onChange({ aimEnabled: event.target.checked })} />
+              </label>
+              {animator.aimEnabled && (
+                <>
+                  <label className="field-row">
+                    <span>Aim target</span>
+                    <input type="text" value={animator.aimTargetObjectId ?? '$player'} placeholder="$player" onChange={(event) => onChange({ aimTargetObjectId: event.target.value || undefined })} />
+                  </label>
+                  <label className="field-row">
+                    <span>Face axis</span>
+                    <select value={animator.aimAxis ?? 'z'} onChange={(event) => onChange({ aimAxis: event.target.value as AnimatorComponent['aimAxis'] })}>
+                      <option value="z">+Z (default)</option>
+                      <option value="-z">−Z</option>
+                      <option value="x">+X</option>
+                      <option value="-x">−X</option>
+                      <option value="y">+Y</option>
+                      <option value="-y">−Y</option>
+                    </select>
+                  </label>
+                  <RangeField label="Aim weight" value={animator.aimWeight ?? 1} min={0} max={1} step={0.05} onChange={(aimWeight) => onChange({ aimWeight })} />
+                  <label className="field-row">
+                    <span>Max cone°</span>
+                    <input type="number" step={5} value={animator.aimMaxAngle ?? 80} onChange={(event) => onChange({ aimMaxAngle: Number(event.target.value) })} />
+                  </label>
+                  <p className="field-hint">Head tracks the target on top of the animation. If it aims the wrong way, flip Face axis.</p>
+                </>
+              )}
+            </>
+          )}
         </>
       )}
     </InspectorSection>
@@ -1592,6 +1627,76 @@ function LightSection({ light, onChange }: { light: LightComponent | undefined; 
         <span>Cast Shadow</span>
         <input type="checkbox" checked={l.castShadow} onChange={(e) => onChange({ castShadow: e.target.checked })} />
       </label>
+    </InspectorSection>
+  );
+}
+
+/** Local reflection probe — captures a cubemap here so nearby reflective surfaces show real local reflections. */
+function ReflectionProbeSection({
+  probe,
+  onChange,
+  onRebake,
+  onRemove,
+}: {
+  probe: ReflectionProbeComponent | undefined;
+  onChange: (patch: Partial<ReflectionProbeComponent>) => void;
+  onRebake: () => void;
+  onRemove: () => void;
+}) {
+  if (!probe?.enabled) {
+    return (
+      <InspectorSection title="Reflection Probe" defaultOpen={false}>
+        <p className="field-hint">
+          Capture a cubemap of the surroundings here so nearby metallic/glossy surfaces reflect their real local
+          environment (a room, nearby props) instead of only the global scene sky.
+        </p>
+        <button className="full-button" onClick={() => onChange({ enabled: true })}>
+          Add Reflection Probe
+        </button>
+      </InspectorSection>
+    );
+  }
+  const p = { ...defaultReflectionProbe(), ...probe };
+  return (
+    <InspectorSection title="Reflection Probe">
+      <label className="field-row">
+        <span>Influence radius</span>
+        <input type="number" step={1} min={0.5} value={p.radius} onChange={(e) => onChange({ radius: Number(e.target.value) })} />
+      </label>
+      <label className="field-row">
+        <span>Resolution</span>
+        <select value={p.resolution} onChange={(e) => onChange({ resolution: Number(e.target.value) })}>
+          <option value={128}>128 (fast)</option>
+          <option value={256}>256 (balanced)</option>
+          <option value={512}>512 (sharp)</option>
+        </select>
+      </label>
+      <label className="field-row">
+        <span>Intensity</span>
+        <input type="number" step={0.1} min={0} value={p.intensity} onChange={(e) => onChange({ intensity: Number(e.target.value) })} />
+      </label>
+      <label className="field-row">
+        <span>Refresh</span>
+        <select value={p.refresh} onChange={(e) => onChange({ refresh: e.target.value as ReflectionProbeComponent['refresh'] })}>
+          <option value="static">Static (bake once)</option>
+          <option value="realtime">Realtime (continuous)</option>
+        </select>
+      </label>
+      <label className="field-row">
+        <span>GI bounce</span>
+        <input type="number" step={0.1} min={0} value={p.giIntensity ?? 0} onChange={(e) => onChange({ giIntensity: Number(e.target.value) })} />
+      </label>
+      {(p.giIntensity ?? 0) > 0 && (
+        <p className="field-hint">Adds the environment's bounced color as soft scene-wide ambient. Use one GI probe per area.</p>
+      )}
+      {p.refresh === 'static' && (
+        <button className="full-button" onClick={onRebake}>
+          Re-bake now
+        </button>
+      )}
+      <button className="full-button danger" onClick={onRemove}>
+        Remove probe
+      </button>
     </InspectorSection>
   );
 }
@@ -2757,6 +2862,9 @@ export function InspectorPanel() {
   const setVehicleEnabled = useEditorStore((state) => state.setVehicleEnabled);
   const updateVehicle = useEditorStore((state) => state.updateVehicle);
   const setObjectLight = useEditorStore((state) => state.setObjectLight);
+  const setReflectionProbe = useEditorStore((state) => state.setReflectionProbe);
+  const rebakeReflectionProbe = useEditorStore((state) => state.rebakeReflectionProbe);
+  const removeReflectionProbe = useEditorStore((state) => state.removeReflectionProbe);
   const skeletalMeshes = useEditorStore((state) => state.skeletalMeshes);
   const animations = useEditorStore((state) => state.animations);
   const animatorControllers = useEditorStore((state) => state.animatorControllers);
@@ -2858,6 +2966,13 @@ export function InspectorPanel() {
           {object.kind === 'light' && (
             <LightSection light={object.light} onChange={(patch) => setObjectLight(object.id, patch)} />
           )}
+
+          <ReflectionProbeSection
+            probe={object.reflectionProbe}
+            onChange={(patch) => setReflectionProbe(object.id, patch)}
+            onRebake={() => rebakeReflectionProbe(object.id)}
+            onRemove={() => removeReflectionProbe(object.id)}
+          />
 
           {object.terrain && (
             <TerrainSection terrain={object.terrain} onChange={(patch) => updateTerrain(object.id, patch)} />

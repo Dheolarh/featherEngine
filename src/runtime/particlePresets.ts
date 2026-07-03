@@ -25,6 +25,7 @@ export const defaultParticleConfig = (): ParticleConfig => ({
   worldSpace: true,
   blend: 'additive',
   light: false,
+  gpu: false,
 });
 
 /** A complete, safe particle component (config + enabled) — used when seeding an inline emitter. */

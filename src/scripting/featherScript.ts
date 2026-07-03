@@ -528,6 +528,14 @@ class FeatherScriptPrinter {
         return `Camera.shake(${this.valueInput(node, 'amount', Number(node.data.shakeAmount ?? 0.6))})`;
       case 'action.screenFlash':
         return `Screen.flash(${this.valueInput(node, 'amount', Number(node.data.flashAmount ?? 0.7))}, color: ${quote(node.data.flashColor ?? '#ffffff')})`;
+      case 'action.spawnDecal': {
+        const decalArgs = [`location: ${this.valueInput(node, 'location', raw('self.position'))}`];
+        const decalNormal = this.linkedValueInput(node, 'normal');
+        if (decalNormal) decalArgs.push(`normal: ${decalNormal}`);
+        decalArgs.push(`kind: ${quote(node.data.decalKind ?? 'bullet')}`);
+        decalArgs.push(`size: ${this.valueInput(node, 'size', Number(node.data.decalSize ?? 0.4))}`);
+        return `spawn_decal(${decalArgs.join(', ')})`;
+      }
       case 'action.setVisible':
         return `set_visible(${this.targetArgument(node)}, ${this.valueInput(node, 'visible', node.data.visible ?? true)})`;
       case 'action.setJointMotor': {

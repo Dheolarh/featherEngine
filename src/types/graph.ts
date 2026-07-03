@@ -180,6 +180,7 @@ export type GraphNodeKind =
   | 'action.loadScene'
   | 'action.cameraShake'
   | 'action.screenFlash'
+  | 'action.spawnDecal'
   | 'action.explode'
   | 'action.moveTo'
   | 'action.fractureObject'
@@ -369,6 +370,13 @@ export interface NodeForgeNodeData extends Record<string, unknown> {
   explodeRadius?: number;
   explodeForce?: number;
   explodeDamage?: number;
+  /** action.spawnDecal: stamps a bullet-hole/blood/scorch mark on a surface. Wire Location + Normal (e.g.
+   *  from a Raycast/Sphere Cast hit) or it uses the owner's position + up. size = half-width in world units;
+   *  life = seconds before it fades (0 = permanent, recycled by the pool); color = optional hex tint. */
+  decalKind?: 'bullet' | 'blood' | 'scorch';
+  decalSize?: number;
+  decalLife?: number;
+  decalColor?: string;
   /** event.receiveDamage: optional starting HP for the owning object. 0/undefined = react-only (the object
    *  is notified by damage but never dies); > 0 = give it that HP pool so it loses health and dies at 0,
    *  without having to hand-add a `health` instance variable. */

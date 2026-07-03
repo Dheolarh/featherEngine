@@ -14,6 +14,7 @@ import { ModelAsset, useAssetTexture, useModelUrl } from '../three/ModelAsset';
 import { FragmentMesh } from '../three/FragmentMesh';
 import { AudioListenerSync } from '../three/AudioListenerSync';
 import { SkidMarks } from '../three/SkidMarks';
+import { DecalLayer } from '../three/DecalLayer';
 import { ShaderPrewarm } from '../three/ShaderPrewarm';
 import { EffectLightPool } from '../three/effectLights';
 import { SkinnedModel, useResolvedAnimator } from '../three/SkinnedModel';
@@ -60,6 +61,7 @@ import { CinematicOverlay } from './CinematicOverlay';
 import { SceneEnvironment } from '../three/SceneEnvironment';
 import { WaterSurface } from '../three/WaterSurface';
 import { WaterEnvCapture } from '../three/WaterEnvCapture';
+import { ReflectionProbeApply, ReflectionProbeCapture } from '../three/ReflectionProbes';
 import { UnderwaterOverlay } from '../three/UnderwaterOverlay';
 import { Terrain, TerrainBrushCursor } from '../three/Terrain';
 import { highestTerrainWorldHeight } from '../terrain/terrain';
@@ -579,6 +581,9 @@ export const SceneObjectView = memo(function SceneObjectView({
       }}
     >
       {drawSelf && <Primitive object={object} selected={selected} />}
+      {object.reflectionProbe?.enabled && (
+        <ReflectionProbeCapture objectId={object.id} probe={object.reflectionProbe} showHelper={selected} />
+      )}
       {object.particles && <ParticleSystem object={object} />}
       {children}
     </group>
@@ -1166,6 +1171,8 @@ function SceneContent({
       )}
       {/* Scene-capture pass feeding water reflections/refraction/depth-foam (High/Epic; no-op otherwise). */}
       <WaterEnvCapture />
+      {/* Local reflection probes → nearby reflective materials' envMap (no-op when the scene has no probes). */}
+      <ReflectionProbeApply />
       {/* Screen tint + murk while the active camera is submerged in a Water Volume (edit + play). */}
       <UnderwaterOverlay />
       {/* WebGL HUD (uikit) for renderMode:'webgl' screen docs — lives in-canvas so PostFx bloom hits it. */}
@@ -1981,6 +1988,7 @@ export function ViewportPanel() {
               <ToneMapping />
               <AudioListenerSync />
               <SkidMarks />
+              <DecalLayer />
               <ShaderPrewarm />
               <EffectLightPool />
               <RenderStatsProbe />

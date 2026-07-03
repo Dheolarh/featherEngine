@@ -74,7 +74,7 @@ interface ValueRef {
 const RESERVED_CALLEES = new Set([
   'print', 'wait', 'destroy', 'fire_event', 'apply_damage', 'apply_force', 'apply_impulse', 'apply_torque',
   'set_var', 'get_var', 'set_position', 'set_rotation', 'set_scale', 'look_at', 'set_velocity', 'set_physics',
-  'set_visible', 'set_active', 'set_joint_motor', 'spawn_object', 'spawn_prefab', 'explode', 'cooldown', 'do_once', 'cast',
+  'set_visible', 'set_active', 'set_joint_motor', 'spawn_object', 'spawn_prefab', 'explode', 'spawn_decal', 'cooldown', 'do_once', 'cast',
   'find_actor', 'find_actors', 'raycast', 'overlap_sphere', 'sphere_cast', 'contact_normal', 'contact_point', 'impact_speed', 'velocity', 'cable_tension', 'position', 'rotation',
   'scale', 'node_value', 'last_spawned', 'cycle', 'vec3', 'min', 'max', 'clamp', 'lerp', 'distance', 'normalize',
   'length', 'dot', 'map_range', 'abs', 'round', 'floor', 'sin', 'cos', 'pow', 'random', 'random_int', 'range',
@@ -760,6 +760,14 @@ class FeatherGraphBuilder {
         this.attachWiredValue(node, 'location', call.named.get('location'), 'vector3');
         this.attachValueOrLiteral(node, 'radius', call.named.get('radius'), 'number', 'explodeRadius');
         this.attachValueOrLiteral(node, 'damage', call.named.get('damage'), 'number', 'explodeDamage');
+        return node;
+      }
+      case 'spawn_decal': {
+        const decalKind = unquote(call.named.get('kind') ?? '');
+        const node = this.addNode('action.spawnDecal', decalKind === 'blood' || decalKind === 'scorch' ? { decalKind } : {}, 1);
+        this.attachWiredValue(node, 'location', call.named.get('location'), 'vector3');
+        this.attachWiredValue(node, 'normal', call.named.get('normal'), 'vector3');
+        this.attachValueOrLiteral(node, 'size', call.named.get('size'), 'number', 'decalSize');
         return node;
       }
       case 'set_visible': {

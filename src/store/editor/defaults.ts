@@ -17,6 +17,7 @@ import type {
   TerrainBrushSettings,
   TerrainComponent,
   TransformComponent,
+  ReflectionProbeComponent,
   VehicleComponent,
   Vector3Tuple,
   WaterVolumeComponent,
@@ -70,6 +71,17 @@ export const defaultLight = (): LightComponent => ({
   distance: 12,
   angle: Math.PI / 6,
   castShadow: false,
+});
+
+/** Default local reflection probe — a medium influence sphere, static bake, 256² faces. */
+export const defaultReflectionProbe = (): ReflectionProbeComponent => ({
+  enabled: true,
+  radius: 12,
+  resolution: 256,
+  intensity: 1,
+  refresh: 'static',
+  giIntensity: 0,
+  bakeNonce: 0,
 });
 
 export const defaultCharacter = (): CharacterControllerComponent => ({

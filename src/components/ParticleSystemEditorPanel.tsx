@@ -95,7 +95,7 @@ function ParticleControls({ system }: { system: ParticleSystemDefinition }) {
         ) : (
           <NumberField label="Burst" value={system.burst} min={0} step={1} onChange={(burst) => set({ burst })} />
         )}
-        <NumberField label="Max" value={system.maxParticles} min={1} max={4000} step={10} onChange={(maxParticles) => set({ maxParticles })} />
+        <NumberField label="Max" value={system.maxParticles} min={1} max={system.gpu ? 100000 : 4000} step={system.gpu ? 500 : 10} onChange={(maxParticles) => set({ maxParticles })} />
 
         <label className="node-field">
           <span>Shape</span>
@@ -165,6 +165,13 @@ function ParticleControls({ system }: { system: ParticleSystemDefinition }) {
           <span>Emit Light</span>
           <input type="checkbox" checked={system.light ?? false} onChange={(event) => set({ light: event.target.checked })} />
         </label>
+        <label className="node-field">
+          <span>GPU (high count)</span>
+          <input type="checkbox" checked={system.gpu ?? false} onChange={(event) => set({ gpu: event.target.checked })} />
+        </label>
+        {system.gpu && (
+          <p className="field-hint">Vertex-shader simulated — Max can go to 100k. Continuous looping, local space; ignores bursts.</p>
+        )}
         <label className="node-field">
           <span>Sprite</span>
           <select value={system.textureAssetId ?? ''} onChange={(event) => set({ textureAssetId: event.target.value || undefined })}>

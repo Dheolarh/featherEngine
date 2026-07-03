@@ -6,6 +6,7 @@ import { SkeletonUtils } from 'three-stdlib';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { registerSkinnedRoot, unregisterSkinnedRoot } from './boneRegistry';
 import { useFootIK } from './footIK';
+import { useAimIK } from './aimIK';
 import { isRagdoll, toggleRagdoll } from '../runtime/ragdollState';
 import { RagdollRig } from './RagdollRig';
 import { DRACO_DECODER_PATH, extendGLTFLoader } from './gltfDecoders';
@@ -231,9 +232,11 @@ export function SkinnedModel({
     return () => unregisterSkinnedRoot(registerId, model);
   }, [registerId, model]);
 
-  // Terrain foot IK — plant feet on uneven ground. Called last so it post-processes the mixer's pose this
-  // frame; fully guarded (Play + grounded + over terrain) so it's a no-op everywhere else.
+  // Foot IK — plant feet on the ground (terrain or level geometry). Called after the mixer so it
+  // post-processes this frame's pose; fully guarded (Play + grounded) so it's a no-op everywhere else.
   useFootIK(model, registerId);
+  // Aim / look-at IK — rotate the head to track a target. Opt-in (animator.aimEnabled), additive, clamped.
+  useAimIK(model, registerId);
 
   return (
     <>

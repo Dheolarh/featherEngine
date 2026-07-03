@@ -109,7 +109,7 @@ export const nodeGroups: Array<{
   {
     title: 'Runtime',
     icon: Waypoints,
-    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Explode', 'Set Environment', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Face Player', 'Print'],
+    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Spawn Decal', 'Explode', 'Set Environment', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Face Player', 'Print'],
   },
   {
     title: 'Physics',
@@ -593,6 +593,7 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
   const updatesCameraShake = node.data.nodeKind === 'action.cameraShake';
   const updatesScreenFlash = node.data.nodeKind === 'action.screenFlash';
   const updatesExplode = node.data.nodeKind === 'action.explode';
+  const updatesSpawnDecal = node.data.nodeKind === 'action.spawnDecal';
   const isReceiveDamage = node.data.nodeKind === 'event.receiveDamage';
   const updatesQuality = node.data.nodeKind === 'action.setQuality';
   const updatesEnvironment = node.data.nodeKind === 'action.setEnvironment';
@@ -979,6 +980,41 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
               Gives this object an HP pool so damage reduces it and it DIES at 0 (ragdoll/shatter/despawn) — no need to add a <code>health</code> variable by hand. Leave 0 to just react to hits without dying. An explicit <code>health</code> instance var (or a gameplay kit) overrides this.
             </small>
           </label>
+        )}
+
+        {updatesSpawnDecal && (
+          <>
+            <label className="node-field">
+              <span>Kind</span>
+              <select
+                value={node.data.decalKind ?? 'bullet'}
+                onChange={(event) => updateGraphNodeData(node.id, { decalKind: event.target.value as 'bullet' | 'blood' | 'scorch' })}
+              >
+                <option value="bullet">Bullet hole</option>
+                <option value="blood">Blood splat</option>
+                <option value="scorch">Scorch / burn</option>
+              </select>
+              <small className="node-hint">Wire a hit Point → Location and a surface Normal → Normal (e.g. from a Raycast/Sphere Cast). Unwired uses self position + up.</small>
+            </label>
+            <label className="node-field">
+              <span>Size</span>
+              <input type="number" step="0.05" min="0.02" value={node.data.decalSize ?? 0.4}
+                onChange={(event) => updateGraphNodeData(node.id, { decalSize: Math.max(0.02, Number(event.target.value)) })} />
+              <small className="node-hint">Half-width in world units. Or wire a number into the Size input.</small>
+            </label>
+            <label className="node-field">
+              <span>Life (s)</span>
+              <input type="number" step="0.5" min="0" value={node.data.decalLife ?? 0}
+                onChange={(event) => updateGraphNodeData(node.id, { decalLife: Math.max(0, Number(event.target.value)) })} />
+              <small className="node-hint">Seconds before it fades. 0 = permanent (recycled by the pool after a cap).</small>
+            </label>
+            <label className="node-field">
+              <span>Tint</span>
+              <input type="color" value={node.data.decalColor ?? '#ffffff'}
+                onChange={(event) => updateGraphNodeData(node.id, { decalColor: event.target.value })} />
+              <small className="node-hint">Optional color multiply over the preset (leave white for the default look).</small>
+            </label>
+          </>
         )}
 
         {updatesExplode && (

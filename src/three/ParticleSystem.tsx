@@ -5,6 +5,7 @@ import type { ParticleSystemComponent, SceneObject } from '../types';
 import { useEditorStore } from '../store/editorStore';
 import { subscribeParticles } from '../runtime/particleBus';
 import { resolveParticleConfig } from '../runtime/particlePresets';
+import { GPUParticleSystem } from './GPUParticleSystem';
 
 /** 1×1 white fallback so the sampler is always bound even when no sprite texture is assigned. */
 const WHITE_TEXTURE = (() => {
@@ -112,6 +113,14 @@ function makePool(n: number): Pool {
  * world as the emitter moves. Lives in both the editor viewport (live preview) and the game player.
  */
 export function ParticleSystem({ object }: { object: SceneObject }) {
+  // Thin dispatcher (one stable hook) → the GPU fountain or the CPU simulator. Keeping the branch here
+  // means toggling `gpu` remounts the right emitter without breaking either child's hook order.
+  const particleSystems = useEditorStore((state) => state.particleSystems);
+  const gpu = resolveParticleConfig(object.particles, particleSystems).gpu;
+  return gpu ? <GPUParticleSystem object={object} /> : <CpuParticleSystem object={object} />;
+}
+
+function CpuParticleSystem({ object }: { object: SceneObject }) {
   const particleSystems = useEditorStore((state) => state.particleSystems);
   const config = resolveParticleConfig(object.particles, particleSystems);
   const configRef = useRef(config);

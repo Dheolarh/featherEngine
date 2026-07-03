@@ -13,11 +13,13 @@ import { SkinnedModel, useResolvedAnimator } from '../three/SkinnedModel';
 import { FollowCamera, LockOnMarker, useFollowTarget } from '../three/FollowCamera';
 import { AudioListenerSync } from '../three/AudioListenerSync';
 import { SkidMarks } from '../three/SkidMarks';
+import { DecalLayer } from '../three/DecalLayer';
 import { ShaderPrewarm } from '../three/ShaderPrewarm';
 import { EffectLightPool } from '../three/effectLights';
 import { autoQualityStep } from '../runtime/autoQuality';
 import { CinematicCamera } from '../three/CinematicCamera';
 import { BoneAttachment } from '../three/BoneAttachment';
+import { ReflectionProbeApply, ReflectionProbeCapture } from '../three/ReflectionProbes';
 import { useResolvedMaterial, hasPhysicalLayers } from '../three/resolveMaterial';
 import { WorldUIAnchor } from '../ui/WorldUIAnchor';
 import { WebGLScreenUILayer } from '../ui/WebGLScreenUILayer';
@@ -300,6 +302,7 @@ function sameRenderObject(prev: SceneObject, next: SceneObject) {
     prev.particles === next.particles &&
     prev.animator === next.animator &&
     prev.attachment === next.attachment &&
+    prev.reflectionProbe === next.reflectionProbe &&
     prev.ui === next.ui &&
     prev.viewModel === next.viewModel
   );
@@ -325,6 +328,9 @@ const GameObjectView = memo(
     const body = (
       <>
         <GameMesh object={object} focused={focused} />
+        {object.reflectionProbe?.enabled && (
+          <ReflectionProbeCapture objectId={object.id} probe={object.reflectionProbe} />
+        )}
         {object.particles && <ParticleSystem object={object} />}
         {children}
       </>
@@ -448,6 +454,9 @@ function GameScene() {
       {/* World-space UI widgets (health bars, nameplates) anchored at each object's position. */}
       {objects.map((object) => (object.ui ? <WorldUIAnchor key={`ui-${object.id}`} object={object} /> : null))}
 
+      {/* Local reflection probes → nearby reflective materials' envMap (no-op when the scene has no probes). */}
+      <ReflectionProbeApply />
+
       {/* WebGL HUD (uikit) for renderMode:'webgl' screen docs — caught by PostFx bloom. */}
       <WebGLScreenUILayer />
 
@@ -492,6 +501,7 @@ export function GameView() {
       <ToneMapping />
       <AudioListenerSync />
       <SkidMarks />
+      <DecalLayer />
       <ShaderPrewarm />
       <EffectLightPool />
       <ShadowLOD />

@@ -226,6 +226,7 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'action.spawnObject': Sparkles,
   'action.cameraShake': Vibrate,
   'action.screenFlash': Zap,
+  'action.spawnDecal': Crosshair,
   'action.applyDamage': Swords,
   'action.setQuality': Gauge,
   'action.moveTo': Waypoints,
@@ -554,6 +555,12 @@ const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: string 
       return [{ id: 'on', label: 'On' }];
     case 'action.spawnParticleSystem':
       return [{ id: 'location', label: 'Location' }];
+    case 'action.spawnDecal':
+      return [
+        { id: 'location', label: 'Location' },
+        { id: 'normal', label: 'Normal' },
+        { id: 'size', label: 'Size' },
+      ];
     case 'action.spawnProjectile':
       return [
         { id: 'speed', label: 'Speed' },

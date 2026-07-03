@@ -40,6 +40,33 @@ export interface LightComponent {
 }
 
 /**
+ * A LOCAL reflection probe attached to any object. It captures the surrounding scene into a cubemap at
+ * the object's position and feeds that cubemap as the reflection/environment map for every mesh within
+ * `radius` — so metallic/glossy surfaces in this area reflect their real local surroundings (a room's
+ * walls, nearby props) instead of only the single global scene environment. This is the Unity Reflection
+ * Probe / Unreal Sphere Reflection Capture equivalent. When several probes overlap, the NEAREST one wins.
+ */
+export interface ReflectionProbeComponent {
+  enabled: boolean;
+  /** Influence radius in world units — meshes whose center is within this sphere use this probe's cubemap. */
+  radius: number;
+  /** Cubemap face resolution: higher = sharper reflections, more GPU cost. Typical 128 / 256 / 512. */
+  resolution: number;
+  /** Strength multiplier applied to reflections from this probe (maps to material envMapIntensity). */
+  intensity: number;
+  /** 'static' = captured a few frames after load then frozen (best for fixed scenery — near-free at runtime);
+   *  'realtime' = re-captured continuously on a throttle (for moving/animated surroundings — costs a scene re-render). */
+  refresh: 'static' | 'realtime';
+  /** Diffuse GI bounce (irradiance) strength. > 0 turns the captured cubemap into a spherical-harmonic
+   *  ambient light so the environment's bounced color softly lights nearby surfaces (a red room tints
+   *  objects red). NOTE: this ambient is applied scene-WIDE (three.js LightProbe has no spatial falloff),
+   *  so it's intended as one-per-scene/area. 0 = off (reflections only). */
+  giIntensity?: number;
+  /** Bump this to force a static probe to re-bake (any value change re-triggers the capture). */
+  bakeNonce?: number;
+}
+
+/**
  * Project-wide rendering / post-processing settings (bloom, vignette). Serialized in the manifest and
  * editable in the editor; the AI can tune them too. Read by the GameView + editor viewport post-FX pass.
  */
