@@ -44,6 +44,7 @@ import { ShadowLOD } from '../three/ShadowLOD';
 import { MeshLOD } from '../three/MeshLOD';
 import { CompressedTextureSupport } from '../three/CompressedTextureSupport';
 import { ToneMapping } from '../three/ToneMapping';
+import { PhysicsDebugView } from '../three/PhysicsDebugView';
 import { ModelInstances } from '../three/ModelInstances';
 import {
   useInstancingEnabled,
@@ -510,6 +511,19 @@ export const SceneObjectView = memo(function SceneObjectView({
   // groupRef stays null and this no-ops (they ride a bone instead).
   useFrame(() => {
     if (!useEditorStore.getState().isPlaying) {
+      // One-shot restore on Stop: Play moved this group imperatively (bypassing React), and the
+      // restored authored transform is often value-equal to what React last rendered — so neither
+      // the memo nor the r3f prop diff re-applies it, leaving the mesh stranded at its Play-end
+      // pose (classic: physics props not snapping back on Stop). Write the store's restored
+      // transform back once, then go dormant.
+      if (lastApplied.current !== null && groupRef.current) {
+        const authored = selectActiveObjects(useEditorStore.getState()).find((item) => item.id === object.id)?.transform;
+        if (authored) {
+          groupRef.current.position.set(authored.position[0], authored.position[1], authored.position[2]);
+          groupRef.current.rotation.set(authored.rotation[0], authored.rotation[1], authored.rotation[2]);
+          groupRef.current.scale.set(authored.scale[0], authored.scale[1], authored.scale[2]);
+        }
+      }
       lastApplied.current = null;
       return;
     }
@@ -1218,6 +1232,8 @@ function SceneContent({
       )}
       {/* Marker over the player's lock-on target — only ever set during Play, renders nothing otherwise. */}
       {isPlaying && <LockOnMarker />}
+      {/* Rapier collider wireframe (F10) — the "why doesn't this collide?" view. Play-only. */}
+      {isPlaying && <PhysicsDebugView />}
       {/* Post-FX (bloom/vignette + cinematic grade/DoF) during Play so the editor matches the shipped
           game look — and also while scrubbing a cinematic preview so grading/focus are visible there. */}
       {(isPlaying || previewingCinematic || volumetricFogActive) && <PostFx />}

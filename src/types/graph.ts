@@ -133,6 +133,8 @@ export type GraphNodeKind =
   | 'query.findActorByTag'
   | 'query.raycast'
   | 'query.overlapSphere'
+  | 'query.sphereCast'
+  | 'action.setJointMotor'
   | 'query.cableTension'
   | 'action.cutCable'
   | 'action.setCableLength'

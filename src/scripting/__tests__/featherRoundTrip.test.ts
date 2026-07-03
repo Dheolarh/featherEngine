@@ -441,6 +441,51 @@ describe('FeatherScript round-trip: text -> graph -> text', () => {
     }
   });
 
+  it('contact detail and sphere casts', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Crash',
+        '',
+        'on collision_enter(other):',
+        '    if (impact_speed() > 8):',
+        '        apply_damage(other, 20)',
+        '        set_var(self, "last_hit", contact_normal())',
+        '',
+        'on update every 0.5s:',
+        '    if sphere_cast(direction: AI.direction_to_player(), distance: 10, radius: 0.5).hit:',
+        '        self.blocked = true',
+      ].join('\n'),
+    );
+
+    expect(printed).toContain('impact_speed()');
+    expect(printed).toContain('contact_normal()');
+    expect(printed).toContain('sphere_cast(direction: AI.direction_to_player(), distance: 10, radius: 0.5).hit');
+    const graph = first.graph!;
+    const root = nodeOf(graph, 'event.collisionEnter');
+    // impact_speed()/contact_normal() wire straight off the collision root's pins.
+    expect(graph.edges.some((edge) => edge.source === root.id && edge.sourceHandle === 'speed')).toBe(true);
+    expect(graph.edges.some((edge) => edge.source === root.id && edge.sourceHandle === 'normal')).toBe(true);
+    nodeOf(graph, 'query.sphereCast');
+  });
+
+  it('joint motors', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Door',
+        '',
+        'on interact(player):',
+        '    set_joint_motor(self, position: 1.57)',
+        '',
+        'on update every 0.5s:',
+        '    set_joint_motor(self, velocity: 2)',
+      ].join('\n'),
+    );
+    expect(printed).toContain('set_joint_motor(self, position: 1.57)');
+    expect(printed).toContain('set_joint_motor(self, velocity: 2)');
+    const motors = first.graph!.nodes.filter((node) => node.data.nodeKind === 'action.setJointMotor');
+    expect(motors).toHaveLength(2);
+  });
+
   it('timer, interact, and custom-event firing', () => {
     const { printed } = roundTrip(
       [

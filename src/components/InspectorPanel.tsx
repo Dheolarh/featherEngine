@@ -8,7 +8,7 @@ import { useAssetUrl } from '../three/ModelAsset';
 import { DRACO_DECODER_PATH, extendGLTFLoader } from '../three/gltfDecoders';
 import { focusWorkspacePanel } from './workspacePanels';
 import { SocketPickerModal } from './SocketPickerModal';
-import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, CableComponent, CharacterControllerComponent, ClothComponent, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
+import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
 import { resolveVehicleWheels } from '../runtime/vehicleWheels';
 import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { particlePresetIds } from '../runtime/particlePresets';
@@ -2089,6 +2089,14 @@ function JointSection({
             <span>Motor speed</span>
             <NumberInput value={joint.motorTargetVelocity ?? 0} step={0.1} onChange={(motorTargetVelocity) => onChange({ motorTargetVelocity })} />
           </label>
+          <label className="field-row" title="Position SERVO: drive toward this angle (radians, hinge) or offset (units, slider). Overrides motor speed. Clear to disable. Scripts can retarget it live with the Set Joint Motor node.">
+            <span>Servo target</span>
+            <NumberInput
+              value={joint.motorTargetPosition ?? 0}
+              step={0.1}
+              onChange={(motorTargetPosition) => onChange({ motorTargetPosition })}
+            />
+          </label>
           {(joint.motorTargetVelocity ?? 0) !== 0 && (
             <label className="field-row">
               <span>Motor force</span>
@@ -2508,6 +2516,56 @@ function PhysicsSection({
           </p>
         </>
       )}
+      {(physics.extraColliders ?? []).map((extra, index) => (
+        <div className="script-card" key={index}>
+          <label className="field-row">
+            <span>Extra shape</span>
+            <select
+              value={extra.shape}
+              onChange={(event) => {
+                const next = [...(physics.extraColliders ?? [])];
+                next[index] = { ...extra, shape: event.target.value as ExtraCollider['shape'] };
+                onChange({ extraColliders: next });
+              }}
+            >
+              <option value="box">Box</option>
+              <option value="sphere">Sphere</option>
+              <option value="capsule">Capsule</option>
+            </select>
+          </label>
+          <VectorField
+            label="Offset"
+            value={extra.offset}
+            onChange={(offset) => {
+              const next = [...(physics.extraColliders ?? [])];
+              next[index] = { ...extra, offset };
+              onChange({ extraColliders: next });
+            }}
+          />
+          <VectorField
+            label="Size"
+            value={extra.size}
+            onChange={(size) => {
+              const next = [...(physics.extraColliders ?? [])];
+              next[index] = { ...extra, size };
+              onChange({ extraColliders: next });
+            }}
+          />
+          <button
+            onClick={() => onChange({ extraColliders: (physics.extraColliders ?? []).filter((_, i) => i !== index) })}
+          >
+            Remove shape
+          </button>
+        </div>
+      ))}
+      <button
+        title="Compound collider: weld another shape to this body (a hammer = box head + capsule handle). Press F10 during Play to see the result."
+        onClick={() =>
+          onChange({ extraColliders: [...(physics.extraColliders ?? []), { shape: 'box', offset: [0, 1, 0], size: [0.5, 0.5, 0.5] }] })
+        }
+      >
+        + Add collider shape
+      </button>
     </InspectorSection>
   );
 }

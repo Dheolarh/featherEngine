@@ -266,7 +266,8 @@ function colliderDescFor(object: SceneObject) {
   const physics = object.physics;
   desc.setFriction(physics?.friction ?? 0.5);
   desc.setRestitution(physics?.restitution ?? 0.05);
-  desc.setMass(Math.max(physics?.mass ?? 1, 0.001));
+  const extraCount = physics?.extraColliders?.length ?? 0;
+  desc.setMass(Math.max((physics?.mass ?? 1) / (extraCount + 1), 0.001));
   desc.setSensor(Boolean(physics?.isTrigger));
   const groups = collisionGroups(physics?.collisionLayer, physics?.collisionMask);
   desc.setCollisionGroups(groups);
@@ -277,6 +278,35 @@ function colliderDescFor(object: SceneObject) {
   // the KINEMATIC player character — the cause of "walk onto the pickup, nothing happens". ALL fixes that.
   desc.setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL);
   return desc;
+}
+
+/** Descs for an object's COMPOUND extra colliders — same material/sensor/layer setup as the main shape. */
+function extraColliderDescs(object: SceneObject) {
+  const physics = object.physics;
+  const extras = physics?.extraColliders ?? [];
+  if (!extras.length) return [];
+  // Split the authored mass across all shapes so a compound body weighs what the field says.
+  const massShare = Math.max((physics?.mass ?? 1) / (extras.length + 1), 0.001);
+  const groups = collisionGroups(physics?.collisionLayer, physics?.collisionMask);
+  return extras.map((extra) => {
+    const [a, b, c] = extra.size;
+    const desc =
+      extra.shape === 'sphere'
+        ? RAPIER.ColliderDesc.ball(Math.max(Math.abs(a) || 0.5, 0.01))
+        : extra.shape === 'capsule'
+          ? RAPIER.ColliderDesc.capsule(Math.max(Math.abs(b) || 0.5, 0.01), Math.max(Math.abs(a) || 0.25, 0.01))
+          : RAPIER.ColliderDesc.cuboid(Math.max(Math.abs(a) || 0.25, 0.01), Math.max(Math.abs(b) || 0.25, 0.01), Math.max(Math.abs(c) || 0.25, 0.01));
+    desc.setTranslation(extra.offset[0], extra.offset[1], extra.offset[2]);
+    desc.setFriction(physics?.friction ?? 0.5);
+    desc.setRestitution(physics?.restitution ?? 0.05);
+    desc.setMass(massShare);
+    desc.setSensor(Boolean(physics?.isTrigger));
+    desc.setCollisionGroups(groups);
+    desc.setSolverGroups(groups);
+    desc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    desc.setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL);
+    return desc;
+  });
 }
 
 /** A car running the real Rapier raycast-vehicle sim (vs the arcade tire model in editorStore). */
@@ -332,6 +362,7 @@ function bodySignature(object: SceneObject): string {
     p?.collisionLayer,
     p?.collisionMask,
     p?.ccd,
+    (p?.extraColliders ?? []).map((e) => `${e.shape},${e.offset.join(',')},${e.size.join(',')}`).join(';'),
   ].join('|');
   bodySignatureCache.set(object, { sig, meshToken });
   return sig;
@@ -340,6 +371,8 @@ function bodySignature(object: SceneObject): string {
 interface BodyEntry {
   body: RigidBody;
   collider: Collider;
+  /** Compound-collider handles (cleaned up with the body so handle→id lookups never go stale). */
+  extraHandles?: number[];
   signature: string;
 }
 
@@ -664,7 +697,14 @@ class PhysicsRuntime {
     // each step so it stops at the first surface it crosses (cover blocks the shot, as expected).
     if (object.projectile || object.physics?.ccd) body.enableCcd(true);
     const collider = this.world.createCollider(colliderDescFor(object), body);
-    this.entries.set(object.id, { body, collider, signature: bodySignature(object) });
+    const extraHandles: number[] = [];
+    for (const extraDesc of extraColliderDescs(object)) {
+      const extra = this.world.createCollider(extraDesc, body);
+      extraHandles.push(extra.handle);
+      this.handleToId.set(extra.handle, object.id);
+      this.handleToTrigger.set(extra.handle, Boolean(object.physics?.isTrigger));
+    }
+    this.entries.set(object.id, { body, collider, extraHandles, signature: bodySignature(object) });
     this.handleToId.set(collider.handle, object.id);
     this.handleToTrigger.set(collider.handle, Boolean(object.physics?.isTrigger));
   }
@@ -677,6 +717,10 @@ class PhysicsRuntime {
     this.dropJointsReferencing(id);
     this.handleToId.delete(entry.collider.handle);
     this.handleToTrigger.delete(entry.collider.handle);
+    for (const handle of entry.extraHandles ?? []) {
+      this.handleToId.delete(handle);
+      this.handleToTrigger.delete(handle);
+    }
     this.world.removeRigidBody(entry.body); // also removes attached colliders
     this.entries.delete(id);
   }
@@ -1104,13 +1148,17 @@ class PhysicsRuntime {
         setContactsEnabled?: (enabled: boolean) => void;
         setLimits?: (min: number, max: number) => void;
         configureMotorVelocity?: (targetVel: number, factor: number) => void;
+        configureMotorPosition?: (targetPos: number, stiffness: number, damping: number) => void;
       };
       anyJoint.setContactsEnabled?.(Boolean(j.collideConnected));
       if ((j.type === 'hinge' || j.type === 'slider') && j.limitsEnabled) {
         anyJoint.setLimits?.(j.limitMin ?? -Math.PI, j.limitMax ?? Math.PI);
       }
-      if ((j.type === 'hinge' || j.type === 'slider') && (j.motorTargetVelocity ?? 0) !== 0) {
-        anyJoint.configureMotorVelocity?.(j.motorTargetVelocity ?? 0, Math.max(j.motorMaxForce ?? 1, 0.01));
+      if ((j.type === 'hinge' || j.type === 'slider') && j.motorTargetPosition !== undefined) {
+        // Position SERVO (takes precedence): drive toward an angle/offset with spring-like gains.
+        anyJoint.configureMotorPosition?.(j.motorTargetPosition, Math.max(j.stiffness ?? 8000, 1), Math.max(j.damping ?? 200, 0));
+      } else if ((j.type === 'hinge' || j.type === 'slider') && (j.motorTargetVelocity ?? 0) !== 0) {
+        anyJoint.configureMotorVelocity?.(j.motorTargetVelocity ?? 0, Math.max(j.motorMaxForce ?? 50, 0.01));
       }
     } catch (error) {
       console.warn('Joint config failed (using defaults):', error);
@@ -1496,6 +1544,31 @@ class PhysicsRuntime {
       const desired = prev
         ? { x: cur[0] - prev.position[0], y: cur[1] - prev.position[1], z: cur[2] - prev.position[2] }
         : { x: 0, y: 0, z: 0 };
+      // MOVING-PLATFORM RIDING: if the character is standing on a KINEMATIC body (a script-driven
+      // elevator/platform), carry the platform's queued per-tick motion (nextTranslation − current)
+      // into the desired movement — otherwise the platform slides out from under the pawn. Ground
+      // detection = a short downward ray from the body center, excluding the character itself.
+      {
+        const t = entry.body.translation();
+        const groundHit = this.world.castRay(
+          setRay(sharedCastRay, t.x, t.y, t.z, 0, -1, 0),
+          2.2,
+          true,
+          RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+          undefined,
+          entry.collider,
+        );
+        if (groundHit && groundHit.timeOfImpact < 2.05) {
+          const groundBody = groundHit.collider.parent();
+          if (groundBody && groundBody.isKinematic()) {
+            const now = groundBody.translation();
+            const next = groundBody.nextTranslation();
+            desired.x += next.x - now.x;
+            desired.y += next.y - now.y;
+            desired.z += next.z - now.z;
+          }
+        }
+      }
       // Release snap-to-ground while rising, or jumps get snapped straight back to the floor.
       if (desired.y > 0.001) entry.controller.disableSnapToGround();
       else entry.controller.enableSnapToGround(0.3);
@@ -2178,15 +2251,16 @@ class PhysicsRuntime {
     const id = this.handleToId.get(hit.collider.handle);
     if (!id) return null;
     const toi = hit.time_of_impact;
-    // witness1 is LOCAL to the cast ball (identity rotation): world point = ball center at impact + witness.
+    // Empirically (locked in by contactDetail.test.ts): normal1 already IS the hit surface's
+    // normal facing back toward the caster — a downward cast onto a floor reports [0, 1, 0].
+    const normal: Vector3Tuple = [hit.normal1.x, hit.normal1.y, hit.normal1.z];
+    // For a sphere the contact point is exact geometry: ball center at impact, pushed one radius
+    // against the surface normal (witness frames vary across Rapier versions — this doesn't).
     const point: Vector3Tuple = [
-      origin[0] + nx * toi + hit.witness1.x,
-      origin[1] + ny * toi + hit.witness1.y,
-      origin[2] + nz * toi + hit.witness1.z,
+      origin[0] + nx * toi - normal[0] * radius,
+      origin[1] + ny * toi - normal[1] * radius,
+      origin[2] + nz * toi - normal[2] * radius,
     ];
-    // normal1 is the outward normal ON THE BALL at the contact (points into the surface); the
-    // surface normal facing the caster is its negation.
-    const normal: Vector3Tuple = [-hit.normal1.x, -hit.normal1.y, -hit.normal1.z];
     return { objectId: id, distance: toi, point, normal };
   }
 
@@ -2257,6 +2331,45 @@ class PhysicsRuntime {
       // Flip-recovery teleports back to the spawn pose — keep it in the rebased frame.
       entry.spawnPos = [entry.spawnPos[0] - dx, entry.spawnPos[1], entry.spawnPos[2] - dz];
     }
+  }
+
+  /**
+   * Runtime motor control for a hinge/slider joint (Set Joint Motor node / set_joint_motor):
+   * position = drive toward an angle (radians) / offset (units) like a powered door or elevator;
+   * velocity = spin/slide at a constant rate like a windmill or conveyor. Wakes both bodies so a
+   * sleeping door responds. Returns false when the object has no joint.
+   */
+  setJointMotor(
+    objectId: string,
+    opts: { velocity?: number; position?: number; maxForce?: number; stiffness?: number; damping?: number },
+  ): boolean {
+    const entry = this.jointEntries.get(objectId);
+    if (!entry) return false;
+    try {
+      const anyJoint = entry.joint as unknown as {
+        configureMotorVelocity?: (targetVel: number, factor: number) => void;
+        configureMotorPosition?: (targetPos: number, stiffness: number, damping: number) => void;
+        body1?: () => { wakeUp?: () => void } | null;
+        body2?: () => { wakeUp?: () => void } | null;
+      };
+      if (opts.position !== undefined) {
+        anyJoint.configureMotorPosition?.(opts.position, Math.max(opts.stiffness ?? 8000, 1), Math.max(opts.damping ?? 200, 0));
+      } else if (opts.velocity !== undefined) {
+        anyJoint.configureMotorVelocity?.(opts.velocity, Math.max(opts.maxForce ?? 50, 0.01));
+      } else {
+        return false;
+      }
+      anyJoint.body1?.()?.wakeUp?.();
+      anyJoint.body2?.()?.wakeUp?.();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Rapier's built-in debug wireframe: world-space line-list vertex buffer (see PhysicsDebugView). */
+  debugRender(): { vertices: Float32Array } {
+    return { vertices: this.world.debugRender().vertices };
   }
 
   getStats(): { bodies: number; sleeping: number; characters: number; terrain: number; joints: number } {

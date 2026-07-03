@@ -30,6 +30,9 @@ export interface PhysicsComponent {
    *  so it's off by default — turn it on for bullets, fast vehicles, falling-from-height props.
    *  Projectiles always get CCD regardless of this flag. */
   ccd?: boolean;
+  /** COMPOUND COLLIDER: extra shapes welded to this body (hammer = box head + capsule handle).
+   *  Each moves rigidly with the body; they share the body's material/trigger/layer settings. */
+  extraColliders?: ExtraCollider[];
 }
 
 export type PhysicsMaterialPresetId = 'default' | 'rubber' | 'slime' | 'ice' | 'metal' | 'stone' | 'wood' | 'mud';
@@ -68,6 +71,9 @@ export interface JointComponent {
   limitMax?: number;
   /** Hinge/slider motor: drive toward this velocity (rad/s or units/s). 0 = motor off. */
   motorTargetVelocity?: number;
+  /** Hinge/slider POSITION servo: drive toward this angle (radians) / offset (units). Takes
+   *  precedence over the velocity motor; uses stiffness/damping as the servo gains. */
+  motorTargetPosition?: number;
   /** Max force/torque the motor may apply (higher = stiffer drive). */
   motorMaxForce?: number;
   /** Spring stiffness (`spring` type). Also used as the motor stiffness factor. */
@@ -202,6 +208,15 @@ export interface CableComponent {
 
 /** Ready-made looks for a Water Volume. 'custom' = keep whatever visual fields are set by hand. */
 export type WaterStylePreset = 'ocean' | 'pool' | 'lake' | 'toxic' | 'lava' | 'custom';
+
+/** An additional collider shape attached to the same rigid body (compound collider). */
+export interface ExtraCollider {
+  shape: 'box' | 'sphere' | 'capsule';
+  /** Local offset from the body origin, in world units (moves/rotates with the body). */
+  offset: Vector3Tuple;
+  /** box: half-extents [hx, hy, hz] · sphere: [radius] · capsule: [radius, halfHeight]. */
+  size: Vector3Tuple;
+}
 
 export interface WaterVolumeComponent {
   enabled: boolean;

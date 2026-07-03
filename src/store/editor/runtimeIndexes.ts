@@ -4,6 +4,8 @@ export interface ContactIndex {
   byObject: Map<string, Set<string>>;
   touchesByObject: Map<string, Set<string>>;
   firstOtherByObject: Map<string, string>;
+  /** First FULL event per objectId — carries the contact detail (normal/point/speed). */
+  firstEventByObject: Map<string, PhysicsContactEvent>;
 }
 
 const addContact = (map: Map<string, Set<string>>, objectId: string, otherObjectId: string) => {
@@ -19,6 +21,7 @@ const EMPTY_CONTACT_INDEX: ContactIndex = {
   byObject: new Map(),
   touchesByObject: new Map(),
   firstOtherByObject: new Map(),
+  firstEventByObject: new Map(),
 };
 const contactIndexCache = new WeakMap<PhysicsContactEvent[], ContactIndex>();
 
@@ -29,15 +32,17 @@ export const buildContactIndex = (events: PhysicsContactEvent[]): ContactIndex =
   const byObject = new Map<string, Set<string>>();
   const touchesByObject = new Map<string, Set<string>>();
   const firstOtherByObject = new Map<string, string>();
+  const firstEventByObject = new Map<string, PhysicsContactEvent>();
 
   for (const event of events) {
     addContact(byObject, event.objectId, event.otherObjectId);
     addContact(touchesByObject, event.objectId, event.otherObjectId);
     addContact(touchesByObject, event.otherObjectId, event.objectId);
     if (!firstOtherByObject.has(event.objectId)) firstOtherByObject.set(event.objectId, event.otherObjectId);
+    if (!firstEventByObject.has(event.objectId)) firstEventByObject.set(event.objectId, event);
   }
 
-  const index = { byObject, touchesByObject, firstOtherByObject };
+  const index = { byObject, touchesByObject, firstOtherByObject, firstEventByObject };
   contactIndexCache.set(events, index);
   return index;
 };
@@ -81,3 +86,7 @@ export const contactOthers = (index: ContactIndex, objectId: string): ReadonlySe
 
 export const firstContactOther = (index: ContactIndex, objectId: string): string | undefined =>
   index.firstOtherByObject.get(objectId);
+
+/** The first full contact event for `objectId` this frame (normal/point/speed detail), if any. */
+export const firstContactEvent = (index: ContactIndex, objectId: string): PhysicsContactEvent | undefined =>
+  index.firstEventByObject.get(objectId);

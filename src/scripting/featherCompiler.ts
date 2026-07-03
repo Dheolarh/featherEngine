@@ -74,8 +74,8 @@ interface ValueRef {
 const RESERVED_CALLEES = new Set([
   'print', 'wait', 'destroy', 'fire_event', 'apply_damage', 'apply_force', 'apply_impulse', 'apply_torque',
   'set_var', 'get_var', 'set_position', 'set_rotation', 'set_scale', 'look_at', 'set_velocity', 'set_physics',
-  'set_visible', 'set_active', 'spawn_object', 'spawn_prefab', 'explode', 'cooldown', 'do_once', 'cast',
-  'find_actor', 'find_actors', 'raycast', 'overlap_sphere', 'velocity', 'cable_tension', 'position', 'rotation',
+  'set_visible', 'set_active', 'set_joint_motor', 'spawn_object', 'spawn_prefab', 'explode', 'cooldown', 'do_once', 'cast',
+  'find_actor', 'find_actors', 'raycast', 'overlap_sphere', 'sphere_cast', 'contact_normal', 'contact_point', 'impact_speed', 'velocity', 'cable_tension', 'position', 'rotation',
   'scale', 'node_value', 'last_spawned', 'cycle', 'vec3', 'min', 'max', 'clamp', 'lerp', 'distance', 'normalize',
   'length', 'dot', 'map_range', 'abs', 'round', 'floor', 'sin', 'cos', 'pow', 'random', 'random_int', 'range',
   'append', 'vec_add', 'vec_sub', 'vec_scale',
@@ -767,6 +767,13 @@ class FeatherGraphBuilder {
         this.attachValueOrLiteral(node, 'visible', rawArg('visible', 1), 'boolean', 'visible');
         return node;
       }
+      case 'set_joint_motor': {
+        const node = this.addNode('action.setJointMotor', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachWiredValue(node, 'position', call.named.get('position'), 'number');
+        this.attachValueOrLiteral(node, 'velocity', call.named.get('velocity'), 'number', 'numberValue');
+        return node;
+      }
       case 'set_active': {
         const node = this.addNode('action.setActive', { targetObjectId: this.targetLiteral(rawArg('target', 0)) }, 1);
         this.attachValueOrLiteral(node, 'on', rawArg('on', 1), 'boolean', 'booleanValue');
@@ -932,6 +939,14 @@ class FeatherGraphBuilder {
       }
     }
 
+    // Inside a collision handler, the impact's contact detail reads straight off the root's pins.
+    if (this.currentRoot?.data.nodeKind === 'event.collisionEnter') {
+      if (trimmed === 'other') return { nodeId: this.currentRoot.id, sourceHandle: 'value-out' };
+      if (trimmed === 'contact_normal()') return { nodeId: this.currentRoot.id, sourceHandle: 'normal' };
+      if (trimmed === 'contact_point()') return { nodeId: this.currentRoot.id, sourceHandle: 'point' };
+      if (trimmed === 'impact_speed()') return { nodeId: this.currentRoot.id, sourceHandle: 'speed' };
+    }
+
     if (trimmed === 'Input.move()') return ref(this.addNode('input.move', {}, depth));
     if (trimmed === 'Input.drive()') return ref(this.addNode('input.driveInput', {}, depth));
     if (trimmed === 'self.is_grounded()') return ref(this.addNode('query.grounded', {}, depth));
@@ -944,7 +959,7 @@ class FeatherGraphBuilder {
     if (trimmed === 'Material.color()') return ref(this.addNode('action.getMaterialColor', {}, depth));
 
     // Multi-output queries read via a pin suffix: raycast(...).actor, overlap_sphere(...).count.
-    const suffixed = trimmed.match(/^(raycast|overlap_sphere)\((.*)\)\.(hit|actor|point|distance|count)$/);
+    const suffixed = trimmed.match(/^(raycast|overlap_sphere|sphere_cast)\((.*)\)\.(hit|actor|point|distance|count|normal)$/);
     if (suffixed) {
       const call = parseCall(`${suffixed[1]}(${suffixed[2]})`);
       const sourceHandle = suffixed[3] === 'hit' ? 'value-out' : suffixed[3];
@@ -958,6 +973,13 @@ class FeatherGraphBuilder {
         const node = this.addNode('query.overlapSphere', {}, depth);
         this.attachWiredValue(node, 'location', call.named.get('location'), 'vector3');
         this.attachValueOrLiteral(node, 'radius', call.named.get('radius'), 'number', 'numberValue');
+        return { nodeId: node.id, sourceHandle };
+      }
+      if (call?.callee === 'sphere_cast') {
+        const node = this.addNode('query.sphereCast', {}, depth);
+        this.attachWiredValue(node, 'direction', call.named.get('direction'), 'vector3');
+        this.attachValueOrLiteral(node, 'distance', call.named.get('distance'), 'number', 'numberValue');
+        this.attachValueOrLiteral(node, 'radius', call.named.get('radius'), 'number', 'amount');
         return { nodeId: node.id, sourceHandle };
       }
     }

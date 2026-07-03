@@ -227,6 +227,8 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Find Actor By Tag': 'query.findActorByTag',
   Raycast: 'query.raycast',
   'Overlap Sphere': 'query.overlapSphere',
+  'Sphere Cast': 'query.sphereCast',
+  'Set Joint Motor': 'action.setJointMotor',
   'Cut Cable': 'action.cutCable',
   'Set Cable Length': 'action.setCableLength',
   'Get Cable Tension': 'query.cableTension',
@@ -314,6 +316,8 @@ export const categoryByKind = (nodeKind: GraphNodeKind): GraphNodeCategory => {
     nodeKind === 'action.setVelocity' ||
     nodeKind === 'query.velocity' ||
     nodeKind === 'query.overlapSphere' ||
+    nodeKind === 'query.sphereCast' ||
+    nodeKind === 'action.setJointMotor' ||
     nodeKind === 'query.cableTension' ||
     nodeKind === 'action.cutCable' ||
     nodeKind === 'action.setCableLength' ||
@@ -754,6 +758,18 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
         description:
           "Finds every SOLID actor whose collider overlaps a sphere — Unreal's OverlapSphere / Unity's Physics.OverlapSphere, the idiomatic 'who's in range' for AoE damage, ability ranges, proximity sensing. Outputs: Hit (true if anything is inside), Actor (the NEAREST overlapping actor — wire into Cast / Apply Damage Target / Get Position), and Count (how many). Center defaults to this object's position; wire a Vector3 into Location to probe elsewhere. Radius from the node field or a wired number. Uses the physics broadphase so it respects real collider sizes; skips self and triggers/sensors. Needs physics-enabled bodies to detect. Gate behind an event or Cooldown, not raw Update if you only need it occasionally.",
       };
+    case 'query.sphereCast':
+      return {
+        label: `Sphere Cast ${Number(data.numberValue ?? 20)}u`,
+        description:
+          "Sweeps a SPHERE from this object along a direction and reports the FIRST solid it touches — Unreal's SphereTrace / Unity's SphereCast. Unlike Raycast it has thickness (radius from the node field or a wired number into Radius), so it can't slip through small gaps: the right probe for thick projectiles, ledge/clearance checks, melee arcs, and vehicle sensors. Outputs: Hit (bool), Actor (reference to the object hit), Point (world contact position), Distance, and Normal (the surface normal at the hit — reflect projectiles or align decals with it). Direction defaults to this object's forward; wire a Vector3 into Direction and a number into Distance to aim/range it. Skips self and sensors. Gate behind an event or Cooldown, not raw Update.",
+      };
+    case 'action.setJointMotor':
+      return {
+        label: 'Set Joint Motor',
+        description:
+          "Drives a hinge/slider JOINT's motor on the Target object (default self) during Play — the powered-mechanism node. Wire a number into Position to SERVO toward an angle (radians, hinge) or offset (units, slider): powered doors (0 → 1.57 to swing open), elevators, drawbridges. Or wire a number into Velocity to spin/slide at a constant rate: windmills, conveyors, cranes (Position wins if both are wired). The Target must have a hinge or slider Joint component (add one in the Inspector or with add_joint). Typical door: On Interact → Set Joint Motor(position: 1.57); interact again → position: 0.",
+      };
     case 'action.cutCable':
       return {
         label: 'Cut Cable',
@@ -990,6 +1006,11 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
     normalized.numberValue = 5; // default overlap radius (units)
   }
 
+  if (nodeKind === 'query.sphereCast') {
+    if (typeof normalized.numberValue !== 'number') normalized.numberValue = 20; // sweep length (units)
+    if (typeof normalized.amount !== 'number') normalized.amount = 0.5; // sphere radius (units)
+  }
+
   if (nodeKind === 'action.cameraShake' && typeof normalized.shakeAmount !== 'number') {
     normalized.shakeAmount = 0.6;
   }
@@ -1114,6 +1135,7 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
     nodeKind === 'query.findActorByTag' ||
     nodeKind === 'query.raycast' ||
     nodeKind === 'query.overlapSphere' ||
+    nodeKind === 'query.sphereCast' ||
     nodeKind === 'query.cableTension' ||
     nodeKind === 'query.velocity' ||
     nodeKind === 'query.grounded' ||

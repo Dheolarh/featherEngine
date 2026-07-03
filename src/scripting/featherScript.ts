@@ -530,6 +530,14 @@ class FeatherScriptPrinter {
         return `Screen.flash(${this.valueInput(node, 'amount', Number(node.data.flashAmount ?? 0.7))}, color: ${quote(node.data.flashColor ?? '#ffffff')})`;
       case 'action.setVisible':
         return `set_visible(${this.targetArgument(node)}, ${this.valueInput(node, 'visible', node.data.visible ?? true)})`;
+      case 'action.setJointMotor': {
+        const args = [this.targetArgument(node)];
+        const servo = this.linkedValueInput(node, 'position');
+        if (servo) args.push(`position: ${servo}`);
+        const velocity = this.valueInput(node, 'velocity', node.data.numberValue);
+        if (!servo || velocity !== 'none') args.push(`velocity: ${velocity === 'none' ? 0 : velocity}`);
+        return `set_joint_motor(${args.join(', ')})`;
+      }
       case 'action.setActive':
         return `set_active(${this.targetArgument(node)}, ${this.valueInput(node, 'on', node.data.booleanValue ?? true)})`;
       case 'action.setTimeScale':
@@ -745,6 +753,14 @@ class FeatherScriptPrinter {
         result = `overlap_sphere(location: ${this.valueInput(node, 'location', raw('self.position'), stack)}, radius: ${this.valueInput(node, 'radius', Number(node.data.numberValue ?? 5), stack)}).${suffix}`;
         break;
       }
+      case 'query.sphereCast': {
+        const suffix = sourceHandle === 'actor' || sourceHandle === 'point' || sourceHandle === 'distance' || sourceHandle === 'normal' ? sourceHandle : 'hit';
+        result = `sphere_cast(direction: ${this.valueInput(node, 'direction', raw('self.forward'), stack)}, distance: ${this.valueInput(node, 'distance', Number(node.data.numberValue ?? 20), stack)}, radius: ${this.valueInput(node, 'radius', Number(node.data.amount ?? 0.5), stack)}).${suffix}`;
+        break;
+      }
+      case 'event.collisionEnter':
+        result = sourceHandle === 'normal' ? 'contact_normal()' : sourceHandle === 'point' ? 'contact_point()' : sourceHandle === 'speed' ? 'impact_speed()' : 'other';
+        break;
       case 'query.velocity':
         result = `velocity(${this.targetArgument(node, stack)})`;
         break;

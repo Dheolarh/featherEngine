@@ -1527,6 +1527,16 @@ const rawEngineTools = {
       windInfluence: z.number().min(0).optional().describe('How strongly global scene wind pushes this DYNAMIC body (0 = ignores wind). Set the wind itself via set_environment.'),
       knockOverThreshold: z.number().min(0).optional().describe('BREAKAWAY PROP (GTA streetlight): on a FIXED body, an impact faster than this speed (u/s) converts it to a dynamic body that tumbles with the hit — lamp posts, signs, fences, bollards. 0/omit = solid.'),
       ccd: z.boolean().optional().describe('Continuous Collision Detection: stops a fast DYNAMIC body tunnelling through thin walls/floors at high speed. Small cost — enable for bullets, fast vehicles, fast-falling props. Projectiles always have it.'),
+      extraColliders: z
+        .array(
+          z.object({
+            shape: z.enum(['box', 'sphere', 'capsule']),
+            offset: z.tuple([z.number(), z.number(), z.number()]).describe('Local offset from the body origin.'),
+            size: z.tuple([z.number(), z.number(), z.number()]).describe('box: half-extents [hx,hy,hz] · sphere: [radius,0,0] · capsule: [radius, halfHeight, 0].'),
+          }),
+        )
+        .optional()
+        .describe('COMPOUND COLLIDER: extra shapes welded to this body (a hammer = box head + capsule handle; an L-shaped counter = two boxes). They move rigidly with the body and share its material/trigger/layer settings. Pass the FULL list (replaces). Verify with F10 during Play.'),
     }),
     execute: async ({ id, ...patch }) => {
       const object = findObject(id);

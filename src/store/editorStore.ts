@@ -220,7 +220,7 @@ import {
   type ProjectileSetup,
 } from './editor/objectFactory';
 import { getGraphRuntimeMap, layoutGraphNodes } from './editor/graphRuntime';
-import { buildContactIndex, contactMatches, contactOthers, contactTouches, firstContactOther, toIdSet, toLowerCaseSet } from './editor/runtimeIndexes';
+import { buildContactIndex, contactMatches, contactOthers, contactTouches, firstContactEvent, firstContactOther, toIdSet, toLowerCaseSet } from './editor/runtimeIndexes';
 import { makeId, stripUndefined } from './editor/ids';
 import { compileFeatherScriptToGraph, type FeatherCompileResult } from '../scripting/featherCompiler';
 import { buildNavGrid, findNavPath, type NavGrid, type NavObstacle } from '../runtime/navGrid';
@@ -6203,6 +6203,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // all three outputs (Hit/Actor/Count) within the frame instead of querying per pin.
       const overlapCache = new Map<string, { hit: boolean; actor: string | undefined; count: number }>();
 
+      // Per-tick memo for Sphere Cast nodes: one sweep serves all five outputs (Hit/Actor/Point/Distance/Normal).
+      const sphereCastCache = new Map<string, { hit: boolean; actor: string | undefined; point: Vector3Tuple; distance: number; normal: Vector3Tuple }>();
+
       // Whether a graph event-root fires for `objectId` this frame. Hoisted out of the per-object
       // loop (defined once per tick, not per scripted object) and shared by BOTH the early-skip below
       // and the root dispatch further down, so the firing rules can't drift between the two.
@@ -6356,6 +6359,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
             // On Receive Damage's value-out = how much HP this object lost on the hit that fired the event.
             case 'event.receiveDamage': return priorDamage[object.id] ?? 0;
+
+            // Collision Enter's value pins: contact DETAIL from the impact that fired the event —
+            // Other (the actor reference), Normal (toward this object — bounce direction), Point
+            // (world contact position), Speed (pre-solver impact speed for severity checks).
+            case 'event.collisionEnter': {
+              const contact = firstContactEvent(priorCollisionIndex, object.id);
+              if (sourceHandle === 'normal') return contact?.normal ? ([...contact.normal] as Vector3Tuple) : ([0, 1, 0] as Vector3Tuple);
+              if (sourceHandle === 'point') return contact?.point ? ([...contact.point] as Vector3Tuple) : ([position[0], position[1], position[2]] as Vector3Tuple);
+              if (sourceHandle === 'speed') return contact?.speed ?? 0;
+              return contact?.otherObjectId; // 'value-out' = Other (actor reference)
+            }
 
             case 'input.move': {
               // Move direction from the character's key bindings (falls back to WASD), normalized.
@@ -6517,6 +6531,49 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               if (sourceHandle === 'actor') return result.actor;
               if (sourceHandle === 'point') return [result.point[0], result.point[1], result.point[2]] as Vector3Tuple;
               if (sourceHandle === 'distance') return result.distance;
+              return result.hit; // 'value-out' = Hit (bool)
+            }
+
+            // Sphere Cast: sweep a ball along a direction — the THICK raycast (can't slip through
+            // gaps smaller than the ball). Five outputs by sourceHandle: Hit/Actor/Point/Distance
+            // and Normal (the hit surface's normal facing the caster — reflect projectiles with it).
+            case 'query.sphereCast': {
+              const cacheKey = `${object.id}:${nodeId}`;
+              let result = sphereCastCache.get(cacheKey);
+              if (!result) {
+                const maxDistance = Math.max(0.01, toNumber(valueInput(node, 'distance', Number(node.data.numberValue ?? 20))));
+                const radius = Math.max(0.01, toNumber(valueInput(node, 'radius', Number(node.data.amount ?? 0.5))));
+                const dirInput = valueInput(node, 'direction');
+                let dir: Vector3Tuple;
+                if (Array.isArray(dirInput) && (dirInput[0] || dirInput[1] || dirInput[2])) {
+                  dir = [Number(dirInput[0]) || 0, Number(dirInput[1]) || 0, Number(dirInput[2]) || 0];
+                } else {
+                  const facing = rotation[1] - (object.character?.modelYawOffset ?? 0);
+                  dir = [Math.sin(facing), 0, Math.cos(facing)];
+                }
+                const origin: Vector3Tuple = [position[0], position[1] + 0.9, position[2]];
+                const phys = getActivePhysics();
+                let hitRes: { objectId: string; distance: number; point: Vector3Tuple; normal: Vector3Tuple } | null = null;
+                if (phys) {
+                  const hadSelf = aiLineOfSightExclude.has(object.id);
+                  if (!hadSelf) aiLineOfSightExclude.add(object.id);
+                  hitRes = phys.castSphere(origin, dir, radius, maxDistance, aiLineOfSightExclude);
+                  if (!hadSelf) aiLineOfSightExclude.delete(object.id);
+                }
+                const dl = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+                result = {
+                  hit: Boolean(hitRes),
+                  actor: hitRes?.objectId,
+                  point: hitRes?.point ?? ([origin[0] + (dir[0] / dl) * maxDistance, origin[1] + (dir[1] / dl) * maxDistance, origin[2] + (dir[2] / dl) * maxDistance] as Vector3Tuple),
+                  distance: hitRes ? hitRes.distance : maxDistance,
+                  normal: hitRes?.normal ?? ([0, 1, 0] as Vector3Tuple),
+                };
+                sphereCastCache.set(cacheKey, result);
+              }
+              if (sourceHandle === 'actor') return result.actor;
+              if (sourceHandle === 'point') return [result.point[0], result.point[1], result.point[2]] as Vector3Tuple;
+              if (sourceHandle === 'distance') return result.distance;
+              if (sourceHandle === 'normal') return [result.normal[0], result.normal[1], result.normal[2]] as Vector3Tuple;
               return result.hit; // 'value-out' = Hit (bool)
             }
 
@@ -7038,7 +7095,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           // frame; "$self" = the owner; "$player" = the camera-follow player; "$cast" = the last successful Cast.
           const resolveTarget = (raw: string | undefined): string | undefined => {
             if (raw === '$trigger')
-              return firstContactOther(priorTriggerIndex, object.id) ?? firstContactOther(priorTriggerExitIndex, object.id);
+              return (
+                firstContactOther(priorTriggerIndex, object.id) ??
+                firstContactOther(priorTriggerExitIndex, object.id) ??
+                // Solid contacts too, so "other" resolves inside collision_enter/exit handlers
+                // (a bounce pad launching whatever LANDED on it, contact damage, etc.).
+                firstContactOther(priorCollisionIndex, object.id) ??
+                firstContactOther(priorCollisionExitIndex, object.id)
+              );
             if (raw === '$self') return object.id;
             if (raw === '$player') return playerId;
             if (raw === '$cast') return castTargetId;
@@ -7778,6 +7842,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
             if (node.data.nodeKind === 'action.jump') {
               characterJumpRequests.add(object.id);
+            }
+
+            // Set Joint Motor: powered mechanisms — drive the Target's hinge/slider joint toward a
+            // position (servo: doors, elevators) or at a velocity (windmills, conveyors).
+            if (node.data.nodeKind === 'action.setJointMotor') {
+              const jointTargetId = objectVarTarget(node);
+              const positionInput = valueInput(node, 'position');
+              const velocityInput = valueInput(node, 'velocity', node.data.numberValue);
+              getActivePhysics()?.setJointMotor(jointTargetId, {
+                position: typeof positionInput === 'number' ? positionInput : undefined,
+                velocity: typeof velocityInput === 'number' ? velocityInput : undefined,
+                maxForce: typeof node.data.amount === 'number' ? node.data.amount : undefined,
+              });
             }
 
             if (node.data.nodeKind === 'action.setCamera') {

@@ -57,6 +57,7 @@ const GROUPS: Group[] = [
     items: [
       { keys: ['F8'], label: 'Performance overlay' },
       { keys: ['F9'], label: 'Variable watch' },
+      { keys: ['F10'], label: 'Physics debug wireframe (during Play)' },
       { keys: ['Dbl-click'], label: 'Edit object blueprint (Hierarchy)' },
       { keys: ['Right-click'], label: 'Add node / object actions' },
       { keys: [MOD, 'C', '/', 'V'], label: 'Copy / paste nodes (Scripting)' },

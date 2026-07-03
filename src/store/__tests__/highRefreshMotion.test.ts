@@ -60,6 +60,39 @@ describe('fixed-timestep motion at high refresh rates', () => {
     expect(end - start).toBeGreaterThan(4 * 0.8); // ≥80% of 4 u/s over 1s (controller/collision slack)
   });
 
+  it('a character rides a moving kinematic platform instead of sliding off', async () => {
+    const sceneId = useEditorStore.getState().createScene('Platform Ride');
+    useEditorStore.getState().setActiveScene(sceneId);
+    const store = useEditorStore.getState();
+
+    // A script-driven kinematic platform sliding along +X, with an idle character standing on it.
+    const platformId = store.createObjectWithProps('cube', {
+      position: [0, 0.5, 0],
+      physics: { enabled: true, bodyType: 'kinematic' },
+    });
+    const { blueprintId } = useEditorStore.getState().createBlueprintNamed('Mover');
+    useEditorStore.getState().applyBlueprintFeatherSource(
+      blueprintId,
+      ['blueprint Mover', '', 'on update(dt):', '    self.translate(axis: "x", amount: 2)'].join('\n'),
+    );
+    useEditorStore.getState().attachScript(platformId, blueprintId);
+
+    const riderId = useEditorStore.getState().createObjectWithProps('capsule', { position: [0, 2, 0] });
+    useEditorStore.getState().toggleCharacterController(riderId);
+
+    useEditorStore.getState().setPlaying(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getActivePhysics()).toBeTruthy();
+    for (let frame = 0; frame < 180; frame += 1) useEditorStore.getState().tickRuntime(1 / 60); // 3s
+
+    const objects = selectActiveObjects(useEditorStore.getState());
+    const platformX = objects.find((item) => item.id === platformId)!.transform.position[0];
+    const riderX = objects.find((item) => item.id === riderId)!.transform.position[0];
+    expect(platformX).toBeGreaterThan(4); // the platform really moved (~6u)
+    // Pre-fix the rider stayed near 0 while the platform slid away; now it travels with it.
+    expect(riderX).toBeGreaterThan(platformX * 0.7);
+  });
+
   it('a fast dynamic body keeps publishing interpolated render poses on 0-step ticks', async () => {
     const sceneId = useEditorStore.getState().createScene('HighRefresh Body');
     useEditorStore.getState().setActiveScene(sceneId);

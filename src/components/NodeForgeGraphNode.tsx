@@ -566,6 +566,12 @@ const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: string 
       return [{ id: 'amount', label: 'Amount' }];
     case 'action.setTimeScale':
       return [{ id: 'scale', label: 'Scale' }];
+    case 'action.setJointMotor':
+      return [
+        { id: 'target', label: 'Target' },
+        { id: 'position', label: 'Position' },
+        { id: 'velocity', label: 'Velocity' },
+      ];
     case 'action.applyTorque':
       return [
         { id: 'target', label: 'Target' },
@@ -860,6 +866,56 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
             { id: 'actor', label: 'Actor', type: 'any' as const },
             { id: 'point', label: 'Point', type: 'vector3' as const },
             { id: 'distance', label: 'Distance', type: 'number' as const },
+          ]
+        ).map((out, index) => (
+          <span key={out.id}>
+            <Handle
+              id={out.id}
+              className={`node-port value-port value-${out.type} source`}
+              type="source"
+              position={Position.Right}
+              style={{ top: pinTop + index * pinStep }}
+            />
+            <span className="nfn-port-label out" style={{ top: pinTop + index * pinStep }}>
+              {out.label}
+            </span>
+          </span>
+        ))}
+
+      {/* Sphere Cast: five stacked outputs — Hit, Actor, Point, Distance, Normal (surface normal at hit). */}
+      {data.nodeKind === 'query.sphereCast' &&
+        (
+          [
+            { id: 'value-out', label: 'Hit', type: 'boolean' as const },
+            { id: 'actor', label: 'Actor', type: 'any' as const },
+            { id: 'point', label: 'Point', type: 'vector3' as const },
+            { id: 'distance', label: 'Distance', type: 'number' as const },
+            { id: 'normal', label: 'Normal', type: 'vector3' as const },
+          ]
+        ).map((out, index) => (
+          <span key={out.id}>
+            <Handle
+              id={out.id}
+              className={`node-port value-port value-${out.type} source`}
+              type="source"
+              position={Position.Right}
+              style={{ top: pinTop + index * pinStep }}
+            />
+            <span className="nfn-port-label out" style={{ top: pinTop + index * pinStep }}>
+              {out.label}
+            </span>
+          </span>
+        ))}
+
+      {/* Collision Enter: an event (exec-out above) that ALSO exposes the impact's contact detail —
+          Other (the actor that hit us), Normal (toward this object), Point, and Impact Speed. */}
+      {data.nodeKind === 'event.collisionEnter' &&
+        (
+          [
+            { id: 'value-out', label: 'Other', type: 'any' as const },
+            { id: 'normal', label: 'Normal', type: 'vector3' as const },
+            { id: 'point', label: 'Point', type: 'vector3' as const },
+            { id: 'speed', label: 'Speed', type: 'number' as const },
           ]
         ).map((out, index) => (
           <span key={out.id}>
