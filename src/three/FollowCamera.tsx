@@ -268,6 +268,7 @@ export function FollowCamera({ preview = false }: { preview?: boolean }) {
   const smoothedTargetId = useRef<string | undefined>(undefined);
   const smoothedVelocity = useRef(new THREE.Vector3());
   const lookTarget = useRef(new THREE.Vector3());
+  const rebaseSeq = useRebaseSeqRef();
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   // Spring-arm collision raycaster + smoothed aim-down-sights blend (0 = hip, 1 = aiming).
@@ -383,6 +384,9 @@ export function FollowCamera({ preview = false }: { preview?: boolean }) {
     const camera = cameraRef.current;
     const ccResolved = resolveCameraConfig(liveTarget);
     if (!camera || !liveTarget || !ccResolved) return;
+    // Floating origin: when the world rebased this frame, shift every smoothed world-space vector
+    // (and the camera itself) by the same offset so nothing lerp-swings across the map.
+    applyOriginRebase(rebaseSeq, [camera.position, desired.current, rawTarget.current, smoothedTarget.current, lookTarget.current]);
     const liveTransform = readTransform(liveTarget.id) ?? liveTarget.transform;
     const isVehicleTarget = Boolean(liveTarget.vehicle?.enabled);
     const cc = ccResolved;

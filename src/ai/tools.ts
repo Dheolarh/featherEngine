@@ -4,6 +4,7 @@ import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { type UITemplateKind, type UIThemeKind } from '../store/editor/ui';
 import { undo as undoHistory, redo as redoHistory } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
+import { getPlatform } from '../platform';
 import type {
   ColliderType,
   CinematicAction,
@@ -4469,7 +4470,7 @@ const rawEngineTools = {
 
   export_production: tool({
     description:
-      'Export the game to PRODUCTION: build a playable native app for the current OS plus a portable web build. On the DESKTOP app it first asks the user to choose a destination folder, then runs the full build right away (live progress; a few minutes) and writes the native installers (<slug>-native/) and portable web build (<slug>-web/) into that folder. On web it instead downloads game.json and the build is finished from the engine folder with `npm run export:production`. Use when the user wants a final shippable/playable build for desktop platforms, not just the raw game bundle.',
+      'Export the game to PRODUCTION: opens the Build Report dialog with a PLATFORM PICKER (Web always included + checkboxes for this desktop OS, Android and iOS when their toolchains are installed; the other desktop OSes build via the bundled GitHub Actions workflow "Export Desktop Installers"). The user reviews contents, ticks platforms and confirms; the build then runs with live progress (a few minutes) and writes <slug>-web/, <slug>-native/, <slug>-android/ or <slug>-ios/ into the chosen folder. On web it instead downloads game.json to finish with `npm run export:production` (or export:android / export:ios). Use when the user wants a final shippable/playable build.',
     inputSchema: z.object({}),
     execute: async () => {
       if (!useProjectStore.getState().hasProject) return 'No project is open to export.';
@@ -4477,7 +4478,24 @@ const rawEngineTools = {
       const { error } = useProjectStore.getState();
       return error
         ? `Production build failed: ${error}`
-        : 'Production build done (desktop): native app + web build are in src-tauri/target/release/bundle/ and exports/. On web, game.json was downloaded to finish with `npm run export:production`.';
+        : 'Opened the Build Report dialog — the user picks target platforms (Web/desktop/Android/iOS) there and confirms to run the build.';
+    },
+  }),
+
+  list_export_platforms: tool({
+    description:
+      'Report which export platforms this machine can build RIGHT NOW (Web, Windows, macOS, Linux, Android, iOS) and exactly what is missing for the rest (e.g. Android SDK, CocoaPods, Rust mobile targets — each with its install command). Desktop editor only; on the web editor there is no local toolchain to inspect. Use when the user asks "can I export to X?", "why is Android greyed out?", or wants to set up mobile/desktop builds.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const platform = await getPlatform();
+      if (!platform.checkExportPlatforms) {
+        return 'Web editor: no local toolchains to inspect here. Web export always works; native/mobile builds run from the engine folder (`npm run doctor` shows per-platform status) or via the desktop editor.';
+      }
+      try {
+        return JSON.stringify(await platform.checkExportPlatforms());
+      } catch (error) {
+        return `Platform doctor failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
     },
   }),
 };

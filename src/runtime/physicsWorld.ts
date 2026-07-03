@@ -445,6 +445,12 @@ export interface PhysicsContactEvent {
    *  resolved the hit — post-step velocity reads near zero exactly when something slams a wall.
    *  Drives impact-severity consumers (breakaway props). Absent on exit events. */
   speed?: number;
+  /** World-space contact normal pointing TOWARD this event's `objectId` (the direction it would
+   *  bounce). Mirrored events carry the negated normal. Solid contacts only — absent on sensors
+   *  and exit events, or when Rapier reports no manifold this frame. */
+  normal?: Vector3Tuple;
+  /** World-space contact point (first solver contact). Solid contacts only. */
+  point?: Vector3Tuple;
 }
 
 /** A capsule sized to a (feet-origin) humanoid, scaled by the object. */
@@ -1843,7 +1849,35 @@ class PhysicsRuntime {
       }
       const list = isTrigger ? triggers : collisions;
       const speed = Math.max(this.preStepSpeed.get(a) ?? 0, this.preStepSpeed.get(b) ?? 0);
-      list.push({ objectId: a, otherObjectId: b, speed }, { objectId: b, otherObjectId: a, speed });
+      // Contact DETAIL (solid contacts only): the manifold's world normal + first solver contact
+      // point, so gameplay can bounce along the surface, place decals/sparks at the hit, and read
+      // directional damage. Convention: each event's normal points TOWARD its own objectId.
+      let normalForA: Vector3Tuple | undefined;
+      let point: Vector3Tuple | undefined;
+      if (!isTrigger) {
+        const collider1 = this.world.getCollider(h1);
+        const collider2 = this.world.getCollider(h2);
+        if (collider1 && collider2) {
+          this.world.contactPair(collider1, collider2, (manifold, flipped) => {
+            if (normalForA) return;
+            const n = manifold.normal();
+            // Rapier's manifold normal points from the pair's FIRST collider toward the second;
+            // `flipped` says the pair order is (h2, h1). Normalize to "toward a" (h1's object).
+            const sign = flipped ? 1 : -1;
+            const candidate: Vector3Tuple = [n.x * sign, n.y * sign, n.z * sign];
+            if (Math.hypot(candidate[0], candidate[1], candidate[2]) > 1e-6) normalForA = candidate;
+            if (manifold.numSolverContacts() > 0) {
+              const p = manifold.solverContactPoint(0);
+              if (p) point = [p.x, p.y, p.z];
+            }
+          });
+        }
+      }
+      const normalForB: Vector3Tuple | undefined = normalForA ? [-normalForA[0], -normalForA[1], -normalForA[2]] : undefined;
+      list.push(
+        { objectId: a, otherObjectId: b, speed, normal: normalForA, point },
+        { objectId: b, otherObjectId: a, speed, normal: normalForB, point },
+      );
     });
 
     const transforms = new Map<string, { position: Vector3Tuple; rotation: Vector3Tuple }>();
@@ -1868,7 +1902,12 @@ class PhysicsRuntime {
         // Avoid per-frame Rapier readback and store churn for floors, walls, and cover.
         continue;
       }
-      const t = entry.body.translation();
+      // Kinematic bodies (script-driven movers) read their QUEUED next-translation, not the stepped
+      // pose: setNextKinematic* only lands during world.step, so on a 0-step frame (display faster
+      // than the 60Hz sim) the stepped pose is one tick stale — reading it would REVERT this tick's
+      // scripted movement in the store and the mover would visibly freeze-snap (and lose distance)
+      // at high refresh rates. The queued target is what the scripts authored this tick.
+      const t = entry.body.isKinematic() ? entry.body.nextTranslation() : entry.body.translation();
       const q = entry.body.rotation();
       reuseQuat.set(q.x, q.y, q.z, q.w);
       reuseEuler.setFromQuaternion(reuseQuat, 'XYZ');
@@ -1879,10 +1918,12 @@ class PhysicsRuntime {
       transforms.set(id, object?.parentId ? worldToLocalUnder(byId, object.parentId, position, rotation) : { position, rotation });
     }
     // Characters: collision resolves position; facing (rotation) stays whatever the controller set.
+    // Same 0-step rule as kinematic bodies above: the queued (already collide-and-slide-resolved)
+    // target IS this tick's position — reading the stepped pose froze the pawn between sim steps.
     for (const object of objects) {
       const entry = object.character?.enabled ? this.charEntries.get(object.id) : undefined;
       if (!entry) continue;
-      const t = entry.body.translation();
+      const t = entry.body.nextTranslation();
       transforms.set(object.id, { position: [t.x, t.y, t.z], rotation: object.transform.rotation });
     }
     // Kinematic bodies are script-driven: keep the EULER rotation the script set, instead of the
@@ -2093,6 +2134,60 @@ class PhysicsRuntime {
       RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
     );
     return found;
+  }
+
+  /**
+   * Sphere cast (sweep test) — Unreal's SphereTraceSingle / Unity's Physics.SphereCast: slide a ball
+   * of `radius` from `origin` along `dir` for up to `maxDistance` and report the FIRST solid it
+   * touches. Unlike a ray it has thickness, so it can't slip through gaps smaller than the ball —
+   * the right primitive for thick projectiles, custom movement probes, ledge/clearance checks, and
+   * vehicle sensors. Sensors are skipped; `exclude` filters ids (typically the caster). Returns the
+   * hit object, travel distance, world contact point, and the SURFACE normal (pointing back at the
+   * caster), or null on a miss.
+   */
+  castSphere(
+    origin: Vector3Tuple,
+    dir: Vector3Tuple,
+    radius: number,
+    maxDistance: number,
+    exclude?: Set<string>,
+  ): { objectId: string; distance: number; point: Vector3Tuple; normal: Vector3Tuple } | null {
+    const len = Math.hypot(dir[0], dir[1], dir[2]);
+    if (!(len > 1e-6) || !(maxDistance > 0) || !(radius > 0)) return null;
+    const nx = dir[0] / len;
+    const ny = dir[1] / len;
+    const nz = dir[2] / len;
+    const hit = this.world.castShape(
+      { x: origin[0], y: origin[1], z: origin[2] },
+      { x: 0, y: 0, z: 0, w: 1 },
+      { x: nx, y: ny, z: nz },
+      new RAPIER.Ball(radius),
+      0,
+      maxDistance,
+      true,
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      undefined,
+      undefined,
+      undefined,
+      (collider) => {
+        const id = this.handleToId.get(collider.handle);
+        return id !== undefined && !exclude?.has(id);
+      },
+    );
+    if (!hit) return null;
+    const id = this.handleToId.get(hit.collider.handle);
+    if (!id) return null;
+    const toi = hit.time_of_impact;
+    // witness1 is LOCAL to the cast ball (identity rotation): world point = ball center at impact + witness.
+    const point: Vector3Tuple = [
+      origin[0] + nx * toi + hit.witness1.x,
+      origin[1] + ny * toi + hit.witness1.y,
+      origin[2] + nz * toi + hit.witness1.z,
+    ];
+    // normal1 is the outward normal ON THE BALL at the contact (points into the surface); the
+    // surface normal facing the caster is its negation.
+    const normal: Vector3Tuple = [-hit.normal1.x, -hit.normal1.y, -hit.normal1.z];
+    return { objectId: id, distance: toi, point, normal };
   }
 
   /**

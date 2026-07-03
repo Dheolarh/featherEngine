@@ -359,6 +359,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Exported game';
     case 'export_production':
       return 'Staged production build';
+    case 'list_export_platforms':
+      return 'Checked export platforms';
     default:
       return toolName;
   }

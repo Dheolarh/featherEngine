@@ -9,14 +9,20 @@
 //   - a NATIVE APP (--native): wraps that folder in the Tauri player target,
 //     producing a real .app/.dmg (mac), .msi/.exe (windows), or
 //     .AppImage/.deb (linux) for the current operating system.
+//   - an ANDROID APK (--android): the same player wrapped in the Tauri mobile
+//     shell; requires the Android SDK/NDK (run `npm run doctor` to check).
+//   - an iOS APP (--ios): Xcode-built via the Tauri mobile shell (macOS only);
+//     device installs need a signing team — the Xcode project is generated
+//     under src-tauri/gen/apple either way.
 //
 // Usage:
 //   node scripts/export-production.mjs [--bundle <game.json>] [--name "<Game>"]
-//                                      [--out <dir>] [--native] [--fast]
-//                                      [--skip-build] [--zip] [--open]
+//                                      [--out <dir>] [--native] [--android] [--ios]
+//                                      [--fast] [--skip-build] [--zip] [--open]
 //
 // Defaults: --bundle exports/staging/game.json, --out exports/
 import { execFileSync } from 'node:child_process';
+import { findAndroidSdk, findAndroidNdk } from './platform-doctor.mjs';
 import {
   cpSync,
   existsSync,
@@ -61,20 +67,18 @@ function slugify(name) {
   );
 }
 
-function run(cmd, args) {
+function run(cmd, args, env) {
   console.log(`\n$ ${cmd} ${args.join(' ')}`);
+  const options = { cwd: root, stdio: 'inherit', env: env ? { ...process.env, ...env } : process.env };
   if (process.platform === 'win32') {
     const quote = (part) => {
       const text = String(part);
       return /[\s&()^%!<>|"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     };
-    execFileSync('cmd.exe', ['/d', '/c', [cmd, ...args].map(quote).join(' ')], {
-      cwd: root,
-      stdio: 'inherit',
-    });
+    execFileSync('cmd.exe', ['/d', '/c', [cmd, ...args].map(quote).join(' ')], options);
     return;
   }
-  execFileSync(cmd, args, { cwd: root, stdio: 'inherit' });
+  execFileSync(cmd, args, options);
 }
 
 function openPath(path) {
@@ -99,6 +103,34 @@ function collectInstallers(bundleDir) {
     }
   }
   return found;
+}
+
+/** Recursively find files matching `pattern` under `dir` (mobile build outputs move around). */
+function findArtifacts(dir, pattern, depth = 8) {
+  if (depth < 0 || !existsSync(dir)) return [];
+  const found = [];
+  for (const entry of readdirSync(dir)) {
+    const full = resolve(dir, entry);
+    let stat;
+    try {
+      stat = statSync(full);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) found.push(...findArtifacts(full, pattern, depth - 1));
+    else if (pattern.test(entry)) found.push(full);
+  }
+  return found;
+}
+
+/** Copy build artifacts into a fresh `<out>/<slug>-<suffix>/` folder; returns the folder or null. */
+function copyArtifacts(files, outRoot, slug, suffix) {
+  if (!files.length) return null;
+  const dest = resolve(outRoot, `${slug}-${suffix}`);
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  for (const src of files) cpSync(src, resolve(dest, basename(src)), { recursive: true });
+  return dest;
 }
 
 function injectBundleScript(html, title) {
@@ -202,35 +234,112 @@ writeFileSync(
 );
 console.log(`\nOK: Portable web build -> ${webOut}`);
 
-if (opts.native) {
+/** Bake the game bundle into dist-player, run `fn`, then restore dist-player so repeated
+ *  exports never leave game-specific files in the reusable player build. */
+function withBakedBundle(fn) {
   const distIndex = resolve(distPlayer, 'index.html');
   const distBundle = resolve(distPlayer, 'game-bundle.js');
   const indexBefore = readFileSync(distIndex, 'utf8');
   const hadBundle = existsSync(distBundle);
   const bundleBefore = hadBundle ? readFileSync(distBundle, 'utf8') : null;
-
   try {
     writeFileSync(distBundle, bundleJs);
     writeFileSync(distIndex, injectBundleScript(indexBefore, gameName));
-    run(npmCmd, ['run', 'tauri', '--', 'build', '--config', 'src-tauri/tauri.player.conf.json']);
+    fn();
   } finally {
     writeFileSync(distIndex, indexBefore);
     if (hadBundle) writeFileSync(distBundle, bundleBefore);
     else rmSync(distBundle, { force: true });
   }
+}
+
+const PLAYER_CONFIG = 'src-tauri/tauri.player.conf.json';
+
+if (opts.native) {
+  withBakedBundle(() => {
+    run(npmCmd, ['run', 'tauri', '--', 'build', '--config', PLAYER_CONFIG]);
+  });
 
   const bundleDir = resolve(root, 'src-tauri/target/release/bundle');
   console.log(`\nOK: Native build complete. Installers are in:\n  ${bundleDir}/`);
 
-  const nativeOut = resolve(outRoot, `${slug}-native`);
-  const collected = collectInstallers(bundleDir);
-  if (collected.length) {
-    rmSync(nativeOut, { recursive: true, force: true });
-    mkdirSync(nativeOut, { recursive: true });
-    for (const src of collected) cpSync(src, resolve(nativeOut, basename(src)), { recursive: true });
-    console.log(`OK: Native app copied -> ${nativeOut}`);
+  const nativeOut = copyArtifacts(collectInstallers(bundleDir), outRoot, slug, 'native');
+  if (nativeOut) console.log(`OK: Native app copied -> ${nativeOut}`);
+  else console.warn('WARNING: No native installers were found to copy.');
+}
+
+if (opts.android) {
+  const sdk = findAndroidSdk();
+  const ndk = findAndroidNdk(sdk);
+  if (!sdk || !ndk) {
+    console.error(
+      '\nERROR: Android SDK/NDK not found. Install Android Studio (with an NDK via the SDK Manager)\n' +
+        '  or set ANDROID_HOME / NDK_HOME. Run `npm run doctor` for a full checklist.\n',
+    );
+    process.exit(1);
+  }
+  const androidEnv = {
+    ANDROID_HOME: process.env.ANDROID_HOME || sdk,
+    NDK_HOME: process.env.NDK_HOME || ndk,
+  };
+
+  if (!existsSync(resolve(root, 'src-tauri/gen/android'))) {
+    console.log('\nInitializing the Android project (first run only)…');
+    run(npmCmd, ['run', 'tauri', '--', 'android', 'init', '--ci', '--config', PLAYER_CONFIG], androidEnv);
+  }
+
+  withBakedBundle(() => {
+    run(npmCmd, ['run', 'tauri', '--', 'android', 'build', '--apk', '--config', PLAYER_CONFIG], androidEnv);
+  });
+
+  const outputs = resolve(root, 'src-tauri/gen/android/app/build/outputs');
+  const apks = findArtifacts(outputs, /\.(apk|aab)$/i);
+  const androidOut = copyArtifacts(apks, outRoot, slug, 'android');
+  if (androidOut) {
+    console.log(`\nOK: Android build copied -> ${androidOut}`);
+    if (apks.some((file) => /unsigned/i.test(basename(file)))) {
+      console.log(
+        '  NOTE: the APK is unsigned. For sideloading/testing, configure a debug keystore, or set up\n' +
+          '  release signing for the Play Store: https://v2.tauri.app/distribute/sign/android/',
+      );
+    }
   } else {
-    console.warn('WARNING: No native installers were found to copy.');
+    console.warn('WARNING: No .apk/.aab artifacts were found under src-tauri/gen/android.');
+  }
+}
+
+if (opts.ios) {
+  if (process.platform !== 'darwin') {
+    console.error('\nERROR: iOS builds require macOS with Xcode installed.\n');
+    process.exit(1);
+  }
+
+  if (!existsSync(resolve(root, 'src-tauri/gen/apple'))) {
+    console.log('\nInitializing the iOS Xcode project (first run only)…');
+    run(npmCmd, ['run', 'tauri', '--', 'ios', 'init', '--ci', '--config', PLAYER_CONFIG]);
+  }
+
+  let iosBuildFailed = false;
+  withBakedBundle(() => {
+    try {
+      run(npmCmd, ['run', 'tauri', '--', 'ios', 'build', '--export-method', 'debugging', '--config', PLAYER_CONFIG]);
+    } catch {
+      iosBuildFailed = true;
+    }
+  });
+
+  const ipas = findArtifacts(resolve(root, 'src-tauri/gen/apple'), /\.ipa$/i);
+  const iosOut = copyArtifacts(ipas, outRoot, slug, 'ios');
+  if (iosOut) {
+    console.log(`\nOK: iOS build copied -> ${iosOut}`);
+  } else {
+    console.warn(
+      `\n${iosBuildFailed ? 'The iOS command-line build did not finish (usually a signing-team issue).' : 'No .ipa was produced.'}\n` +
+        '  The Xcode project is ready: open src-tauri/gen/apple in Xcode, pick your team under\n' +
+        '  Signing & Capabilities, then build/run on a device or simulator.\n' +
+        '  (A free Apple ID works for on-device testing.)',
+    );
+    if (iosBuildFailed) process.exitCode = 1;
   }
 }
 

@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { audioEngine } from '../runtime/audioEngine';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
+import { TouchControls } from './TouchControls';
 
 /** Turn a KeyboardEvent.code into a short label for the prompt chip ("KeyE" → "E", "Space" → "Space"). */
 function keyLabel(code: string | undefined): string {
@@ -483,6 +484,8 @@ export function GameHud() {
           </div>
         </div>
       )}
+      {/* Virtual joystick + buttons on touch devices — makes mobile/web-touch exports playable. */}
+      <TouchControls />
       <style>{`
         @keyframes nf-prompt-in { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
         @keyframes nf-hit { 0% { opacity: 0; transform: translate(-50%,-50%) scale(1.8); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-50%) scale(0.9); } }

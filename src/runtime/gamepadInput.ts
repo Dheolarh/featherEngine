@@ -1,4 +1,5 @@
 import { mouseLook } from './mouseLook';
+import { touchInput } from './touchInput';
 
 /**
  * Gamepad input for Play mode, shared (like `mouseLook`) as a plain module singleton so per-frame
@@ -111,6 +112,14 @@ export function sampleGamepads(delta: number, setKey: (code: string, pressed: bo
       if (i === 6) brake = Math.max(brake, button.value);
       if (i === 7) throttle = Math.max(throttle, button.value);
     }
+  }
+  // The touch overlay's virtual stick merges in like one more pad (max-magnitude), and stick
+  // up/down doubles as vehicle throttle/brake so driving templates work on phones untouched.
+  if (touchInput.active) {
+    if (Math.abs(touchInput.moveX) > Math.abs(moveX)) moveX = touchInput.moveX;
+    if (Math.abs(touchInput.moveY) > Math.abs(moveY)) moveY = touchInput.moveY;
+    throttle = Math.max(throttle, Math.max(0, touchInput.moveY));
+    brake = Math.max(brake, Math.max(0, -touchInput.moveY));
   }
   gamepadInput.connected = connected;
   gamepadInput.moveX = moveX;

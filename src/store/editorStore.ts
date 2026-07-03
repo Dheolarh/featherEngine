@@ -9628,10 +9628,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         if (result.renderTransforms.size) {
           // The buffer's BufferedTransform needs a scale; physics never changes scale, so reuse each
           // object's authored scale and only swap in the smoothed position/rotation.
+          // IMPORTANT: publish EVERY interpolated pose physics reports — not just movedObjects. On a
+          // 0-step frame (any display faster than the 60Hz sim) the store transform doesn't change, so
+          // a fast body drops out of movedObjects on exactly the frames where the climbing-alpha glide
+          // is what keeps it smooth; gating on movedObjects made cars alternate interpolated/stepped
+          // poses — the "freeze then snap forward" judder at speed.
           const renderMap = new Map<string, BufferedTransform>();
-          for (const o of movedObjects) {
-            const rt = result.renderTransforms.get(o.id);
-            if (rt) renderMap.set(o.id, { position: rt.position, rotation: rt.rotation, scale: o.transform.scale });
+          for (const [id, rt] of result.renderTransforms) {
+            const scale = activeObjectById.get(id)?.transform.scale;
+            if (scale) renderMap.set(id, { position: rt.position, rotation: rt.rotation, scale });
           }
           physicsRenderTransforms = renderMap;
         }

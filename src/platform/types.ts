@@ -1,5 +1,35 @@
 import type { NodeForgeProject } from '../types';
 
+/** One export platform (build target) an exported game can ship to. */
+export type ExportTarget = 'web' | 'desktop' | 'android' | 'ios';
+
+/** One toolchain requirement inside a platform-doctor report entry. */
+export interface ExportRequirement {
+  id: string;
+  label: string;
+  ok: boolean;
+  /** How to install/fix it — present only when `ok` is false. */
+  fix?: string;
+}
+
+/** Per-platform readiness from `scripts/platform-doctor.mjs`. */
+export interface ExportPlatformInfo {
+  id: 'web' | 'windows' | 'macos' | 'linux' | 'android' | 'ios';
+  label: string;
+  kind: 'web' | 'desktop' | 'mobile';
+  /** ready = buildable on this machine now; ci = build on another OS / GitHub Actions;
+   *  missing = toolchain gaps (see requirements); unsupported = impossible here (iOS off-Mac). */
+  status: 'ready' | 'ci' | 'missing' | 'unsupported';
+  requirements: ExportRequirement[];
+  notes?: string;
+}
+
+export interface ExportPlatformsReport {
+  host: string;
+  hostLabel: string;
+  platforms: ExportPlatformInfo[];
+}
+
 export interface OpenedProject {
   /** Absolute project directory on desktop; a synthetic id on web. */
   dir: string;
@@ -36,17 +66,23 @@ export interface Platform {
    */
   stageProduction(name: string, bundle: unknown): Promise<string | null>;
   /**
-   * Desktop only: actually run the production build (portable web folder + native app for
-   * the current OS) for an already-built bundle, streaming each output line via `onProgress`.
+   * Desktop only: actually run the production build for an already-built bundle, streaming each
+   * output line via `onProgress`. The portable web folder is always produced; `targets` adds
+   * native builds on top: 'desktop' (installer for this OS), 'android' (APK), 'ios' (Xcode).
    * Resolves to the bundle output directory. Undefined on platforms that can't build locally
    * (web) — callers fall back to `stageProduction`.
    */
   buildProduction?(
     bundleJson: string,
-    native: boolean,
+    targets: ExportTarget[],
     onProgress: (line: string) => void,
     outDir?: string,
   ): Promise<string>;
+  /**
+   * Desktop only: run the platform doctor and report which export platforms this machine can
+   * build right now (and what's missing for the rest). Undefined on web.
+   */
+  checkExportPlatforms?(): Promise<ExportPlatformsReport>;
   /** Desktop only: prompt for a folder. Returns the absolute path, or null if cancelled. */
   pickDirectory?(title?: string): Promise<string | null>;
   /**

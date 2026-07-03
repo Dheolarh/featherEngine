@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { getPlatform, isDesktop } from '../platform';
+import type { ExportPlatformsReport, ExportTarget } from '../platform/types';
 import { blankProject } from '../project/serialize';
 import { buildGameBundle, embedAssets, stripUnusedAssets, type GameBundle } from '../project/exportGame';
 import { verifyGameBundle, type BundleReport } from '../project/verifyBundle';
@@ -76,12 +77,17 @@ interface ProjectState {
   buildProgress: { running: boolean; lines: string[] } | null;
   /** A built+verified bundle waiting for the user's go-ahead in the Build Report dialog. */
   pendingExport: { mode: 'game' | 'production'; bundle: GameBundle; report: BundleReport } | null;
+  /** Platform-doctor report for the export dialog's platform picker (desktop only). */
+  exportPlatforms: ExportPlatformsReport | null;
   clearToast: () => void;
   clearBuildProgress: () => void;
+  /** Refresh `exportPlatforms` from the platform doctor (no-op on web). */
+  loadExportPlatforms: () => Promise<void>;
   /** Close the Build Report dialog without exporting. */
   cancelPendingExport: () => void;
-  /** Confirm the Build Report dialog: run the chosen export, optionally stripping unused assets. */
-  confirmPendingExport: (stripUnused: boolean) => Promise<void>;
+  /** Confirm the Build Report dialog: run the chosen export, optionally stripping unused assets.
+   *  For production mode, `targets` selects the platforms to build (defaults to this desktop). */
+  confirmPendingExport: (stripUnused: boolean, targets?: ExportTarget[]) => Promise<void>;
   newProject: (name: string) => Promise<void>;
   openProject: () => Promise<void>;
   openRecent: (dir: string) => Promise<void>;
@@ -146,7 +152,7 @@ export const useProjectStore = create<ProjectState>()(
       };
 
       // Second half of the Production flow, after the Build Report is confirmed.
-      const runProductionExport = async (bundle: GameBundle, report: BundleReport) => {
+      const runProductionExport = async (bundle: GameBundle, report: BundleReport, targets: ExportTarget[]) => {
         const { projectName } = get();
         const platform = await getPlatform();
         const reportLines = [
@@ -170,7 +176,7 @@ export const useProjectStore = create<ProjectState>()(
           try {
             const outDir = await platform.buildProduction(
               JSON.stringify(bundle),
-              true,
+              targets,
               (line) => {
                 set((state) => ({
                   buildProgress: {
@@ -229,8 +235,20 @@ export const useProjectStore = create<ProjectState>()(
         toast: null,
         buildProgress: null,
         pendingExport: null,
+        exportPlatforms: null,
         clearToast: () => set({ toast: null }),
         clearBuildProgress: () => set({ buildProgress: null }),
+
+        loadExportPlatforms: async () => {
+          try {
+            const platform = await getPlatform();
+            if (!platform.checkExportPlatforms) return;
+            set({ exportPlatforms: await platform.checkExportPlatforms() });
+          } catch (error) {
+            // Non-fatal: the dialog just falls back to the plain desktop build.
+            console.warn('Platform doctor failed:', error);
+          }
+        },
 
         newProject: async (name) => {
           set({ busy: true, error: null });
@@ -334,7 +352,7 @@ export const useProjectStore = create<ProjectState>()(
 
         cancelPendingExport: () => set({ pendingExport: null }),
 
-        confirmPendingExport: async (stripUnused) => {
+        confirmPendingExport: async (stripUnused, targets) => {
           const pending = get().pendingExport;
           if (!pending) return;
           const { mode, report } = pending;
@@ -351,7 +369,7 @@ export const useProjectStore = create<ProjectState>()(
             if (report.warnings.length) console.warn('Export issues:', report.warnings);
             console.info('Export contents:', report.summary);
             if (mode === 'game') await runGameExport(bundle);
-            else await runProductionExport(bundle, report);
+            else await runProductionExport(bundle, report, targets?.length ? targets : ['desktop']);
           } catch (error) {
             const message = errorMessage(error);
             set({ error: message, toast: { kind: 'error', message: `Export failed: ${message}` } });

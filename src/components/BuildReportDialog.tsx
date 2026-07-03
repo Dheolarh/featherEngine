@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, ClipboardCheck, OctagonX, Scissors, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Apple,
+  ClipboardCheck,
+  Cloud,
+  Globe,
+  Monitor,
+  OctagonX,
+  Scissors,
+  Smartphone,
+  X,
+} from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
+import type { ExportPlatformInfo, ExportTarget } from '../platform/types';
 
 /** Single asset above this size gets flagged in the breakdown — it dominates load time. */
 const LARGE_ASSET_BYTES = 8 * 1024 * 1024;
@@ -17,6 +29,89 @@ function humanSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+function platformIcon(info: ExportPlatformInfo) {
+  if (info.id === 'web') return <Globe size={14} aria-hidden />;
+  if (info.id === 'ios') return <Apple size={14} aria-hidden />;
+  if (info.kind === 'mobile') return <Smartphone size={14} aria-hidden />;
+  return <Monitor size={14} aria-hidden />;
+}
+
+/** The buildProduction target a doctor platform maps to ('desktop' = installer for the host OS). */
+function platformTarget(info: ExportPlatformInfo): ExportTarget | null {
+  if (info.id === 'web') return 'web';
+  if (info.id === 'android') return 'android';
+  if (info.id === 'ios') return 'ios';
+  return info.status === 'ready' || info.status === 'missing' ? 'desktop' : null;
+}
+
+/**
+ * Per-platform rows for a Production export: what this machine can build right now (checkbox),
+ * what belongs on CI (cloud hint), and exactly what's missing otherwise (first unmet requirement).
+ */
+function PlatformPicker({
+  selected,
+  onToggle,
+}: {
+  selected: Set<ExportTarget>;
+  onToggle: (target: ExportTarget) => void;
+}) {
+  const platforms = useProjectStore((state) => state.exportPlatforms);
+  if (!platforms) return null;
+
+  return (
+    <section className="report-section">
+      <h3>Platforms</h3>
+      <ul className="report-platforms">
+        {platforms.platforms.map((info) => {
+          const target = platformTarget(info);
+          const buildable = target !== null && (info.status === 'ready' || info.id === 'web');
+          const checked = info.id === 'web' || (target !== null && selected.has(target));
+          const firstMissing = info.requirements.find((req) => !req.ok);
+          return (
+            <li key={info.id} className={`report-platform ${info.status}`}>
+              <label className="report-platform-main">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!buildable || info.id === 'web'}
+                  onChange={() => target && onToggle(target)}
+                />
+                {platformIcon(info)}
+                <span className="report-platform-label">{info.label}</span>
+                {info.id === 'web' && <span className="report-flag ok">always included</span>}
+                {info.status === 'ready' && info.id !== 'web' && <span className="report-flag ok">ready</span>}
+                {info.status === 'ci' && (
+                  <span className="report-flag" title={info.notes}>
+                    <Cloud size={11} aria-hidden /> build on CI
+                  </span>
+                )}
+                {info.status === 'missing' && (
+                  <span className="report-flag warn" title={info.notes}>
+                    setup needed
+                  </span>
+                )}
+                {info.status === 'unsupported' && <span className="report-flag error">needs a Mac</span>}
+              </label>
+              {info.status === 'missing' && firstMissing && (
+                <div className="report-platform-hint">
+                  {firstMissing.label}
+                  {firstMissing.fix ? ` — ${firstMissing.fix}` : ''}
+                  {' · run `npm run doctor` for the full checklist'}
+                </div>
+              )}
+              {info.status === 'ci' && (
+                <div className="report-platform-hint">
+                  One click away on GitHub: Actions → “Export Desktop Installers”.
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 /**
  * Pre-export "Build Report": what's in the bundle, how big each asset is, what's broken and
  * what will be stripped — shown before any file dialog so the user can trust what ships.
@@ -26,16 +121,31 @@ export function BuildReportDialog() {
   const pending = useProjectStore((state) => state.pendingExport);
   const cancel = useProjectStore((state) => state.cancelPendingExport);
   const confirm = useProjectStore((state) => state.confirmPendingExport);
+  const loadExportPlatforms = useProjectStore((state) => state.loadExportPlatforms);
   const [stripUnused, setStripUnused] = useState(() => localStorage.getItem(STRIP_PREF_KEY) !== '0');
+  // Native build targets for Production mode; the desktop installer for this OS starts selected.
+  const [targets, setTargets] = useState<Set<ExportTarget>>(() => new Set<ExportTarget>(['desktop']));
+
+  const isProduction = pending?.mode === 'production';
 
   useEffect(() => {
     if (!pending) return;
+    if (isProduction) void loadExportPlatforms();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') cancel();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pending, cancel]);
+  }, [pending, isProduction, cancel, loadExportPlatforms]);
+
+  const toggleTarget = (target: ExportTarget) => {
+    setTargets((current) => {
+      const next = new Set(current);
+      if (next.has(target)) next.delete(target);
+      else next.add(target);
+      return next;
+    });
+  };
 
   const report = pending?.report ?? null;
   const stripped = useMemo(
@@ -161,6 +271,8 @@ export function BuildReportDialog() {
                 </section>
               )}
 
+              {isProduction && <PlatformPicker selected={targets} onToggle={toggleTarget} />}
+
               <section className="report-section">
                 <label className="report-strip-toggle">
                   <input
@@ -190,7 +302,7 @@ export function BuildReportDialog() {
                 className="prefs-primary-button"
                 disabled={hasErrors}
                 title={hasErrors ? 'Fix the errors above first — a used resource is missing.' : undefined}
-                onClick={() => void confirm(stripUnused)}
+                onClick={() => void confirm(stripUnused, isProduction ? [...targets] : undefined)}
               >
                 {hasErrors ? 'Export' : hasWarnings ? 'Export anyway' : 'Export'}
               </button>

@@ -8081,6 +8081,58 @@ button {
   color: var(--danger);
 }
 
+.report-flag.ok {
+  border-color: color-mix(in srgb, var(--success, #4caf78) 45%, transparent);
+  color: var(--success, #4caf78);
+}
+
+.report-platforms {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-platform {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+
+.report-platform-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.report-platform.ci .report-platform-main,
+.report-platform.unsupported .report-platform-main {
+  cursor: default;
+  color: var(--muted);
+}
+
+.report-platform-main input {
+  accent-color: var(--accent);
+}
+
+.report-platform-label {
+  min-width: 72px;
+  font-weight: 600;
+}
+
+.report-platform-hint {
+  margin: 3px 0 1px 26px;
+  color: var(--muted);
+  font-size: var(--text-3xs);
+  line-height: 1.45;
+}
+
 .report-strip-toggle {
   display: flex;
   align-items: center;

@@ -2,9 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover + no zoom: fullscreen game canvas on phones (notch-safe, no pinch-zoom). -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <title>My Game</title>
+    <title>Game</title>
     <style>
       html,
       body,
@@ -20,10 +24,9 @@
         color: #e6e9f0;
       }
     </style>
-    <script src="./game-bundle.js"></script>
-    <script type="module" crossorigin src="./assets/player-CXt7F_xI.js"></script>
+    <script type="module" crossorigin src="./assets/player-BpA-nBmo.js"></script>
   </head>
   <body>
-    <div id="game-root"></div>
+    <div id="game-root"></div>
   </body>
 </html>

@@ -152,6 +152,41 @@ describe('applyBlueprintFeatherSource — store + runtime', () => {
     expect(useEditorStore.getState().runtimeDisabled).toContain(nearId);
   });
 
+  it('floating origin rebases the world when the player is far from the origin', () => {
+    // Fresh scene: earlier tests left a camera-follow player near the origin in the shared store.
+    const sceneId = useEditorStore.getState().createScene('Rebase Test');
+    useEditorStore.getState().setActiveScene(sceneId);
+    const store = useEditorStore.getState();
+    // Player already parked 3km out — the first tick must rebase (3000 snaps to a 3072 shift).
+    const playerId = store.createObjectWithProps('capsule', { position: [3000, 1, 0] });
+    useEditorStore.getState().toggleCharacterController(playerId);
+    useEditorStore.getState().updateCharacterController(playerId, { cameraFollow: true });
+    const landmarkId = useEditorStore.getState().createObjectWithProps('cube', { position: [3010, 0, 5] });
+
+    useEditorStore.getState().setPlaying(true);
+    useEditorStore.getState().tickRuntime(1 / 60); // rebase-only frame
+
+    const state = useEditorStore.getState();
+    expect(state.runtimeRebase).toMatchObject({ seq: 1, dx: 3072, dz: 0 });
+    const objects = selectActiveObjects(state);
+    const player = objects.find((item) => item.id === playerId)!;
+    const landmark = objects.find((item) => item.id === landmarkId)!;
+    expect(player.transform.position[0]).toBe(3000 - 3072); // back near the origin
+    // Relative geometry is untouched — the world moved as one rigid piece.
+    expect(landmark.transform.position[0] - player.transform.position[0]).toBe(10);
+    expect(landmark.transform.position[2] - player.transform.position[2]).toBe(5);
+
+    // Simulation continues normally in the rebased frame; no second rebase fires.
+    for (let frame = 0; frame < 20; frame += 1) useEditorStore.getState().tickRuntime(1 / 60);
+    expect(useEditorStore.getState().runtimeRebase?.seq).toBe(1);
+    expect(useEditorStore.getState().isPlaying).toBe(true);
+
+    // Stop restores the authored (pre-Play) coordinates — rebase never dirties the project.
+    useEditorStore.getState().setPlaying(false);
+    const restored = selectActiveObjects(useEditorStore.getState()).find((item) => item.id === playerId)!;
+    expect(restored.transform.position[0]).toBe(3000);
+  });
+
   it('rejects a broken script without touching the blueprint', () => {
     const store = useEditorStore.getState();
     const { blueprintId } = store.createBlueprintNamed('Feather Reject');

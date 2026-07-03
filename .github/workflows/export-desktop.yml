@@ -1,0 +1,100 @@
+# Build native game installers for ALL desktop platforms (Windows, macOS, Linux).
+#
+# Tauri cannot cross-compile, so this matrix is how one project ships all three
+# desktop targets. Trigger it manually from the Actions tab (workflow_dispatch):
+#
+#   - bundle_url: a direct-download URL to your exported game.json (from the
+#     editor: Export → Game bundle). Any file host works — a GitHub release
+#     asset, a gist raw URL, S3, etc.
+#   - If bundle_url is empty, the workflow expects a bundle committed at
+#     exports/staging/game.json (note: exports/ is gitignored by default —
+#     use `git add -f exports/staging/game.json`).
+#
+# Installers are uploaded as per-OS workflow artifacts (game-windows, game-macos,
+# game-linux) plus the portable web zip.
+name: Export Desktop Installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_url:
+        description: 'URL to the exported game.json (leave empty to use exports/staging/game.json from the repo)'
+        required: false
+        type: string
+      game_name:
+        description: 'Game name override (defaults to the name inside the bundle)'
+        required: false
+        type: string
+
+jobs:
+  export:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: game-windows
+          - os: macos-latest
+            artifact: game-macos
+          - os: ubuntu-22.04
+            artifact: game-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Fetch game bundle
+        if: inputs.bundle_url != ''
+        shell: bash
+        run: |
+          mkdir -p exports/staging
+          curl -fsSL "${{ inputs.bundle_url }}" -o exports/staging/game.json
+
+      - name: Verify a bundle is present
+        shell: bash
+        run: |
+          if [ ! -f exports/staging/game.json ]; then
+            echo "::error::No game bundle. Pass bundle_url or commit exports/staging/game.json (git add -f)."
+            exit 1
+          fi
+
+      - name: Build web + native installer
+        shell: bash
+        run: |
+          ARGS=(--native --zip)
+          if [ -n "${{ inputs.game_name }}" ]; then ARGS+=(--name "${{ inputs.game_name }}"); fi
+          node scripts/export-production.mjs "${ARGS[@]}"
+
+      - name: Upload native installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: exports/*-native/*
+          if-no-files-found: error
+
+      - name: Upload portable web build (once)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-web
+          path: exports/*-web.zip
+          if-no-files-found: warn

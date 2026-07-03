@@ -17,14 +17,16 @@ fn find_engine_root() -> Result<PathBuf, String> {
   }
 }
 
-/// Run the production export pipeline (portable web folder + optional native app) for the
-/// staged game bundle, streaming each output line to the frontend as a `production-build-progress`
-/// event. Returns the bundle output directory on success.
+/// Run the production export pipeline for the staged game bundle, streaming each output line to
+/// the frontend as a `production-build-progress` event. `targets` selects what gets built beyond
+/// the always-produced portable web folder: "desktop" (native installer for this OS), "android"
+/// (APK via the Tauri mobile shell), "ios" (Xcode build, macOS only). Returns the bundle output
+/// directory on success.
 #[tauri::command]
 async fn run_production_build(
   app: AppHandle,
   bundle_json: String,
-  native: bool,
+  targets: Vec<String>,
   out_dir: Option<String>,
 ) -> Result<String, String> {
   tauri::async_runtime::spawn_blocking(move || {
@@ -36,22 +38,30 @@ async fn run_production_build(
     let bundle_path = staging.join("game.json");
     std::fs::write(&bundle_path, &bundle_json).map_err(|e| e.to_string())?;
 
-    let script = if native { "export:production" } else { "export:web" };
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
     let _ = app.emit(
       "production-build-progress",
-      format!("Starting {} build…", if native { "native + web" } else { "web" }),
+      format!("Starting build (web + {})…", if targets.is_empty() { "nothing else".to_string() } else { targets.join(" + ") }),
     );
 
-    // npm run <script> -- --bundle <path> [--out <dir>]
+    // npm run export:web -- --bundle <path> --zip [--native] [--android] [--ios] [--out <dir>]
     let mut args: Vec<String> = vec![
       "run".into(),
-      script.into(),
+      "export:web".into(),
       "--".into(),
       "--bundle".into(),
       bundle_path.to_string_lossy().into_owned(),
       "--zip".into(),
     ];
+    for target in &targets {
+      match target.as_str() {
+        "desktop" => args.push("--native".into()),
+        "android" => args.push("--android".into()),
+        "ios" => args.push("--ios".into()),
+        "web" => {}
+        other => return Err(format!("Unknown export target: {other}")),
+      }
+    }
     if let Some(out) = out_dir.as_deref() {
       args.push("--out".into());
       args.push(out.to_string());
@@ -95,6 +105,30 @@ async fn run_production_build(
     } else {
       Err(format!("Build failed (exit {}). See the build log for details.", status))
     }
+  })
+  .await
+  .map_err(|e| e.to_string())?
+}
+
+/// Run the platform doctor (scripts/platform-doctor.mjs --json) and return its JSON report:
+/// per export platform, whether this machine can build it right now, what is missing (with fix
+/// hints), or whether it should be built on CI. The frontend export dialog renders this.
+#[tauri::command]
+async fn check_export_platforms() -> Result<String, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    let root = find_engine_root()?;
+    let output = Command::new("node")
+      .args(["scripts/platform-doctor.mjs", "--json"])
+      .current_dir(&root)
+      .output()
+      .map_err(|e| format!("Failed to run the platform doctor (is node on your PATH?): {e}"))?;
+    if !output.status.success() {
+      return Err(format!(
+        "Platform doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+      ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
   })
   .await
   .map_err(|e| e.to_string())?
@@ -146,7 +180,7 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
-    .invoke_handler(tauri::generate_handler![run_production_build, reveal_in_explorer])
+    .invoke_handler(tauri::generate_handler![run_production_build, check_export_platforms, reveal_in_explorer])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

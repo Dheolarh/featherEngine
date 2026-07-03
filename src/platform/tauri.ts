@@ -110,15 +110,20 @@ export const tauriPlatform: Platform = {
     return target;
   },
 
-  async buildProduction(bundleJson, native, onProgress, outDir) {
+  async buildProduction(bundleJson, targets, onProgress, outDir) {
     const unlisten = await listen<string>('production-build-progress', (event) =>
       onProgress(event.payload),
     );
     try {
-      return await invoke<string>('run_production_build', { bundleJson, native, outDir });
+      return await invoke<string>('run_production_build', { bundleJson, targets, outDir });
     } finally {
       unlisten();
     }
+  },
+
+  async checkExportPlatforms() {
+    const raw = await invoke<string>('check_export_platforms');
+    return JSON.parse(raw);
   },
 
   async pickDirectory(title) {
