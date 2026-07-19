@@ -1,4 +1,4 @@
-import type { MaterialDefinition, MeshRendererComponent, PhysicalSurfaceProps, ProjectGraph } from '../types';
+import type { MaterialDefinition, MeshRendererComponent, PhysicalSurfaceProps, ProjectGraph, ToonFinish, ToonSurfaceProps } from '../types';
 
 /** The effective surface of an object after merging material asset + graph + per-object overrides. */
 export interface ResolvedMaterial {
@@ -22,10 +22,45 @@ export interface ResolvedMaterial {
   ior: number;
   thickness: number;
   iridescence: number;
+  /** Toon/cel path (mutually exclusive with the physical layers above); neutral/off by default. */
+  toon: boolean;
+  toonBands: number;
+  toonFinish: ToonFinish;
+  toonRimColor: string;
+  toonRimStrength: number;
 }
 
 /** Every physical layer with a concrete value (no optionals) — the shape carried on a ResolvedMaterial. */
 export type PhysicalValues = Required<PhysicalSurfaceProps>;
+
+/** Every toon field with a concrete value (no optionals). */
+export type ToonValues = Required<ToonSurfaceProps>;
+
+/** Neutral toon fields — `toon: false` renders the surface via the normal PBR path. */
+export const NEUTRAL_TOON: ToonValues = {
+  toon: false,
+  toonBands: 3,
+  toonFinish: 'flat',
+  toonRimColor: '#cfe8ff',
+  toonRimStrength: 0.16,
+};
+
+/** True when the surface is cel-shaded — gates the MeshToonMaterial branch at the render site. */
+export function isToon(m: Pick<ResolvedMaterial, 'toon'>): boolean {
+  return m.toon;
+}
+
+/** Merge a source's optional toon props over a base, keeping the base where a field is absent. */
+function mergeToon(base: ToonValues, src: ToonSurfaceProps | undefined): ToonValues {
+  if (!src) return base;
+  return {
+    toon: src.toon ?? base.toon,
+    toonBands: src.toonBands ?? base.toonBands,
+    toonFinish: src.toonFinish ?? base.toonFinish,
+    toonRimColor: src.toonRimColor ?? base.toonRimColor,
+    toonRimStrength: src.toonRimStrength ?? base.toonRimStrength,
+  };
+}
 
 /** Neutral physical layers — a material with these renders identically to a plain MeshStandardMaterial. */
 export const NEUTRAL_PHYSICAL: PhysicalValues = {
@@ -261,8 +296,12 @@ export function resolveMaterial(
     normalAssetId: undefined,
     overrideModel: Boolean(renderer?.overrideMaterial),
     ...NEUTRAL_PHYSICAL,
+    ...NEUTRAL_TOON,
   };
-  if (!renderer) return inline;
+  // A cel-shaded surface uses MeshToonMaterial, which has no physical layers — force them neutral so
+  // hasPhysicalLayers() never fires alongside toon and the render site picks exactly one branch.
+  const seal = (m: ResolvedMaterial): ResolvedMaterial => (m.toon ? { ...m, ...NEUTRAL_PHYSICAL } : m);
+  if (!renderer) return seal(inline);
 
   const material = renderer.materialId ? materials.find((item) => item.id === renderer.materialId) : undefined;
   let base: ResolvedMaterial = material
@@ -277,6 +316,7 @@ export function resolveMaterial(
         normalAssetId: material.normalMapAssetId,
         overrideModel: true,
         ...mergePhysical(NEUTRAL_PHYSICAL, material),
+        ...mergeToon(NEUTRAL_TOON, material),
       }
     : inline;
 
@@ -305,8 +345,8 @@ export function resolveMaterial(
   }
 
   const overrides = renderer.materialOverrides;
-  if (!overrides) return base;
-  return {
+  if (!overrides) return seal(base);
+  return seal({
     ...base,
     color: overrides.color ?? base.color,
     metalness: overrides.metalness ?? base.metalness,
@@ -317,7 +357,11 @@ export function resolveMaterial(
       { clearcoat: base.clearcoat, clearcoatRoughness: base.clearcoatRoughness, sheen: base.sheen, sheenColor: base.sheenColor, transmission: base.transmission, ior: base.ior, thickness: base.thickness, iridescence: base.iridescence },
       overrides,
     ),
+    ...mergeToon(
+      { toon: base.toon, toonBands: base.toonBands, toonFinish: base.toonFinish, toonRimColor: base.toonRimColor, toonRimStrength: base.toonRimStrength },
+      overrides,
+    ),
     // Any override means the model's baked materials should yield to it too.
     overrideModel: base.overrideModel || Object.keys(overrides).length > 0,
-  };
+  });
 }

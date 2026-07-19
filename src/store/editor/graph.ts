@@ -128,6 +128,7 @@ export const nodeDescriptions: Record<string, string> = {
   'Load Game': 'Restores persistent variables from local save storage.',
   'Has Save': 'Outputs true when the save slot holds data — gate a "Continue" button or skip an intro.',
   'Set Time Scale': 'Sets global game speed: 1 = normal, 0 = paused (input/UI keep running), 0.2 = slow-mo.',
+  'Start Replay': 'Plays an instant replay of the last few seconds (freezes the sim, glides the meshes through the recorded motion). Wire the seconds into the node or set it; great on a goal/kill/crash event.',
   'Clear Save': 'Deletes a local save slot.',
   Print: 'Logs a message to the on-screen console during Play.',
   'Set Quality': 'Sets the game quality preset (Low/Medium/High/Epic) at runtime — adjusts resolution, shadows, and post-FX.',
@@ -274,6 +275,7 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Clear Save': 'save.clear',
   'Has Save': 'save.has',
   'Set Time Scale': 'action.setTimeScale',
+  'Start Replay': 'action.startReplay',
   Print: 'action.print',
   'Show UI': 'ui.show',
   'Hide UI': 'ui.hide',
@@ -463,6 +465,11 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
       return {
         label: `Set Time Scale: ${Number(data.numberValue ?? 1)}`,
         description: 'Sets the global game speed. 1 = normal, 0 = paused (scripts still receive input so they can unpause), values between = slow motion. Resets to 1 when a scene loads.',
+      };
+    case 'action.startReplay':
+      return {
+        label: `Start Replay: last ${Number(data.numberValue ?? 8)}s`,
+        description: 'Plays an instant replay of the last N seconds: freezes the simulation and glides every object through its recorded motion, then resumes live. Great on a goal/kill/crash event. Capped at the 8s buffer.',
       };
     case 'material.output':
       return { label: 'Material Output', description: 'Final surface — connected pins override the material\'s base fields.' };
@@ -1076,6 +1083,10 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
 
   if (nodeKind === 'action.setTimeScale' && typeof normalized.numberValue !== 'number') {
     normalized.numberValue = 1;
+  }
+
+  if (nodeKind === 'action.startReplay' && typeof normalized.numberValue !== 'number') {
+    normalized.numberValue = 8; // seconds of motion to replay (capped at the buffer)
   }
 
   if (nodeKind === 'action.setMaterialColor' && typeof normalized.materialColor !== 'string') {

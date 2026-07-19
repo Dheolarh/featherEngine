@@ -175,8 +175,29 @@ export interface PhysicalSurfaceProps {
   iridescence?: number;
 }
 
+/** Toon/cel finish preset — chooses the tonal ramp (and rim behaviour) for a toon material. */
+export type ToonFinish = 'flat' | 'jelly' | 'metal' | 'rubber' | 'pearl' | 'hair' | 'cloth';
+
+/**
+ * Stylized TOON / cel-shading surface (built on THREE.MeshToonMaterial). Mutually exclusive with the
+ * PBR physical layers above — when `toon` is on, the render sites emit a toon material and ignore
+ * clearcoat/transmission/etc. Ported from the sibling three.js game's cartoon material factory.
+ */
+export interface ToonSurfaceProps {
+  /** Master switch: render this surface as cel-shaded rather than physically-based. */
+  toon?: boolean;
+  /** Number of tonal plateaus in the ramp (2–6); higher = smoother gradient. Ignored by non-flat finishes. */
+  toonBands?: number;
+  /** Finish ramp: flat/jelly are gradient-band looks; metal/rubber/pearl/hair/cloth use tuned ramps. */
+  toonFinish?: ToonFinish;
+  /** Fresnel rim (candy edge) colour (hex). */
+  toonRimColor?: string;
+  /** Fresnel rim strength, 0 = no rim … ~0.3 strong edge light. */
+  toonRimStrength?: number;
+}
+
 /** Per-object overrides layered over an assigned MaterialDefinition (Unreal "dynamic material instance" style). */
-export interface MaterialOverrides extends PhysicalSurfaceProps {
+export interface MaterialOverrides extends PhysicalSurfaceProps, ToonSurfaceProps {
   color?: string;
   metalness?: number;
   roughness?: number;
@@ -185,7 +206,7 @@ export interface MaterialOverrides extends PhysicalSurfaceProps {
 }
 
 /** A reusable material asset authored once and assigned to many objects. */
-export interface MaterialDefinition extends PhysicalSurfaceProps {
+export interface MaterialDefinition extends PhysicalSurfaceProps, ToonSurfaceProps {
   id: string;
   name: string;
   description: string;

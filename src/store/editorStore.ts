@@ -105,6 +105,7 @@ import { isRagdoll, setRagdoll, getRagdollRoot } from '../runtime/ragdollState';
 import { sendParticleCommand } from '../runtime/particleBus';
 import { addVehicleDent, clearVehicleDents, clearVehicleDentsFor } from '../runtime/vehicleDamageBus';
 import { publishTransforms, publishRenderTransforms, clearTransformBuffer, type BufferedTransform } from '../runtime/transformBuffer';
+import { resetReplayRecorder, resetReplayBuffer, clearReplayRecorder, captureReplayFrame, beginReplay, sampleActiveReplay, endReplay } from '../runtime/replayRecorder';
 import { beginPerceptionFrame, clearPerception, cachedLineOfSight, storeLineOfSight } from '../runtime/aiPerception';
 import { withParticleDefaults, defaultParticleConfig, particlePresets, particleAssetConfig, type ParticlePresetId } from '../runtime/particlePresets';
 import { applyPhysicsMaterialPreset } from '../runtime/physicsMaterials';
@@ -526,6 +527,10 @@ interface EditorState {
   /** Global game speed (Set Time Scale node): 1 = normal, 0 = paused, <1 = slow-mo. Scales the tick delta
    *  (scripts, timers, physics); input + UI keep running so a paused game can still unpause itself. */
   runtimeTimeScale: number;
+  /** Active instant-replay playback, or null. `t` is the current playback time within `duration`
+   *  (both seconds). The recorded frames live module-side in replayRecorder.ts; this field only
+   *  coordinates the tick + HUD scrubber. Runtime-only — never persisted. */
+  replayPlayback: { t: number; duration: number } | null;
   assetSearch: string;
   selectedGraphNodeId?: string;
   activeScene: () => Scene | undefined;
@@ -945,6 +950,13 @@ interface EditorState {
   clearRuntimeSounds: () => void;
   clearRuntimeLog: () => void;
   tickRuntime: (delta: number) => void;
+  /** Trigger an instant replay of the last `seconds` (default 8, capped at the 8s buffer) of Play.
+   *  Returns false if not playing, a replay is already active, or not enough motion is buffered yet. */
+  startReplay: (seconds?: number) => boolean;
+  /** Scrub the active replay to time `t` (seconds); no-op if no replay is active. */
+  setReplayTime: (t: number) => void;
+  /** End the active replay and resume live rendering. */
+  stopReplay: () => void;
   onNodesChange: OnNodesChange<NodeForgeNode>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
@@ -1275,6 +1287,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   runtimeStarted: false,
   runtimeTime: 0,
   runtimeTimeScale: 1,
+  replayPlayback: null,
   assetSearch: '',
   activeScene: () => get().scenes.find((scene) => scene.id === get().activeSceneId),
   selectedObject: () => selectActiveObjects(get()).find((object) => object.id === get().selectedObjectId),
@@ -5379,6 +5392,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         // Spin up a fresh Rapier world to own the simulation for this play session.
         startPhysics();
         clearTransformBuffer();
+        resetReplayRecorder(objects); // fix the replay slot table + clear the ring for this run
         clearPerception();
         clearVehicleDents(); // start each run with a pristine (undented) car
         effectLife.clear(); // drop any stale burst-lifetime entries from the previous run
@@ -5392,6 +5406,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           isPlaying,
           runtimeTime: 0,
           runtimeTimeScale: 1,
+          replayPlayback: null,
           runtimeVelocities: makeRuntimeVelocityMap(objects),
           runtimeKeys: {},
           runtimePreviousKeys: {},
@@ -5499,12 +5514,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       clearExplosions();
       clearDecals();
       clearTransformBuffer();
+      clearReplayRecorder(); // drop the replay ring + any active clip
       clearPerception();
       clearVehicleDents();
       return {
         isPlaying,
         runtimeTime: 0,
         runtimeTimeScale: 1,
+        replayPlayback: null,
         runtimeVelocities: {},
         runtimeKeys: {},
         runtimePreviousKeys: {},
@@ -5593,9 +5610,46 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   clearRuntimeSounds: () =>
     set((state) => (state.runtimeSoundQueue.length ? { runtimeSoundQueue: [] } : state)),
   clearRuntimeLog: () => set((state) => (state.runtimeLog.length ? { runtimeLog: [] } : state)),
+  startReplay: (seconds) => {
+    const state = get();
+    if (!state.isPlaying || state.replayPlayback) return false;
+    const duration = beginReplay(state.runtimeTime, seconds);
+    if (duration == null) return false;
+    set({ replayPlayback: { t: 0, duration } });
+    return true;
+  },
+  setReplayTime: (t) =>
+    set((state) =>
+      state.replayPlayback
+        ? { replayPlayback: { ...state.replayPlayback, t: Math.max(0, Math.min(t, state.replayPlayback.duration)) } }
+        : state,
+    ),
+  stopReplay: () =>
+    set((state) => {
+      if (!state.replayPlayback) return state;
+      endReplay();
+      return { replayPlayback: null };
+    }),
   tickRuntime: (delta) =>
     set((state) => {
       if (!state.isPlaying) return state;
+      // ---- Instant replay playback --------------------------------------------------------------
+      // While a replay clip is active, freeze the sim entirely (no scripts, no physics) and drive the
+      // meshes purely from the recorded ring buffer: publish the live store transforms as a base, then
+      // override the tracked objects with the interpolated replay poses via the SAME render channel
+      // physics smoothing uses. The store's authoritative transforms are untouched, so when the replay
+      // ends the next normal tick resumes exactly where the sim left off. Never sets isDirty.
+      if (state.replayPlayback) {
+        publishTransforms(selectActiveObjects(state));
+        const t = state.replayPlayback.t + delta;
+        if (t >= state.replayPlayback.duration) {
+          endReplay();
+          return { replayPlayback: null };
+        }
+        const poses = sampleActiveReplay(t);
+        if (poses) publishRenderTransforms(poses);
+        return { replayPlayback: { ...state.replayPlayback, t } };
+      }
       // ---- Floating origin (huge worlds) --------------------------------------------------------
       // When the camera-follow player wanders beyond REBASE_TRIGGER of the origin, shift the WHOLE
       // world back by a 1024-snapped offset in one atomic frame: every object transform, every
@@ -5614,6 +5668,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           if (dx !== 0 || dz !== 0) {
             getActivePhysics()?.shiftOrigin(dx, dz);
             clearTransformBuffer(); // render interpolation restarts from the rebased transforms
+            resetReplayBuffer(); // buffered frames hold pre-rebase world coords — drop them, keep slots
             prevTransformEntryPool.clear();
             resetNavCache(); // grid + cached waypoints hold world coords — rebuild in the new frame
             const rebased = state.scenes.map((scene) =>
@@ -5862,6 +5917,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       let pendingQuality: QualityLevel | undefined;
       // A Set Time Scale node fired this frame → applied at the end of the tick (next frame runs at the new speed).
       let pendingTimeScale: number | undefined;
+      // A Start Replay node fired this frame → begin instant-replay playback at the end of the tick.
+      let pendingReplaySeconds: number | undefined;
       // action.setEnvironment patches accumulated this frame — sky/fog/sun overrides applied to the active
       // scene's environment at the end of the tick. Each successive node overlays on top.
       let pendingEnvironment: Partial<SceneEnvironmentSettings> | undefined;
@@ -7642,6 +7699,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             if (node.data.nodeKind === 'action.setQuality') {
               // Last Set Quality this tick wins; applied to renderSettings in the returned patch (no isDirty).
               pendingQuality = node.data.qualityLevel ?? 'High';
+            }
+
+            if (node.data.nodeKind === 'action.startReplay') {
+              // Latest Start Replay this tick wins; activated at the end of the tick (needs this frame captured first).
+              pendingReplaySeconds = Math.max(0.2, toNumber(valueInput(node, 'seconds', Number(node.data.numberValue ?? 8))));
             }
 
             if (node.data.nodeKind === 'action.setParticlesEmitting') {
@@ -10902,6 +10964,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // they don't stutter against the interpolated follow camera. Store/Inspector keep the authoritative
       // transform written above; only the high-frequency render path reads these.
       if (physicsRenderTransforms) publishRenderTransforms(physicsRenderTransforms);
+      // Record this frame's transforms into the instant-replay ring (throttled to REPLAY_HZ internally).
+      captureReplayFrame(allObjects, runtimeTime);
 
       // --- Animator pass: feed object state into parameters, then run the state machine. ---
       // Runs after physics so "speed"/"verticalSpeed" reflect the object's final motion this frame.
@@ -11076,6 +11140,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           });
           startPhysics();
           clearTransformBuffer();
+          resetReplayRecorder(freshObjects); // rebuild the replay slot table for the new scene's objects
           clearPerception();
           publishTransforms(freshObjects);
           const autoplay = targetScene.cinematics?.find((cinematic) => cinematic.autoplay);
@@ -11086,6 +11151,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             runtimeStarted: false,
             runtimeTime: 0,
             runtimeTimeScale: 1, // a freshly loaded scene starts at normal speed (a pause carried across a load would soft-lock it)
+            replayPlayback: null,
             runtimeVelocities: makeRuntimeVelocityMap(freshObjects),
             // Project variables persist across the load — this is how run state survives a floor change.
             runtimeVariableValues: nextVariableValues,
@@ -11240,6 +11306,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         // A Set Time Scale node fired → the next tick runs at the new speed (0 = paused; see tick entry).
         ...(pendingTimeScale !== undefined && pendingTimeScale !== state.runtimeTimeScale
           ? { runtimeTimeScale: pendingTimeScale }
+          : {}),
+        // A Start Replay node fired → slice the buffer (incl. this frame, captured above) and play it back
+        // from the next tick. Ignored if a replay is already running or too little motion is buffered.
+        ...(pendingReplaySeconds !== undefined && !state.replayPlayback
+          ? ((duration) => (duration != null ? { replayPlayback: { t: 0, duration } } : {}))(beginReplay(runtimeTime, pendingReplaySeconds))
           : {}),
       };
     }),

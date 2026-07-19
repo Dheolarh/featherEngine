@@ -46,6 +46,7 @@ import {
   Sigma,
   SquareFunction,
   Palette,
+  Rewind,
   Spline,
   Sparkles,
   SlidersHorizontal,
@@ -270,6 +271,7 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'save.clear': Trash2,
   'save.has': Database,
   'action.setTimeScale': Timer,
+  'action.startReplay': Rewind,
   'action.print': Terminal,
   'ui.show': LayoutDashboard,
   'ui.hide': LayoutDashboard,
@@ -573,6 +575,8 @@ const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: string 
       return [{ id: 'amount', label: 'Amount' }];
     case 'action.setTimeScale':
       return [{ id: 'scale', label: 'Scale' }];
+    case 'action.startReplay':
+      return [{ id: 'seconds', label: 'Seconds' }];
     case 'action.setJointMotor':
       return [
         { id: 'target', label: 'Target' },
@@ -675,6 +679,8 @@ function nodeDetail(
       return data.saveSlot ?? 'slot1';
     case 'action.setTimeScale':
       return `${Number(data.numberValue ?? 1)}×`;
+    case 'action.startReplay':
+      return `${Number(data.numberValue ?? 8)}s`;
     case 'action.print':
       return `“${data.message ?? ''}”`;
     case 'action.setQuality':

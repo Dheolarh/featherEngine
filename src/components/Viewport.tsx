@@ -25,6 +25,7 @@ import { EditorCamera, editorNav, type ViewPreset } from '../three/EditorCamera'
 import { ViewCube } from './ViewCube';
 import { BoneAttachment } from '../three/BoneAttachment';
 import { useResolvedMaterial, useResolvedMaterialSlots, hasPhysicalLayers } from '../three/resolveMaterial';
+import { useToonMaterial } from '../three/toonMaterial';
 import { assetDrag, isAssetDrag, isPrefabDrag, prefabDrag, readAssetDragId, readPrefabDragId } from './dragShared';
 import { WorldUIAnchor } from '../ui/WorldUIAnchor';
 import { ScreenUILayer } from '../ui/ScreenUILayer';
@@ -228,6 +229,9 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
   // Built-in geometries use the standard (flipped) UV convention; only load when not using a model.
   const builtinBaseTexture = useAssetTexture(usingModel ? undefined : resolved.baseColorUrl, true);
   const builtinNormalTexture = useAssetTexture(usingModel ? undefined : resolved.normalUrl, true);
+  // Cel-shaded surfaces render via MeshToonMaterial (null for the normal PBR path). Hook is called
+  // unconditionally here — before any early return below — so it never violates rules-of-hooks.
+  const toonMaterial = useToonMaterial(resolved, builtinBaseTexture ?? null);
 
   // A spawned fracture shard renders its raw generated geometry (from the geometry cache).
   if (renderer?.fragmentKey) {
@@ -286,7 +290,9 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
   // — it's a heavier shader, so plain props keep the lighter MeshStandardMaterial. Defaults match, so
   // switching is purely additive. Transmission renders via three's own refraction pass (not the
   // transparent queue), so we don't force `transparent` for it.
-  const commonMaterial = hasPhysicalLayers(resolved) ? (
+  const commonMaterial = toonMaterial ? (
+    <primitive object={toonMaterial} attach="material" />
+  ) : hasPhysicalLayers(resolved) ? (
     <meshPhysicalMaterial
       color={resolved.color}
       metalness={resolved.metalness}

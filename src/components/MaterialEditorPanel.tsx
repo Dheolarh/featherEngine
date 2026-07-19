@@ -14,11 +14,12 @@ import { Hash, LayoutGrid, Palette, Plus, SlidersHorizontal, Sparkles } from 'lu
 import { useEditorStore } from '../store/editorStore';
 import { useAssetTexture, useAssetUrl } from '../three/ModelAsset';
 import { useResolvedMaterial, hasPhysicalLayers } from '../three/resolveMaterial';
+import { useToonMaterial } from '../three/toonMaterial';
 import { NodeForgeGraphNode } from './NodeForgeGraphNode';
 import { NodeSearchMenu, type NodeChoice } from './NodeSearchMenu';
 import { PaletteGroup } from './PaletteGroup';
 import { RangeField } from './InspectorPanel';
-import type { AssetItem, GraphNodeCategory, MaterialDefinition, MeshRendererComponent, NodeForgeNode } from '../types';
+import type { AssetItem, GraphNodeCategory, MaterialDefinition, MeshRendererComponent, NodeForgeNode, ToonFinish } from '../types';
 import { MATERIAL_PRESETS, materialPresetPatch } from '../three/presets';
 
 const nodeTypes: NodeTypes = { nodeforge: NodeForgeGraphNode };
@@ -65,11 +66,14 @@ function MaterialPreview({ material }: { material: MaterialDefinition }) {
   const resolved = useResolvedMaterial(renderer);
   const baseTexture = useAssetTexture(resolved.baseColorUrl, true);
   const normalTexture = useAssetTexture(resolved.normalUrl, true);
+  const toonMaterial = useToonMaterial(resolved, baseTexture ?? null);
 
   return (
     <mesh castShadow>
       <sphereGeometry args={[1, 48, 32]} />
-      {hasPhysicalLayers(resolved) ? (
+      {toonMaterial ? (
+        <primitive object={toonMaterial} attach="material" />
+      ) : hasPhysicalLayers(resolved) ? (
         <meshPhysicalMaterial
           color={resolved.color}
           metalness={resolved.metalness}
@@ -264,6 +268,58 @@ function MaterialNodeInspector({
               <RangeField label="IOR" value={material.ior ?? 1.5} min={1} max={2.5} step={0.01} onChange={(ior) => updateMaterial(material.id, { ior })} />
               <RangeField label="Thickness" value={material.thickness ?? 0} min={0} max={5} step={0.05} onChange={(thickness) => updateMaterial(material.id, { thickness })} />
               <RangeField label="Iridescence" value={material.iridescence ?? 0} onChange={(iridescence) => updateMaterial(material.id, { iridescence })} />
+            </details>
+            <details className="material-advanced" open={Boolean(material.toon)}>
+              <summary>Toon / Cel</summary>
+              <p className="nfn-desc">Stylized cel shading (MeshToonMaterial). While ON, the Physical layers above are ignored.</p>
+              <label className="node-field" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(material.toon)}
+                  onChange={(event) => updateMaterial(material.id, { toon: event.target.checked })}
+                />
+                <span>Cel shaded</span>
+              </label>
+              {material.toon && (
+                <>
+                  <label className="node-field">
+                    <span>Finish</span>
+                    <select
+                      value={material.toonFinish ?? 'flat'}
+                      onChange={(event) => updateMaterial(material.id, { toonFinish: event.target.value as ToonFinish })}
+                    >
+                      <option value="flat">Flat</option>
+                      <option value="jelly">Jelly</option>
+                      <option value="metal">Metal</option>
+                      <option value="rubber">Rubber</option>
+                      <option value="pearl">Pearl</option>
+                      <option value="hair">Hair</option>
+                      <option value="cloth">Cloth</option>
+                    </select>
+                  </label>
+                  <RangeField
+                    label="Bands"
+                    value={material.toonBands ?? 3}
+                    min={2}
+                    max={6}
+                    step={1}
+                    onChange={(toonBands) => updateMaterial(material.id, { toonBands })}
+                  />
+                  <label className="node-field">
+                    <span>Rim Color</span>
+                    <input
+                      type="color"
+                      value={material.toonRimColor ?? '#cfe8ff'}
+                      onChange={(event) => updateMaterial(material.id, { toonRimColor: event.target.value })}
+                    />
+                  </label>
+                  <RangeField
+                    label="Rim Strength"
+                    value={material.toonRimStrength ?? 0.16}
+                    onChange={(toonRimStrength) => updateMaterial(material.id, { toonRimStrength })}
+                  />
+                </>
+              )}
             </details>
           </>
         )}

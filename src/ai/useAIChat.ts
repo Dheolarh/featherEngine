@@ -203,12 +203,14 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return `Added socket "${String(input.name ?? '')}"`;
     case 'attach_to_socket':
       return input.socketName ? 'Attached to socket' : 'Detached';
+    case 'start_replay':
+      return 'Started instant replay';
     case 'create_material':
       return `Created material${input.name ? ` "${String(input.name)}"` : ''}`;
     case 'apply_material_preset':
       return `Applied ${String(input.preset ?? 'material')} preset`;
     case 'update_material':
-      return 'Updated material';
+      return input.toon ? 'Updated toon material' : 'Updated material';
     case 'set_object_material':
       return input.materialId ? 'Assigned material' : 'Detached material';
     case 'set_submesh_material':

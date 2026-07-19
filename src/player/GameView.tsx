@@ -21,6 +21,7 @@ import { CinematicCamera } from '../three/CinematicCamera';
 import { BoneAttachment } from '../three/BoneAttachment';
 import { ReflectionProbeApply, ReflectionProbeCapture } from '../three/ReflectionProbes';
 import { useResolvedMaterial, hasPhysicalLayers } from '../three/resolveMaterial';
+import { useToonMaterial } from '../three/toonMaterial';
 import { WorldUIAnchor } from '../ui/WorldUIAnchor';
 import { WebGLScreenUILayer } from '../ui/WebGLScreenUILayer';
 import { ImpactParticles } from '../three/ImpactParticles';
@@ -117,6 +118,9 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
   const resolvedAnimator = useResolvedAnimator(object);
   const builtinBaseTexture = useAssetTexture(usingModel ? undefined : resolved.baseColorUrl, true);
   const builtinNormalTexture = useAssetTexture(usingModel ? undefined : resolved.normalUrl, true);
+  // Cel-shaded surfaces render via MeshToonMaterial (null = normal PBR path). Must mirror Viewport so
+  // the standalone player matches the editor. Hook is unconditional (before any early return below).
+  const toonMaterial = useToonMaterial(resolved, builtinBaseTexture ?? null);
 
   if (object.kind === 'light') {
     const l = object.light;
@@ -200,7 +204,9 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
 
   // Heavier MeshPhysicalMaterial only when a physical layer (clearcoat/sheen/transmission/iridescence)
   // is engaged; otherwise the lighter MeshStandardMaterial (defaults match, so this is purely additive).
-  const material = hasPhysicalLayers(resolved) ? (
+  const material = toonMaterial ? (
+    <primitive object={toonMaterial} attach="material" />
+  ) : hasPhysicalLayers(resolved) ? (
     <meshPhysicalMaterial
       color={resolved.color}
       metalness={resolved.metalness}

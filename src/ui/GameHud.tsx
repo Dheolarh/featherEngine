@@ -58,6 +58,10 @@ export function GameHud() {
   const animatorControllers = useEditorStore((state) => state.animatorControllers);
   const equipInventorySlot = useEditorStore((state) => state.equipInventorySlot);
   const occupants = useEditorStore((state) => state.runtimeVehicleOccupants);
+  const replayPlayback = useEditorStore((state) => state.replayPlayback);
+  const startReplay = useEditorStore((state) => state.startReplay);
+  const setReplayTime = useEditorStore((state) => state.setReplayTime);
+  const stopReplay = useEditorStore((state) => state.stopReplay);
   const objects = useMemo(() => selectActiveObjects(useEditorStore.getState()), [sceneSignature]);
 
   // Kill-confirm: when player damage KILLS a target, hold a longer red marker window + play the
@@ -484,12 +488,117 @@ export function GameHud() {
           </div>
         </div>
       )}
+      {/* Instant replay: a small trigger during play, and a scrubber/close bar while a replay plays back.
+          Meshes glide through the recorded motion (see replayRecorder.ts); the sim is frozen meanwhile. */}
+      {!replayPlayback && !driving && (
+        <button
+          onClick={() => startReplay()}
+          title="Instant replay of the last few seconds"
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '18px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            fontSize: '12px',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            color: '#cfe0ff',
+            background: 'rgba(9,12,18,0.55)',
+            border: '1px solid rgba(148,163,184,0.22)',
+            borderRadius: '8px',
+            backdropFilter: 'blur(6px)',
+            cursor: 'pointer',
+            opacity: 0.72,
+            pointerEvents: 'auto',
+          }}
+        >
+          ⟲ Replay
+        </button>
+      )}
+      {replayPlayback && (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              top: '20px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '5px 14px',
+              fontSize: '12px',
+              fontWeight: 800,
+              letterSpacing: '0.14em',
+              color: '#fff',
+              background: 'rgba(190,30,45,0.82)',
+              borderRadius: '999px',
+              boxShadow: '0 6px 22px rgba(0,0,0,0.4)',
+              animation: 'nf-prompt-in 0.14s ease-out',
+            }}
+          >
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#fff', animation: 'nf-replay-blink 1s steps(1) infinite' }} />
+            INSTANT REPLAY
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '26px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              width: 'min(560px, 76vw)',
+              padding: '10px 14px',
+              background: 'rgba(9,12,18,0.78)',
+              border: '1px solid rgba(148,163,184,0.2)',
+              borderRadius: '12px',
+              backdropFilter: 'blur(8px)',
+              boxShadow: '0 14px 40px rgba(0,0,0,0.4)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '13px', fontWeight: 700, color: '#e0f7ff', minWidth: '82px' }}>
+              {replayPlayback.t.toFixed(1)}s / {replayPlayback.duration.toFixed(1)}s
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={replayPlayback.duration}
+              step={0.05}
+              value={replayPlayback.t}
+              onChange={(e) => setReplayTime(Number(e.target.value))}
+              style={{ flex: 1, accentColor: '#38bdf8', cursor: 'pointer' }}
+            />
+            <button
+              onClick={() => stopReplay()}
+              style={{
+                padding: '5px 12px',
+                fontSize: '12px',
+                fontWeight: 700,
+                color: '#cfe0ff',
+                background: 'rgba(14,165,233,0.18)',
+                border: '1px solid rgba(125,211,252,0.5)',
+                borderRadius: '7px',
+                cursor: 'pointer',
+              }}
+            >
+              Resume
+            </button>
+          </div>
+        </>
+      )}
       {/* Virtual joystick + buttons on touch devices — makes mobile/web-touch exports playable. */}
       <TouchControls />
       <style>{`
         @keyframes nf-prompt-in { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
         @keyframes nf-hit { 0% { opacity: 0; transform: translate(-50%,-50%) scale(1.8); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-50%) scale(0.9); } }
         @keyframes nf-hurt { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+        @keyframes nf-replay-blink { 0% { opacity: 1; } 50% { opacity: 0.15; } 100% { opacity: 1; } }
       `}</style>
     </div>
   );

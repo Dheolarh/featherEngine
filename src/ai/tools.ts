@@ -430,6 +430,7 @@ const NODE_LABELS = [
   'Clear Save',
   'Has Save',
   'Set Time Scale',
+  'Start Replay',
   'Print',
   'Show UI',
   'Hide UI',
@@ -571,6 +572,7 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Clear Save': 'Persistence',
   'Has Save': 'Persistence',
   'Set Time Scale': 'Runtime',
+  'Start Replay': 'Runtime',
   Print: 'Runtime',
   'Show UI': 'UI',
   'Hide UI': 'UI',
@@ -1411,6 +1413,21 @@ const rawEngineTools = {
       store().updateSceneStreaming({ ...(enabled !== undefined ? { enabled } : {}), ...(radius !== undefined ? { radius } : {}) });
       const streaming = store().scenes.find((scene) => scene.id === store().activeSceneId)?.streaming;
       return `Scene streaming: ${streaming?.enabled ? `ON, radius ${streaming.radius}u` : 'off'}.`;
+    },
+  }),
+
+  start_replay: tool({
+    description:
+      'Trigger an INSTANT REPLAY right now (only works while Play mode is running): freezes the simulation and glides every object through its recorded motion of the last few seconds, then resumes live. A scrubber appears in the game HUD. For a replay triggered by a gameplay event (a goal, a kill, a crash) instead of on-demand, add a "Start Replay" node to a blueprint. The engine keeps a rolling ~8-second buffer during Play.',
+    inputSchema: z.object({
+      seconds: z.number().min(0.2).max(8).optional().describe('How many seconds of motion to replay (default 8, capped at the 8s buffer).'),
+    }),
+    execute: async ({ seconds }) => {
+      if (!store().isPlaying) return 'Instant replay only works during Play. Start Play mode first, then trigger a replay.';
+      const ok = store().startReplay(seconds);
+      return ok
+        ? `Started an instant replay of the last ${seconds ?? 8} seconds.`
+        : 'No replay available yet — either a replay is already playing or not enough gameplay has been recorded. Let Play run a moment, then try again.';
     },
   }),
 
@@ -2854,7 +2871,7 @@ const rawEngineTools = {
 
   apply_material_preset: tool({
     description:
-      'Apply a named material preset (plastic, metal, wet floor, glass, neon, rock, grass, skin, rubber, water, car-paint, velvet, gemstone). glass/gemstone use real refraction (transmission), car-paint a clearcoat layer, velvet a fabric sheen — all best at High/Epic quality. If materialId is omitted, creates a reusable material. If objectId is provided, assigns the material to that object.',
+      'Apply a named material preset (plastic, metal, wet floor, glass, neon, rock, grass, skin, rubber, water, car-paint, velvet, gemstone, and the stylized cel-shaded toon-flat / toon-jelly / toon-metal / toon-rubber / toon-pearl / toon-hair / toon-cloth). glass/gemstone use real refraction (transmission), car-paint a clearcoat layer, velvet a fabric sheen — all best at High/Epic quality. The toon-* presets switch the surface to a stylized MeshToonMaterial (cel banding + rim light), for a cartoon/anime art style rather than realism (built-in meshes, not imported GLB models). If materialId is omitted, creates a reusable material. If objectId is provided, assigns the material to that object.',
     inputSchema: z.object({
       preset: z.enum(materialPresetIds),
       materialId: z.string().optional().describe('Existing material to update. Omit to create a new reusable material from the preset.'),
@@ -2887,7 +2904,7 @@ const rawEngineTools = {
 
   update_material: tool({
     description:
-      'Update a reusable material. Color fields are hex; metalness/roughness are 0-1; texture/normal ids must be image assets. Advanced physical layers (best at High/Epic quality): clearcoat (car paint/lacquer), sheen (fabric/velvet), transmission+ior+thickness (real refractive glass/liquid/gems), iridescence (soap-film/oil sheen).',
+      'Update a reusable material. Color fields are hex; metalness/roughness are 0-1; texture/normal ids must be image assets. Advanced physical layers (best at High/Epic quality): clearcoat (car paint/lacquer), sheen (fabric/velvet), transmission+ior+thickness (real refractive glass/liquid/gems), iridescence (soap-film/oil sheen). TOON/CEL: set toon:true for a stylized cel-shaded surface (a MeshToonMaterial with a banded ramp + fresnel rim, art-style not PBR) — pick toonFinish, toonBands, toonRimColor/toonRimStrength; toon is mutually exclusive with the physical layers (they are ignored while it is on). Toon applies to built-in primitives, not imported GLB models (v1). Or just use apply_material_preset with a "toon-*" preset.',
     inputSchema: z.object({
       id: z.string(),
       name: z.string().optional(),
@@ -2906,6 +2923,11 @@ const rawEngineTools = {
       ior: z.number().min(1).max(2.5).optional().describe('Index of refraction (1.33 water, 1.5 glass, 2.4 diamond).'),
       thickness: z.number().min(0).optional().describe('Volume thickness for refraction bending (world units); 0 = thin shell.'),
       iridescence: z.number().min(0).max(1).optional().describe('Thin-film iridescence — soap bubbles, oil slicks, beetle shells.'),
+      toon: z.boolean().optional().describe('Cel-shade this surface (stylized, non-PBR). Ignores the physical layers while on.'),
+      toonFinish: z.enum(['flat', 'jelly', 'metal', 'rubber', 'pearl', 'hair', 'cloth']).optional().describe('Toon ramp: flat/jelly = gradient looks; metal/rubber/pearl/hair/cloth = tuned finishes.'),
+      toonBands: z.number().min(2).max(6).optional().describe('Number of tonal plateaus in the ramp (2-6). Only affects flat/jelly.'),
+      toonRimColor: z.string().optional().describe('Hex color of the fresnel rim (candy edge light).'),
+      toonRimStrength: z.number().min(0).max(1).optional().describe('Fresnel rim strength (0 = none).'),
     }),
     execute: async ({ id, textureAssetId, normalMapAssetId, ...rest }) => {
       if (!findMaterial(id)) return `No material with id ${id}.`;

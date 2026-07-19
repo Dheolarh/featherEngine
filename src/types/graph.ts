@@ -189,7 +189,8 @@ export type GraphNodeKind =
   | 'action.exitVehicle'
   | 'action.setQuality'
   | 'action.setTimeScale'
-  | 'action.setEnvironment';
+  | 'action.setEnvironment'
+  | 'action.startReplay';
 
 export interface NodeForgeNodeData extends Record<string, unknown> {
   label: string;

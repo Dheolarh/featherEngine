@@ -1,4 +1,4 @@
-import type { CinematicLook, MaterialDefinition, PhysicalSurfaceProps, RenderSettings, SceneEnvironmentSettings, WaterStylePreset, WaterVolumeComponent } from '../types';
+import type { CinematicLook, MaterialDefinition, PhysicalSurfaceProps, RenderSettings, SceneEnvironmentSettings, ToonSurfaceProps, WaterStylePreset, WaterVolumeComponent } from '../types';
 
 export type MaterialPresetId =
   | 'plastic'
@@ -13,7 +13,14 @@ export type MaterialPresetId =
   | 'water'
   | 'car-paint'
   | 'velvet'
-  | 'gemstone';
+  | 'gemstone'
+  | 'toon-flat'
+  | 'toon-jelly'
+  | 'toon-metal'
+  | 'toon-rubber'
+  | 'toon-pearl'
+  | 'toon-hair'
+  | 'toon-cloth';
 
 export type LightingPresetId = 'sunny' | 'overcast' | 'night' | 'cyberpunk' | 'indoor' | 'cinematic' | 'godrays';
 
@@ -21,7 +28,9 @@ export interface MaterialPreset {
   id: MaterialPresetId;
   name: string;
   description: string;
-  patch: Pick<MaterialDefinition, 'color' | 'metalness' | 'roughness' | 'emissiveColor' | 'emissiveIntensity'> & Partial<PhysicalSurfaceProps>;
+  patch: Pick<MaterialDefinition, 'color' | 'metalness' | 'roughness' | 'emissiveColor' | 'emissiveIntensity'> &
+    Partial<PhysicalSurfaceProps> &
+    Partial<ToonSurfaceProps>;
 }
 
 /** Neutral physical layers, so applying a preset that doesn't use them clears any left over from a prior preset. */
@@ -36,8 +45,17 @@ const NEUTRAL_PHYS: Required<PhysicalSurfaceProps> = {
   iridescence: 0,
 };
 
-/** A preset's full material patch, with physical layers explicitly reset where the preset doesn't set them. */
-export const materialPresetPatch = (preset: MaterialPreset) => ({ ...NEUTRAL_PHYS, ...preset.patch });
+/** Neutral toon fields, so switching from a toon preset back to a PBR preset clears the cel-shading (and vice-versa). */
+const NEUTRAL_TOON: Required<ToonSurfaceProps> = {
+  toon: false,
+  toonBands: 3,
+  toonFinish: 'flat',
+  toonRimColor: '#cfe8ff',
+  toonRimStrength: 0.16,
+};
+
+/** A preset's full material patch, with physical + toon layers explicitly reset where the preset doesn't set them. */
+export const materialPresetPatch = (preset: MaterialPreset) => ({ ...NEUTRAL_PHYS, ...NEUTRAL_TOON, ...preset.patch });
 
 export interface LightingPreset {
   id: LightingPresetId;
@@ -126,6 +144,49 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
     name: 'Gemstone',
     description: 'Faceted refractive gem — high IOR transmission with a touch of iridescence. Best at High/Epic.',
     patch: { color: '#D6F0FF', metalness: 0, roughness: 0, emissiveColor: '#000000', emissiveIntensity: 0, transmission: 0.92, ior: 2.3, thickness: 0.6, iridescence: 0.35 },
+  },
+  // --- Toon / cel-shaded (MeshToonMaterial + gradient ramp + candy rim). Stylized, non-PBR. ---
+  {
+    id: 'toon-flat',
+    name: 'Toon Flat',
+    description: 'Clean cel shading — banded gradient ramp, no rim. The base stylized look.',
+    patch: { color: '#7BD16B', metalness: 0, roughness: 1, emissiveColor: '#000000', emissiveIntensity: 0, toon: true, toonFinish: 'flat', toonBands: 3, toonRimStrength: 0 },
+  },
+  {
+    id: 'toon-jelly',
+    name: 'Toon Jelly',
+    description: 'Glossy candy toon (Fall Guys style) — soft ramp with a sky-tinted fresnel rim and faint self-glow.',
+    patch: { color: '#5BC8FF', metalness: 0, roughness: 1, emissiveColor: '#5BC8FF', emissiveIntensity: 0.034, toon: true, toonFinish: 'jelly', toonBands: 3, toonRimColor: '#dff0ff', toonRimStrength: 0.18 },
+  },
+  {
+    id: 'toon-metal',
+    name: 'Toon Metal',
+    description: 'Anime polished metal — dark-to-hot banded ramp for a stylized chrome look (no rim).',
+    patch: { color: '#C9D2E0', metalness: 0, roughness: 1, emissiveColor: '#FFF6D8', emissiveIntensity: 0.16, toon: true, toonFinish: 'metal', toonRimStrength: 0 },
+  },
+  {
+    id: 'toon-rubber',
+    name: 'Toon Rubber',
+    description: 'Chalky matte cel surface — wide diffuse falloff, no specular ping, soft rim.',
+    patch: { color: '#2A2E36', metalness: 0, roughness: 1, emissiveColor: '#000000', emissiveIntensity: 0.01, toon: true, toonFinish: 'rubber', toonRimColor: '#dff0ff', toonRimStrength: 0.18 },
+  },
+  {
+    id: 'toon-pearl',
+    name: 'Toon Pearl',
+    description: 'Satin pearlescent cel finish — high floor with a broad sheen band and bright rim.',
+    patch: { color: '#F3E8FF', metalness: 0, roughness: 1, emissiveColor: '#FFFFFF', emissiveIntensity: 0.22, toon: true, toonFinish: 'pearl', toonRimColor: '#dff0ff', toonRimStrength: 0.18 },
+  },
+  {
+    id: 'toon-hair',
+    name: 'Toon Hair',
+    description: 'Anime hair — soft body with one crisp shine band and a white rim highlight.',
+    patch: { color: '#7A4A2E', metalness: 0, roughness: 1, emissiveColor: '#A06A3E', emissiveIntensity: 0.06, toon: true, toonFinish: 'hair', toonRimColor: '#ffffff', toonRimStrength: 0.2 },
+  },
+  {
+    id: 'toon-cloth',
+    name: 'Toon Cloth',
+    description: 'Matte fabric cel finish — wide diffuse with a faint satin band and a gentle rim.',
+    patch: { color: '#C0466E', metalness: 0, roughness: 1, emissiveColor: '#000000', emissiveIntensity: 0, toon: true, toonFinish: 'cloth', toonRimColor: '#dff0ff', toonRimStrength: 0.12 },
   },
 ];
 
