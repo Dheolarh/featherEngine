@@ -24,13 +24,26 @@ export default defineConfig({
   clearScreen: false,
   // Relative base so the exported player runs from any folder (or file://).
   ...(isPlayer ? { base: './' } : {}),
+  // ktx2-encoder's Basis wasm loader (dist/basis/basis_encoder.js) contains a top-level `await`
+  // inside a NODE-only guard (`if (ENVIRONMENT_IS_NODE) { await import('module') }`). esbuild's
+  // dep pre-bundler rejects that statically under Vite's default es2020 target. Bump the per-file
+  // transform target AND tell the dep optimizer's esbuild to accept top-level await (Vite merges
+  // `optimizeDeps.esbuildOptions.supported` into its own defaults — see runOptimizeDeps).
+  esbuild: { target: 'es2022' },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: 'es2022',
+      supported: { 'top-level-await': true },
+    },
+  },
   build: isPlayer
     ? {
+        target: 'es2022',
         outDir: 'dist-player',
         emptyOutDir: true,
         rollupOptions: { input: resolve(__dirname, 'player.html') },
       }
-    : {},
+    : { target: 'es2022' },
   server: {
     host: '0.0.0.0',
     port: 1420,

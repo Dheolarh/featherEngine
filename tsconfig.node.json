@@ -1,6 +1,12 @@
 {
   "compilerOptions": {
     "composite": true,
+    // Keep tsc from emitting vite.config.js/.d.ts next to the source — a stale compiled
+    // vite.config.js shadows vite.config.ts (Vite's CLI resolves .js before .ts), which
+    // silently reverts config edits. noEmit + an out-of-tree buildinfo keeps this type-check
+    // only. See tsconfig.node buildinfo below.
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
