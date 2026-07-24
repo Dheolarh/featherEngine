@@ -168,6 +168,23 @@ export interface SceneEnvironmentSettings {
    */
   atmosphericFog?: boolean;
   /**
+   * Aerial perspective (src/three/aerialFog.ts) — layers height falloff and sun in-scattering onto
+   * whichever fog model is active, so haze pools in valleys, thins with altitude, and warms toward the
+   * sun. Stacks with `atmosphericFog`: that one picks the fog's base color and distance curve, this one
+   * adds the vertical gradient and the warm glow toward the sun, so they are usually enabled together.
+   * This is the cheap always-on layer that works in the editor viewport too; it is independent of
+   * `volumetricFogEnabled`, which is a raymarched post-pass that only runs during Play.
+   */
+  aerialFogEnabled?: boolean;
+  /** Density falloff per world unit of height. 0 = uniform. ~0.02 gives valley haze / clear peaks. */
+  aerialFogHeightFalloff?: number;
+  /** Color the fog tints toward when looking into the sun. Defaults to a warm sunlight cream. */
+  aerialFogSunColor?: string;
+  /** Sun in-scatter strength, 0–1. 0 disables the warm tint entirely. */
+  aerialFogInscatter?: number;
+  /** In-scatter exponent — higher tightens the glow to a smaller halo around the sun. ~6 is a broad wash. */
+  aerialFogInscatterPower?: number;
+  /**
    * Unreal-style raymarched volumetric fog (src/three/VolumetricFog.tsx), layered on top of (and
    * replacing) the flat linear `fog*` haze. A depth-buffer post pass that adds height-based density,
    * sun in-scattering (the bright "glow" toward the sun) and — on Epic — god-ray light shafts where

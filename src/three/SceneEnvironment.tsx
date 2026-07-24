@@ -11,6 +11,7 @@ import {
 } from './environmentSettings';
 import { useEditorStore } from '../store/editorStore';
 import { qualityProfile } from './quality';
+import { resetAerialFog, setAerialFog } from './aerialFog';
 
 const skyVertexShader = `
 varying vec3 vDirection;
@@ -123,6 +124,36 @@ function ImageSky({ environment }: { environment: SceneEnvironmentSettings }) {
   );
 }
 
+/**
+ * Feeds the scene's sun + aerial settings into the shared fog uniforms from `aerialFog.ts`. Those
+ * uniform objects are shared by reference across every fogged material, so this one effect updates
+ * the whole scene at once — there is no per-material bookkeeping to do.
+ *
+ * Disabled scenes are actively reset rather than just skipped, because the uniforms are global: a
+ * scene with aerial fog off would otherwise inherit whatever the last scene left behind.
+ */
+function AerialFogSync({ environment }: { environment: SceneEnvironmentSettings }) {
+  const enabled = Boolean(environment.aerialFogEnabled) && environment.fogEnabled;
+  const sunDirection = useMemo(() => sunDirectionFromEnvironment(environment), [environment]);
+
+  useEffect(() => {
+    if (!enabled) {
+      resetAerialFog();
+      return;
+    }
+    setAerialFog({
+      sunDirection,
+      sunColor: environment.aerialFogSunColor ?? environment.sunColor,
+      heightFalloff: environment.aerialFogHeightFalloff ?? 0.02,
+      inscatterPower: environment.aerialFogInscatterPower ?? 6,
+      inscatter: environment.aerialFogInscatter ?? 0.75,
+    });
+    return () => resetAerialFog();
+  }, [enabled, sunDirection, environment]);
+
+  return null;
+}
+
 export function SceneEnvironment({
   environment,
   shadows = false,
@@ -180,6 +211,9 @@ export function SceneEnvironment({
           <fog attach="fog" args={[env.fogColor, Math.max(0, env.fogNear), Math.max(env.fogNear + 1, env.fogFar)]} />
         )
       )}
+      {/* Height falloff + sun in-scatter on top of whichever fog model is active. Also gated on
+          volumetric fog, so the two haze systems never stack. */}
+      {!env.volumetricFogEnabled && <AerialFogSync environment={env} />}
 
       {/* Ambient fill. `hemisphere` grades sky→ground so undersides read cooler/darker; `flat` is the
           legacy constant term. Same intensity either way, so switching is purely a quality choice. */}
