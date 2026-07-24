@@ -100,10 +100,23 @@ export interface RenderSettings {
   compressTextures?: boolean;
   /** Optional project-wide color grade applied in the normal game/editor render, separate from cinematic looks. */
   colorGrade?: CinematicLook;
+  /**
+   * The art-direction "Render Look" currently applied (see RENDER_PRESETS in `src/three/presets.ts`).
+   * A look bundles tonemapping + ambient fill (per scene) with bloom shape + color grade (project-wide)
+   * into one coherent style — the top-level visual identity lever, layered on top of the scene lighting.
+   * `undefined` = no named look (legacy projects, or the user has hand-tuned away from every preset).
+   */
+  renderPreset?: RenderPresetId;
 }
 
 /** Game quality / scalability preset, Low → Epic (the project-wide rendering budget). */
 export type QualityLevel = 'Low' | 'Medium' | 'High' | 'Epic';
+
+/**
+ * A named art-direction "Render Look" (see RENDER_PRESETS). `stylized-nature` is the Feather default —
+ * the lush, painterly outdoors look. The others cover the common target aesthetics for a slice.
+ */
+export type RenderPresetId = 'stylized-nature' | 'realistic' | 'soft-anime' | 'moody-cinematic' | 'vibrant-arcade';
 
 export type SkyMode = 'color' | 'procedural' | 'image';
 
@@ -146,6 +159,14 @@ export interface SceneEnvironmentSettings {
   fogColor: string;
   fogNear: number;
   fogFar: number;
+  /**
+   * Atmospheric (sky-sampled) fog. Instead of a flat linear `fog*` haze, the distance fog switches to an
+   * exponential aerial-perspective curve whose COLOR is auto-derived from the sky (the procedural horizon
+   * tint), so distant hills/mountains dissolve seamlessly into the sky — the signature stylized-outdoors
+   * look (BOTW/Genshin). `fogFar` still sets the range (bigger = clearer). Ignored when volumetric fog is
+   * on (that pass owns the haze). Off = the classic linear `fog*` behaviour.
+   */
+  atmosphericFog?: boolean;
   /**
    * Unreal-style raymarched volumetric fog (src/three/VolumetricFog.tsx), layered on top of (and
    * replacing) the flat linear `fog*` haze. A depth-buffer post pass that adds height-based density,

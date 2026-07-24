@@ -24,6 +24,31 @@ import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { CommandPalette } from './components/CommandPalette';
 import { initHistory } from './store/history';
 import { initAutosave } from './store/autosave';
+import { createMeadowTemplate } from './project/meadowTemplate';
+
+/** DEV-only: `?demo=meadows` auto-builds the Meadows template on load — used for headless screenshot QA
+ *  of the vegetation look. No-op in production builds and when any other query is present. */
+function useDemoAutoload() {
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (new URLSearchParams(window.location.search).get('demo') !== 'meadows') return;
+    let cancelled = false;
+    void (async () => {
+      const project = useProjectStore.getState();
+      if (project.hasProject) return;
+      await project.newProject('Meadows Preview');
+      if (cancelled || !useProjectStore.getState().hasProject) return;
+      await createMeadowTemplate();
+      // Auto-enter Play so a screenshot shows the eye-level third-person game camera (reference framing).
+      setTimeout(() => {
+        if (!cancelled) useEditorStore.getState().setPlaying(true);
+      }, 2000);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+}
 
 /**
  * Mirror the user's appearance preferences onto <html> so the global CSS variables
@@ -137,6 +162,7 @@ export default function App() {
     initHistory();
     initAutosave();
   }, []);
+  useDemoAutoload();
 
   if (!hasProject) {
     return (

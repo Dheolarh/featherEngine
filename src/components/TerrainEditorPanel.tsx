@@ -303,6 +303,7 @@ function FoliageControls({
         <label className="node-field">
           <span>Tree Mesh</span>
           <select value={foliage.treeMesh} onChange={(event) => setFoliage({ treeMesh: event.target.value as TerrainComponent['foliage']['treeMesh'] })}>
+            <option value="fir">Fir (stylized conifer)</option>
             <option value="cone">Cone</option>
             <option value="round">Round</option>
           </select>
@@ -317,6 +318,10 @@ function FoliageControls({
 
       <RangeField label="Wind Strength" value={foliage.windStrength ?? 1} max={4} onChange={(windStrength) => setFoliage({ windStrength })} />
       <p className="field-hint">Foliage sway scales the global scene Wind (set it in Scene Settings → Wind). 0 = stiff.</p>
+      <RangeField label="Player Interaction" value={foliage.interactStrength ?? 1} max={4} onChange={(interactStrength) => setFoliage({ interactStrength })} />
+      <p className="field-hint">During Play, grass &amp; flowers part and flatten around a passing player/vehicle (BOTW-style). 0 = ignore actors.</p>
+      <RangeField label="Wildflowers" value={foliage.flowerDensity ?? 0} onChange={(flowerDensity) => setFoliage({ flowerDensity })} />
+      <p className="field-hint">Scatter small varied-color blooms through the grass. 0 = none.</p>
       <RangeField label="Grass Density" value={foliage.density} onChange={(density) => setFoliage({ density })} />
       <RangeField label="Tree Density" value={foliage.treeDensity} onChange={(treeDensity) => setFoliage({ treeDensity })} />
       <RangeField label="Slope Limit" value={foliage.slopeLimit} onChange={(slopeLimit) => setFoliage({ slopeLimit })} />

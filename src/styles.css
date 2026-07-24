@@ -6780,6 +6780,42 @@ button {
   background: #ff9f4a;
 }
 
+/* Render Look chips — the swatch previews each art-direction look's dominant tone. */
+.render-look-dot {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+}
+
+.render-look-dot-stylized-nature {
+  background: linear-gradient(135deg, #8fe36a, #2f8f3a);
+}
+
+.render-look-dot-realistic {
+  background: linear-gradient(135deg, #cdd3da, #7b828c);
+}
+
+.render-look-dot-soft-anime {
+  background: linear-gradient(135deg, #ffd1ec, #9fd8ff);
+}
+
+.render-look-dot-moody-cinematic {
+  background: linear-gradient(135deg, #ff9f4a, #1d6f7a);
+}
+
+.render-look-dot-vibrant-arcade {
+  background: linear-gradient(135deg, #ff4d8d, #ffd23f 55%, #31f7ff);
+}
+
+/* The currently applied Render Look reads as selected. */
+.preset-chip-grid button.is-active {
+  border-color: rgba(61, 220, 151, 0.7);
+  background: rgba(61, 220, 151, 0.14);
+  color: var(--text);
+}
+
 .cinematic-cut-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

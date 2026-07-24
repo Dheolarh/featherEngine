@@ -34,13 +34,14 @@ import { buildSceneSnapshot, type SceneSnapshotDetail } from './systemPrompt';
 import { graphToFeatherScript } from '../scripting/featherScript';
 import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { createThirdPersonTemplate } from '../project/thirdPersonTemplate';
+import { createMeadowTemplate } from '../project/meadowTemplate';
 import { createFirstPersonTemplate } from '../project/firstPersonTemplate';
 import { createFilmModeTemplate } from '../project/filmModeTemplate';
 import { createDrivingTemplate } from '../project/drivingTemplate';
 import { createSimRacingTemplate } from '../project/simRacingTemplate';
 import { createStoryboardCinematic, STORYBOARD_PRESETS } from '../project/cinematicStoryboard';
 import { addLibraryShot, SHOT_LIBRARY, type ShotLibraryType } from '../project/cinematicShotLibrary';
-import { findLightingPreset, findMaterialPreset, lightingPresetIds, materialPresetIds, materialPresetPatch } from '../three/presets';
+import { findLightingPreset, findMaterialPreset, findRenderPreset, lightingPresetIds, materialPresetIds, materialPresetPatch, renderPresetIds } from '../three/presets';
 import { applyPhysicsMaterialPreset, physicsMaterialPresetIds } from '../runtime/physicsMaterials';
 
 const store = () => useEditorStore.getState();
@@ -61,7 +62,7 @@ const terrainFoliagePatchSchema = z.object({
   maxScale: z.number().min(0.1).max(16).optional(),
   slopeLimit: z.number().min(0).max(1).optional().describe('Minimum normal Y for placement; higher avoids steep slopes.'),
   grassMesh: z.enum(['blade', 'cross', 'tuft']).optional(),
-  treeMesh: z.enum(['cone', 'round']).optional(),
+  treeMesh: z.enum(['cone', 'round', 'fir']).optional().describe("Built-in tree shape: 'fir' = stylized layered conifer (stacked tiers — the BOTW/stylized-nature look, best default), 'cone' = single cone, 'round' = single sphere crown."),
   grassSource: z.enum(['builtin', 'image', 'model']).optional().describe("Grass mesh source: 'builtin' high-quality wind-animated blades (default), 'image' a 2D billboard from grassImageAssetId, or 'model' from grassModelAssetId."),
   treeSource: z.enum(['builtin', 'image', 'model']).optional().describe("Tree mesh source: 'builtin', 'image' billboard (treeImageAssetId), or 'model' (treeModelAssetId)."),
   grassModelAssetId: z.string().optional().describe('Model asset id for 3D grass (sets grassSource to model), or "" to clear.'),
@@ -69,6 +70,8 @@ const terrainFoliagePatchSchema = z.object({
   grassImageAssetId: z.string().optional().describe('Image asset id for 2D billboard grass (use with grassSource:"image"), or "" to clear.'),
   treeImageAssetId: z.string().optional().describe('Image asset id for 2D billboard trees (use with treeSource:"image"), or "" to clear.'),
   windStrength: z.number().min(0).max(4).optional().describe('Foliage sway multiplier on the global scene wind (0 = stiff, no sway). Set the wind via set_scene_environment.'),
+  interactStrength: z.number().min(0).max(4).optional().describe('BOTW-style player interaction: how strongly grass/flowers part & flatten around a passing player/vehicle during Play. 1 = natural (default), 0 = ignores actors, >1 = exaggerated.'),
+  flowerDensity: z.number().min(0).max(1).optional().describe('Wildflower density 0..1 — small brightly-colored blooms (red/yellow/white/purple/pink/orange) scattered through the grass; they sway and part like the blades. 0 = none. Only appears in grass/mixed mode.'),
   grassColor: z.string().optional(),
   trunkColor: z.string().optional(),
   treeColor: z.string().optional(),
@@ -121,6 +124,10 @@ const environmentPatchSchema = z.object({
   fogColor: z.string().optional(),
   fogNear: z.number().min(0).optional(),
   fogFar: z.number().min(1).optional(),
+  atmosphericFog: z
+    .boolean()
+    .optional()
+    .describe('Sky-sampled atmospheric fog: exponential aerial perspective whose color auto-follows the sky horizon, so distant hills/mountains dissolve into the sky (BOTW/Genshin stylized-outdoors look). Uses fogFar as the range. Best with a procedural sky; ignored when volumetric fog is on.'),
   volumetricFogEnabled: z
     .boolean()
     .optional()
@@ -158,6 +165,7 @@ const runtimeEnvironmentPatchSchema = environmentPatchSchema.pick({
   fogColor: true,
   fogNear: true,
   fogFar: true,
+  atmosphericFog: true,
   volumetricFogEnabled: true,
   volumetricFogDensity: true,
   volumetricFogColor: true,
@@ -881,6 +889,56 @@ const rawEngineTools = {
     },
   }),
 
+  create_meadow: tool({
+    description:
+      'One-click BOTW-style meadow: creates a streamed terrain carpeted in dense INTERACTIVE grass + wildflowers (they part & flatten around the player/vehicles during Play, then spring back) with scattered swaying trees, then sets a gentle breeze, sky-dissolving atmospheric fog, and the Stylized Nature render look. The fastest way to a lush, living outdoor scene. Returns the terrain id.',
+    inputSchema: z.object({
+      name: z.string().optional(),
+      position: vec3.optional().describe('Terrain origin. Default [0,0,0].'),
+      size: z.number().min(32).max(8192).optional().describe('Terrain footprint in world units. Default 400.'),
+      grassColor: z.string().optional().describe('Base grass hex (per-blade variation is added automatically). Default a lush green.'),
+      density: z.number().min(0).max(1).optional().describe('Grass density 0..1. Default 0.7 (lush).'),
+      trees: z.boolean().optional().describe('Scatter swaying trees too (mixed). Default true; false = pure grass field.'),
+    }),
+    execute: async ({ name, position, size = 400, grassColor = '#5aa64e', density = 0.7, trees = true }) => {
+      const s = store();
+      const id = s.createObjectWithProps('terrain', {
+        name: name ?? 'Meadow',
+        position: position ? asVec3(position) : [0, 0, 0],
+        terrain: {
+          size,
+          foliage: {
+            enabled: true,
+            mode: trees ? 'mixed' : 'grass',
+            density,
+            treeDensity: trees ? 0.16 : 0,
+            grassSource: 'builtin',
+            treeSource: 'builtin',
+            treeMesh: 'fir',
+            grassColor,
+            treeColor: '#3f9a4e',
+            minScale: 0.85,
+            maxScale: 1.8,
+            windStrength: 1,
+            interactStrength: 1,
+            flowerDensity: 0.4,
+          },
+        } as Partial<TerrainComponent>,
+        physics: { enabled: true, bodyType: 'fixed', collider: 'mesh' },
+      });
+      // Living outdoor atmosphere: a gentle breeze, sky-dissolve fog, and the lush stylized render look.
+      s.updateSceneEnvironment(s.activeSceneId, {
+        wind: [3, 0, 1.5],
+        windTurbulence: 0.4,
+        fogEnabled: true,
+        atmosphericFog: true,
+        fogFar: Math.max(120, size * 0.6),
+      });
+      s.applyRenderPreset(s.activeSceneId, 'stylized-nature');
+      return `Created interactive meadow "${findObject(id)?.name}" (id ${id}) with wind, atmospheric fog, and the Stylized Nature look. Add a character and press Play — walk through the grass to see it part.`;
+    },
+  }),
+
   create_water_volume: tool({
     description:
       'Create an Unreal-style water/physics volume: a box trigger that renders a realistic ANIMATED water surface (Gerstner waves, fresnel reflection, depth color, foam, caustics, optional underwater screen tint) and makes characters swim + gives dynamic bodies buoyancy/drag/wave lift. Scale controls the volume size. Pick a `style` (ocean/pool/lake/toxic/lava) for an instant look, or set the individual visual fields. Defaults to the "ocean" look.',
@@ -1469,6 +1527,24 @@ const rawEngineTools = {
       store().updateSceneEnvironment(store().activeSceneId, selected.environment);
       store().updateRenderSettings({ ...selected.renderSettings, colorGrade: selected.colorGrade });
       return `Applied "${selected.name}" lighting preset.`;
+    },
+  }),
+
+  apply_render_preset: tool({
+    description:
+      'Apply a one-click art-direction "Render Look" — the top-level visual identity of the scene, layered ON TOP of the lighting. It sets the tonemapping curve + ambient fill (per scene) and the bloom shape + project color grade together, WITHOUT touching sky/sun/fog, so it combines with any lighting preset. Use this for style requests like "make it look like a stylized nature game", "anime look", "cinematic/moody", "photoreal", or "bright arcade".',
+    inputSchema: z.object({
+      preset: z
+        .enum(renderPresetIds)
+        .describe(
+          'stylized-nature (default; lush painterly outdoors — neutral tonemap + hemisphere fill + soft bloom + saturated warm grade), realistic (ACES photoreal, flat ambient, tight bloom, neutral grade), soft-anime (bright cel look, dreamy bloom, high saturation — pair with toon materials), moody-cinematic (AgX, teal-orange, contrast + vignette), or vibrant-arcade (punchy high-saturation mobile/arcade pop).',
+        ),
+    }),
+    execute: async ({ preset }) => {
+      const selected = findRenderPreset(preset);
+      if (!selected) return `Unknown render preset ${preset}.`;
+      store().applyRenderPreset(store().activeSceneId, preset);
+      return `Applied "${selected.name}" render look.`;
     },
   }),
 
@@ -2224,6 +2300,18 @@ const rawEngineTools = {
     execute: async () => {
       const id = await createThirdPersonTemplate();
       return id ? `Built the third-person tutorial corridor - pawn objectId ${id}. Press Play: WASD move (Shift sprint), Space jump, mouse look, LMB attack / RMB aim, Tab weapon wheel, E interact. Rooms in order: 01 Movement (jump pad + vault rails), 02 Ragdoll ([E] pedestal, P recovers), 03 Water (swim volume), 04 Climb (rung wall), 05 Interaction (light theatre [E] toggles), 06 Cinematic (gold slate plays a Film Mode pass). The coach panel top-right tracks ROOM X / 06 progress + checkpoints.` : `Couldn't build the template.`;
+    },
+  }),
+
+  create_meadow_template: tool({
+    description:
+      'Build the "Meadows" playable slice — the BOTW-style interactive-vegetation showcase. Spawns the bundled third-person character rig on a big rolling PROCEDURAL-hills terrain carpeted in dense grass + scattered wildflowers (varied red/yellow/white/purple blooms) that PART and flatten around the player as you walk, plus scattered swaying trees and mossy boulders, all under a gentle breeze, sky-dissolving atmospheric fog, and the Stylized Nature render look. Returns the player objectId. Use this when the user wants a lush outdoor/nature scene, a grass-interaction demo, or a starting point for a BOTW/Zelda/Genshin-like game.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const id = await createMeadowTemplate();
+      return id
+        ? `Created Meadows — player objectId ${id}. Press Play and walk (WASD, Shift sprint, mouse look) through the field: the grass and flowers part and flatten around you and spring back, travelling wind gusts sweep across the blades, the trees sway in the breeze, and distant hills dissolve into the sky. Tune the terrain's Foliage tab (Player Interaction, Wildflowers, density) to taste.`
+        : `Couldn't build the meadow template.`;
     },
   }),
 

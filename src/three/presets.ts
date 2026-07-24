@@ -1,4 +1,4 @@
-import type { CinematicLook, MaterialDefinition, PhysicalSurfaceProps, RenderSettings, SceneEnvironmentSettings, ToonSurfaceProps, WaterStylePreset, WaterVolumeComponent } from '../types';
+import type { CinematicLook, MaterialDefinition, PhysicalSurfaceProps, RenderPresetId, RenderSettings, SceneEnvironmentSettings, ToonSurfaceProps, WaterStylePreset, WaterVolumeComponent } from '../types';
 
 export type MaterialPresetId =
   | 'plastic'
@@ -537,8 +537,92 @@ export const LIGHTING_PRESETS: LightingPreset[] = [
   },
 ];
 
+/**
+ * An art-direction "Render Look" — the top-level visual identity of a scene. Where a LIGHTING preset
+ * decides the *world* (sky/sun/fog), a RENDER preset decides the *camera + post*: the tonemapping curve
+ * and ambient fill model (per scene) plus the bloom shape and color grade (project-wide). The two layer
+ * independently, so any look drops on top of any lighting. Deliberately does NOT touch sky/sun/fog so a
+ * user can pick "Stylized Nature" at noon or dusk and keep their authored world.
+ */
+export interface RenderPreset {
+  id: RenderPresetId;
+  name: string;
+  description: string;
+  /** Look-layer scene fields ONLY (tonemapping + ambient fill) — never sky/sun/fog. */
+  environment: Pick<SceneEnvironmentSettings, 'toneMapping' | 'toneMappingExposure' | 'ambientMode'>;
+  /** Bloom shape (project-wide RenderSettings). vignette/quality are left to the user/lighting preset. */
+  renderSettings: Pick<RenderSettings, 'bloomEnabled' | 'bloomIntensity' | 'bloomThreshold' | 'bloomRadius'>;
+  /** Project color grade (the same pipeline cinematic looks use). */
+  colorGrade: CinematicLook;
+}
+
+export const RENDER_PRESETS: RenderPreset[] = [
+  {
+    id: 'stylized-nature',
+    name: 'Stylized Nature',
+    description:
+      'The default Feather look — lush painterly outdoors. Highlight-preserving Neutral tonemapping keeps greens saturated (ACES pushes them orange), a sky-lit hemisphere fill lifts undersides naturally, a soft wide bloom hazes the highlights, and a warm punchy grade pops the foliage. Preview foliage/materials under this.',
+    environment: { toneMapping: 'neutral', toneMappingExposure: 1.05, ambientMode: 'hemisphere' },
+    renderSettings: { bloomEnabled: true, bloomIntensity: 0.5, bloomThreshold: 0.8, bloomRadius: 0.62 },
+    // Restrained warmth: enough to pop the foliage, but low saturation/temperature so a full green field
+    // stays natural and never drifts garish/olive under a warm sun.
+    colorGrade: { grade: 'warm', gradeIntensity: 0.15, exposure: 0.02, contrast: 0.06, saturation: 0.14, temperature: 0.035 },
+  },
+  {
+    id: 'realistic',
+    name: 'Realistic',
+    description:
+      'Photoreal baseline — ACES filmic tonemapping, flat ambient, a tight subtle bloom and a near-neutral grade. The most accurate, least stylized look; best when materials and lighting should read literally.',
+    environment: { toneMapping: 'aces', toneMappingExposure: 1, ambientMode: 'flat' },
+    renderSettings: { bloomEnabled: true, bloomIntensity: 0.32, bloomThreshold: 0.9, bloomRadius: 0.35 },
+    colorGrade: { grade: 'none', gradeIntensity: 1, exposure: 0, contrast: 0.04, saturation: 0.03 },
+  },
+  {
+    id: 'soft-anime',
+    name: 'Soft Anime',
+    description:
+      'Bright cel / anime look — Neutral tone with a touch more exposure, hemisphere fill, a dreamy wide bloom, and a high-saturation lifted-shadow grade with low contrast. Pairs with the Toon material presets.',
+    environment: { toneMapping: 'neutral', toneMappingExposure: 1.08, ambientMode: 'hemisphere' },
+    renderSettings: { bloomEnabled: true, bloomIntensity: 0.58, bloomThreshold: 0.7, bloomRadius: 0.72 },
+    colorGrade: { grade: 'warm', gradeIntensity: 0.2, exposure: 0.05, contrast: -0.05, saturation: 0.32, temperature: 0.05 },
+  },
+  {
+    id: 'moody-cinematic',
+    name: 'Moody Cinematic',
+    description:
+      'Filmic drama — AgX tonemapping rolls off highlights gracefully, flat ambient keeps shadows deep, a teal-orange grade with crushed contrast and a soft vignette. The blockbuster night/interior look.',
+    environment: { toneMapping: 'agx', toneMappingExposure: 0.98, ambientMode: 'flat' },
+    renderSettings: { bloomEnabled: true, bloomIntensity: 0.7, bloomThreshold: 0.6, bloomRadius: 0.6 },
+    colorGrade: { grade: 'teal-orange', gradeIntensity: 0.5, exposure: -0.04, contrast: 0.16, saturation: -0.02, vignette: 0.22 },
+  },
+  {
+    id: 'vibrant-arcade',
+    name: 'Vibrant Arcade',
+    description:
+      'Punchy mobile / arcade pop — Neutral tone, hemisphere fill, a strong bloom, and a high-saturation high-contrast grade. Bright, candy-colored and readable; great for casual and party games.',
+    environment: { toneMapping: 'neutral', toneMappingExposure: 1.05, ambientMode: 'hemisphere' },
+    renderSettings: { bloomEnabled: true, bloomIntensity: 0.85, bloomThreshold: 0.55, bloomRadius: 0.55 },
+    colorGrade: { grade: 'warm', gradeIntensity: 0.14, exposure: 0.04, contrast: 0.14, saturation: 0.4, temperature: 0.02 },
+  },
+];
+
+/** The look every new project starts with — the signature lush outdoors identity. */
+export const DEFAULT_RENDER_PRESET: RenderPresetId = 'stylized-nature';
+
 export const materialPresetIds = MATERIAL_PRESETS.map((preset) => preset.id) as [MaterialPresetId, ...MaterialPresetId[]];
 export const lightingPresetIds = LIGHTING_PRESETS.map((preset) => preset.id) as [LightingPresetId, ...LightingPresetId[]];
+export const renderPresetIds = RENDER_PRESETS.map((preset) => preset.id) as [RenderPresetId, ...RenderPresetId[]];
 
 export const findMaterialPreset = (id: MaterialPresetId) => MATERIAL_PRESETS.find((preset) => preset.id === id);
 export const findLightingPreset = (id: LightingPresetId) => LIGHTING_PRESETS.find((preset) => preset.id === id);
+export const findRenderPreset = (id: RenderPresetId) => RENDER_PRESETS.find((preset) => preset.id === id);
+
+/** The scene-environment fields a Render Look sets (tonemapping + ambient fill). `{}` for an unknown id. */
+export const renderPresetEnvironmentPatch = (id: RenderPresetId): Partial<SceneEnvironmentSettings> =>
+  findRenderPreset(id)?.environment ?? {};
+
+/** The project render-settings fields a Render Look sets (bloom shape + grade + the selected id). `{}` for an unknown id. */
+export const renderPresetRenderPatch = (id: RenderPresetId): Partial<RenderSettings> => {
+  const preset = findRenderPreset(id);
+  return preset ? { ...preset.renderSettings, colorGrade: preset.colorGrade, renderPreset: id } : {};
+};

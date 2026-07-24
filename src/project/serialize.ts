@@ -6,6 +6,8 @@ import {
   type Scene,
 } from '../types';
 import { defaultSceneEnvironment } from '../three/environmentSettings';
+import { defaultRenderSettings } from '../store/editor/defaults';
+import { DEFAULT_RENDER_PRESET, renderPresetEnvironmentPatch, renderPresetRenderPatch } from '../three/presets';
 
 export const SCENES_DIR = 'scenes';
 export const ASSETS_DIR = 'assets';
@@ -153,11 +155,17 @@ export function migrateLoaded(raw: unknown): NodeForgeProject {
 /** A fresh, minimal project for "New Project". */
 export function blankProject(name: string): NodeForgeProject {
   const sceneId = 'scene-main';
+  // New projects open on the signature Stylized Nature look (lush painterly outdoors). The look layer is
+  // stamped explicitly HERE so it only affects new work — the default*() factories stay ACES/flat so that
+  // loading a legacy project (which predates these fields) is never silently re-graded on open.
+  const environment = { ...defaultSceneEnvironment(), ...renderPresetEnvironmentPatch(DEFAULT_RENDER_PRESET), atmosphericFog: true };
+  const renderSettings = { ...defaultRenderSettings(), ...renderPresetRenderPatch(DEFAULT_RENDER_PRESET) };
   return {
     version: PROJECT_VERSION,
     name,
     activeSceneId: sceneId,
-    scenes: [{ id: sceneId, name: 'Main', objects: [], environment: defaultSceneEnvironment() }],
+    scenes: [{ id: sceneId, name: 'Main', objects: [], environment }],
+    renderSettings,
     assets: [],
     folders: [],
     variables: [],

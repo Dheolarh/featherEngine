@@ -5,7 +5,7 @@ Zustand store ([src/store/editorStore.ts](src/store/editorStore.ts)). 3D via
 react-three-fiber + rapier; visual scripting via @xyflow/react.
 
 ## Commands
-- `npm run dev` — web dev server (vite, fixed port 1420)
+- `npm run dev` — web dev server (vite, fixed port 17420)
 - `npm run build` — type-check (`tsc -b`) + production web build; must pass before done
 - `npm run tauri:dev` — run the desktop app (Tauri); `npm run tauri:build` — package `.app`/`.dmg`
 - `cd src-tauri && cargo check` — compile-check the Rust shell + validate `tauri.conf.json`/capabilities

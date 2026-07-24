@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { CloudFog, CloudSun, Image as ImageIcon, Music2, Sparkles, Sun, Volume2, Wind } from 'lucide-react';
+import { CloudFog, CloudSun, Image as ImageIcon, Music2, Palette, Sparkles, Sun, Volume2, Wind } from 'lucide-react';
 import { useEditorStore } from '../store/editorStore';
 import { useStableActiveScene } from '../store/stableSelectors';
 import { withSceneEnvironmentDefaults } from '../three/environmentSettings';
 import type { SceneEnvironmentSettings } from '../types';
-import { LIGHTING_PRESETS } from '../three/presets';
+import { LIGHTING_PRESETS, RENDER_PRESETS } from '../three/presets';
 
 function audioName(id: string | undefined, assets: Array<{ id: string; name: string }>) {
   if (!id) return 'None';
@@ -28,6 +28,8 @@ export function SceneSettingsPanel() {
   const updateSceneEnvironment = useEditorStore((state) => state.updateSceneEnvironment);
   const updateSceneStreaming = useEditorStore((state) => state.updateSceneStreaming);
   const updateRenderSettings = useEditorStore((state) => state.updateRenderSettings);
+  const applyRenderPreset = useEditorStore((state) => state.applyRenderPreset);
+  const activeRenderPreset = useEditorStore((state) => state.renderSettings.renderPreset);
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const audioAssets = useMemo(() => assets.filter((asset) => asset.type === 'audio'), [assets]);
   const imageAssets = useMemo(() => assets.filter((asset) => asset.type === 'image'), [assets]);
@@ -145,6 +147,29 @@ export function SceneSettingsPanel() {
                 }}
               >
                 <span className={`lighting-dot lighting-dot-${preset.id}`} />
+                <span>{preset.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="lighting-preset-library" aria-label="Render looks">
+          <div className="preset-library-head">
+            <span>
+              <Palette size={14} aria-hidden />
+              Render Look
+            </span>
+          </div>
+          <div className="preset-chip-grid">
+            {RENDER_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                title={preset.description}
+                className={activeRenderPreset === preset.id ? 'is-active' : undefined}
+                aria-pressed={activeRenderPreset === preset.id}
+                onClick={() => applyRenderPreset(scene.id, preset.id)}
+              >
+                <span className={`render-look-dot render-look-dot-${preset.id}`} />
                 <span>{preset.name}</span>
               </button>
             ))}
@@ -386,22 +411,34 @@ export function SceneSettingsPanel() {
         </label>
         {environment.fogEnabled && (
           <>
-            <label className="field-row">
-              <span>Fog Color</span>
-              <input type="color" value={environment.fogColor} onChange={(event) => updateEnvironment({ fogColor: event.target.value })} />
-            </label>
-            <label className="field-row">
-              <span>Near</span>
+            <label className="field-row" title="Sky-sampled aerial perspective: distant terrain dissolves into the sky (BOTW look). Color follows the sky; Far sets the range.">
+              <span>Atmospheric</span>
               <input
-                type="number"
-                min={0}
-                step={1}
-                value={environment.fogNear}
-                onChange={(event) => updateEnvironment({ fogNear: num(event.target.value, environment.fogNear) })}
+                type="checkbox"
+                checked={environment.atmosphericFog ?? false}
+                onChange={(event) => updateEnvironment({ atmosphericFog: event.target.checked })}
               />
             </label>
+            {!environment.atmosphericFog && (
+              <label className="field-row">
+                <span>Fog Color</span>
+                <input type="color" value={environment.fogColor} onChange={(event) => updateEnvironment({ fogColor: event.target.value })} />
+              </label>
+            )}
+            {!environment.atmosphericFog && (
+              <label className="field-row">
+                <span>Near</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={environment.fogNear}
+                  onChange={(event) => updateEnvironment({ fogNear: num(event.target.value, environment.fogNear) })}
+                />
+              </label>
+            )}
             <label className="field-row">
-              <span>Far</span>
+              <span>{environment.atmosphericFog ? 'Range' : 'Far'}</span>
               <input
                 type="number"
                 min={1}

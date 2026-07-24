@@ -46,7 +46,9 @@ export default defineConfig({
     : { target: 'es2022' },
   server: {
     host: '0.0.0.0',
-    port: 1420,
+    // 17420, not Tauri's default 1420 — that collides with any other Tauri app's dev server (and the
+    // sibling MomentumCup/MyAge projects). Keep this in sync with src-tauri/tauri.conf.json devUrl.
+    port: 17420,
     strictPort: true,
   },
 });

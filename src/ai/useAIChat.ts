@@ -121,6 +121,10 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Set scene environment';
     case 'apply_lighting_preset':
       return `Applied ${String(input.preset ?? 'lighting')} look`;
+    case 'apply_render_preset':
+      return `Applied ${String(input.preset ?? 'render')} render look`;
+    case 'create_meadow':
+      return 'Created interactive meadow';
     case 'set_inventory':
       return 'Set inventory';
     case 'equip_slot':
@@ -171,6 +175,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return `Added ${String(input.kit ?? 'gameplay')} kit`;
     case 'create_third_person_template':
       return 'Built third-person template';
+    case 'create_meadow_template':
+      return 'Built Meadows template';
     case 'create_first_person_template':
       return 'Built FPS template';
     case 'create_film_mode_template':

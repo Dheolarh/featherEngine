@@ -244,16 +244,31 @@ function composeMatrix(position: Vector3Tuple, yaw: number, scale: Vector3Tuple)
   return dummyObject.matrix.clone();
 }
 
+// Wildflower bloom palette — hand-picked bright meadow colors, sampled per instance by a hash so a field
+// reads as scattered varied wildflowers (BOTW). Stored as THREE.Color for direct setColorAt use.
+const FLOWER_PALETTE = [
+  new THREE.Color('#eef0e6'), // soft white (daisies — repeated so white dominates)
+  new THREE.Color('#eef0e6'),
+  new THREE.Color('#ecd77a'), // soft yellow
+  new THREE.Color('#e58aa8'), // soft pink
+  new THREE.Color('#b48fd6'), // soft lavender
+  new THREE.Color('#e8975a'), // soft orange
+];
+
 function generateFoliage(terrain: TerrainComponent, chunks: TerrainChunkKey[]) {
   const foliage = terrain.foliage;
   const grass: THREE.Matrix4[] = [];
+  const grassColors: THREE.Color[] = [];
+  const flowers: THREE.Matrix4[] = [];
+  const flowerColors: THREE.Color[] = [];
   const trunks: THREE.Matrix4[] = [];
   const crowns: THREE.Matrix4[] = [];
   const treeModels: THREE.Matrix4[] = [];
-  if (!foliage.enabled) return { grass, trunks, crowns, treeModels };
+  if (!foliage.enabled) return { grass, grassColors, flowers, flowerColors, trunks, crowns, treeModels };
 
   const wantsGrass = foliage.mode === 'grass' || foliage.mode === 'mixed';
   const wantsTrees = foliage.mode === 'trees' || foliage.mode === 'mixed';
+  const flowerDensity = wantsGrass ? Math.max(0, Math.min(1, foliage.flowerDensity ?? 0)) : 0;
   const chunkArea = terrain.chunkSize * terrain.chunkSize;
   // Painted (mask) mode: scatter the FULL candidate pool and let the per-point mask decide where they
   // survive, so grass appears only where you painted. Uniform mode: candidate count scales with density.
@@ -263,34 +278,91 @@ function generateFoliage(terrain: TerrainComponent, chunks: TerrainChunkKey[]) {
   // bounded disc around the player — so it stays one cheap instanced draw call no matter how big the world.
   // Want denser? Raise foliage.density toward 1; want a bigger dense radius? raise the cap (costs more CPU
   // on regen). Lawn-thick everywhere isn't free — concentrate the budget near the camera instead.
-  const grassPerChunk = wantsGrass ? Math.floor(chunkArea * (useMask ? 2 : foliage.density * 2)) : 0;
+  const grassPerChunk = wantsGrass ? Math.floor(chunkArea * (useMask ? 3.4 : foliage.density * 3.4)) : 0;
   const treesPerChunk = wantsTrees ? Math.max(0, Math.floor(chunkArea * (useMask ? 0.006 : foliage.treeDensity * 0.006))) : 0;
+  // Flowers are a sparse accent among the grass — far fewer than blades so they read as scattered blooms.
+  const flowersPerChunk = flowerDensity > 0 ? Math.floor(chunkArea * flowerDensity * 0.28) : 0;
   const maxGrass = 60000;
   const maxTrees = 2000;
+  const maxFlowers = 16000;
+
+  // Reusable color scratch for the ground-borrowed grass tints (avoids allocating per tuft).
+  const grassTargetColor = new THREE.Color(foliage.grassColor);
+  const grassGround = new THREE.Color();
+  const grassBase = new THREE.Color();
 
   for (const chunk of chunks) {
     const bounds = terrainChunkBounds(terrain, chunk.x, chunk.z);
-    for (let i = 0; i < grassPerChunk && grass.length < maxGrass; i += 1) {
-      // Use DISTINCT hash indices for x and z (2i vs 2i+1). Sharing the same index `i` (differing only by a
-      // near-identical seed) made rx and rz correlate, so the blades landed on diagonal/straight lines
-      // instead of scattering — give each axis its own hash input so the placement is properly random.
-      const rx = terrainHash01(terrain.seed + 5001, chunk.x, chunk.z, i * 2);
-      const rz = terrainHash01(terrain.seed + 5002, chunk.x, chunk.z, i * 2 + 1);
+    // --- MyAge-style meadow grass. Three things make it read as a real lush field instead of a green fuzz
+    //     layer: (1) PATCHY density noise carves lush clumps + near-bare pockets; (2) each TUFT shares one
+    //     lean angle + height (a tidy pom, not a fist of blades pointing everywhere); (3) blades BORROW the
+    //     ground color, nudged only ~40% toward the grass green and a touch darker, so they melt into the
+    //     turf — plus a gentle per-tuft painterly warm/cool + value shift so it reads hand-painted. ---
+    const grassTarget = grassTargetColor;
+    const GRASS_TUFT = 5;
+    const grassClusters = Math.ceil(grassPerChunk / GRASS_TUFT);
+    for (let c = 0; c < grassClusters && grass.length < maxGrass; c += 1) {
+      const crx = terrainHash01(terrain.seed + 5001, chunk.x, chunk.z, c * 2);
+      const crz = terrainHash01(terrain.seed + 5002, chunk.x, chunk.z, c * 2 + 1);
+      const cX = bounds.minX + crx * terrain.chunkSize;
+      const cZ = bounds.minZ + crz * terrain.chunkSize;
+      if (sampleTerrainNormal(terrain, cX, cZ)[1] < foliage.slopeLimit) continue;
+      // Patchy: low-freq noise = probability this tuft survives → lush pockets + bare gaps.
+      const dens = Math.max(0, Math.min(1, 0.44
+        + 0.4 * (Math.sin(cX * 0.052 + 1.3) * Math.sin(cZ * 0.047 + 2.7)
+          + 0.6 * Math.sin(cX * 0.017 - cZ * 0.023 + 4.1)
+          + 0.4 * Math.sin(cX * 0.09 + cZ * 0.075 + 0.6))));
+      if (terrainHash01(terrain.seed + 5006, chunk.x, chunk.z, c) > dens) continue;
+      if (useMask) {
+        const mask = sampleFoliageMask(terrain, cX, cZ);
+        if (mask <= 0 || terrainHash01(terrain.seed + 5005, chunk.x, chunk.z, c) > mask) continue;
+      }
+      // Ground-borrowed blade color for this tuft — halfway to the grass green so blades read a touch
+      // fresher/brighter than the turf they stand on (catching light), while still melting into it.
+      grassGround.set(sampleTerrainMaterialLayer(terrain, cX, cZ).color);
+      grassBase.copy(grassGround).lerp(grassTarget, 0.55).multiplyScalar(1.02);
+      const warmCool = Math.sin(cX * 0.031 + 1.1) * Math.sin(cZ * 0.036 + 2.3);
+      const valueVar = Math.sin(cX * 0.019 - cZ * 0.024 + 5.0);
+      grassBase.r *= 1 + warmCool * 0.06 + valueVar * 0.05;
+      grassBase.g *= 1 + valueVar * 0.045;
+      grassBase.b *= 1 - warmCool * 0.06 + valueVar * 0.04;
+      const tuftAngle = terrainHash01(terrain.seed + 5007, chunk.x, chunk.z, c) * Math.PI;
+      const tuftH = 0.72 + dens * 0.5;
+      const tuftBlades = 2 + Math.floor(dens * 4);
+      for (let k = 0; k < tuftBlades && grass.length < maxGrass; k += 1) {
+        const sk = c * 16 + k;
+        const jx = (terrainHash01(terrain.seed + 5101, chunk.x, chunk.z, sk * 2) - 0.5) * 0.6;
+        const jz = (terrainHash01(terrain.seed + 5102, chunk.x, chunk.z, sk * 2 + 1) - 0.5) * 0.6;
+        const localX = cX + jx;
+        const localZ = cZ + jz;
+        const h = sampleTerrainLocalHeight(terrain, localX, localZ);
+        const s = THREE.MathUtils.lerp(foliage.minScale, foliage.maxScale, terrainHash01(terrain.seed + 5003, chunk.x, chunk.z, sk)) * tuftH;
+        // Whole tuft leans one way, ±small per-blade variance → a tidy pom, not a chaotic fist of blades.
+        const yaw = tuftAngle + (terrainHash01(terrain.seed + 5004, chunk.x, chunk.z, sk) - 0.5) * 0.5;
+        grass.push(composeMatrix([localX, h, localZ], yaw, [0.7 * s, s, 0.7 * s]));
+        const jitter = 0.95 + terrainHash01(terrain.seed + 5008, chunk.x, chunk.z, sk) * 0.1;
+        grassColors.push(new THREE.Color(grassBase.r * jitter, grassBase.g * jitter, grassBase.b * jitter));
+      }
+    }
+    for (let i = 0; i < flowersPerChunk && flowers.length < maxFlowers; i += 1) {
+      const rx = terrainHash01(terrain.seed + 6001, chunk.x, chunk.z, i * 2);
+      const rz = terrainHash01(terrain.seed + 6002, chunk.x, chunk.z, i * 2 + 1);
       const localX = bounds.minX + rx * terrain.chunkSize;
       const localZ = bounds.minZ + rz * terrain.chunkSize;
       const normal = sampleTerrainNormal(terrain, localX, localZ);
       if (normal[1] < foliage.slopeLimit) continue;
-      // Painted mode: keep this blade only where the painted mask covers it (probability = painted density).
       if (useMask) {
         const mask = sampleFoliageMask(terrain, localX, localZ);
-        if (mask <= 0 || terrainHash01(terrain.seed + 5005, chunk.x, chunk.z, i) > mask) continue;
+        if (mask <= 0 || terrainHash01(terrain.seed + 6005, chunk.x, chunk.z, i) > mask) continue;
       }
       const h = sampleTerrainLocalHeight(terrain, localX, localZ);
-      const s = THREE.MathUtils.lerp(foliage.minScale, foliage.maxScale, terrainHash01(terrain.seed + 5003, chunk.x, chunk.z, i));
-      const yaw = terrainHash01(terrain.seed + 5004, chunk.x, chunk.z, i) * Math.PI * 2;
-      // Base-at-ground: blade/cross/model foliage geometry all originate at y=0, so place the instance
-      // origin right on the terrain height (the old +0.22s lift was for the centred cone mesh).
-      grass.push(composeMatrix([localX, h, localZ], yaw, [0.7 * s, s, 0.7 * s]));
+      // Flowers are SMALL dabs of color nestled in the grass — kept little so they read as blooms, not
+      // big flat cards. They stand just proud of the blades.
+      const s = THREE.MathUtils.lerp(0.5, 0.85, terrainHash01(terrain.seed + 6003, chunk.x, chunk.z, i));
+      const yaw = terrainHash01(terrain.seed + 6004, chunk.x, chunk.z, i) * Math.PI * 2;
+      flowers.push(composeMatrix([localX, h, localZ], yaw, [0.26 * s, 0.5 * s, 0.26 * s]));
+      const colorIndex = Math.floor(terrainHash01(terrain.seed + 6006, chunk.x, chunk.z, i) * FLOWER_PALETTE.length) % FLOWER_PALETTE.length;
+      flowerColors.push(FLOWER_PALETTE[colorIndex]);
     }
     for (let i = 0; i < treesPerChunk && trunks.length < maxTrees; i += 1) {
       const rx = terrainHash01(terrain.seed + 7001, chunk.x, chunk.z, i * 2);
@@ -307,11 +379,17 @@ function generateFoliage(terrain: TerrainComponent, chunks: TerrainChunkKey[]) {
       const s = THREE.MathUtils.lerp(foliage.minScale, foliage.maxScale, terrainHash01(terrain.seed + 7003, chunk.x, chunk.z, i)) * 1.9;
       const yaw = terrainHash01(terrain.seed + 7004, chunk.x, chunk.z, i) * Math.PI * 2;
       treeModels.push(composeMatrix([localX, h, localZ], yaw, [s, s, s]));
-      trunks.push(composeMatrix([localX, h + 0.48 * s, localZ], yaw, [0.18 * s, 0.95 * s, 0.18 * s]));
-      crowns.push(composeMatrix([localX, h + 1.23 * s, localZ], yaw, [0.78 * s, 1.1 * s, 0.78 * s]));
+      if (foliage.treeMesh === 'fir') {
+        // Tall conifer: a short thin trunk with a stacked-tier fir crown draping over it from the base up.
+        trunks.push(composeMatrix([localX, h + 0.3 * s, localZ], yaw, [0.12 * s, 0.62 * s, 0.12 * s]));
+        crowns.push(composeMatrix([localX, h + 0.14 * s, localZ], yaw, [1.5 * s, 2.5 * s, 1.5 * s]));
+      } else {
+        trunks.push(composeMatrix([localX, h + 0.48 * s, localZ], yaw, [0.18 * s, 0.95 * s, 0.18 * s]));
+        crowns.push(composeMatrix([localX, h + 1.23 * s, localZ], yaw, [0.78 * s, 1.1 * s, 0.78 * s]));
+      }
     }
   }
-  return { grass, trunks, crowns, treeModels };
+  return { grass, grassColors, flowers, flowerColors, trunks, crowns, treeModels };
 }
 
 function InstancedMatrices({
@@ -426,6 +504,62 @@ function LoadedFoliageModel({
   );
 }
 
+// Built-in 3D tree crown geometries (shared singletons). Matched to the legacy inline-JSX args so
+// placement is unchanged; now rendered through the rigid wind-canopy material so they sway with the
+// wind and lean away from a passing player (built-in trunks stay planted below them).
+const TREE_CROWN_SPHERE = new THREE.SphereGeometry(0.86, 10, 8);
+const TREE_CROWN_CONE = new THREE.ConeGeometry(0.9, 1.45, 7);
+
+/**
+ * A stylized layered CONIFER / fir crown: stacked cone tiers (widest "skirt" at the base up to a point)
+ * merged into ONE geometry, so the whole fir is a single instanced draw. Base at y=0, ~1.12 units tall,
+ * ~0.58 base radius. Per-tier uv.y drives the shader's base-dark→tip-bright gradient (each tier's tips
+ * catch light like real fir layers), and the rigid wind mode sways the whole crown as one soft mass.
+ * This is the tree shape the stylized-nature / BOTW reference look is built around.
+ */
+function buildFirCrownGeometry(): THREE.BufferGeometry {
+  // Five overlapping tiers (widest skirt at the base, narrowing to a point) for a full, soft conifer
+  // silhouette. Generous overlap + 12 radial segments keep it round and smooth rather than a facet blob.
+  const tiers = [
+    { r: 0.62, h: 0.5, y: 0.0 },
+    { r: 0.52, h: 0.46, y: 0.22 },
+    { r: 0.42, h: 0.44, y: 0.42 },
+    { r: 0.3, h: 0.42, y: 0.62 },
+    { r: 0.17, h: 0.4, y: 0.82 },
+  ];
+  const position: number[] = [];
+  const normal: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  let offset = 0;
+  for (const t of tiers) {
+    const cone = new THREE.ConeGeometry(t.r, t.h, 12, 1);
+    cone.translate(0, t.y + t.h / 2, 0); // ConeGeometry is centered on its own origin → move base to t.y
+    const p = cone.getAttribute('position');
+    const n = cone.getAttribute('normal');
+    const u = cone.getAttribute('uv');
+    const idx = cone.getIndex()!;
+    for (let i = 0; i < p.count; i += 1) {
+      position.push(p.getX(i), p.getY(i), p.getZ(i));
+      normal.push(n.getX(i), n.getY(i), n.getZ(i));
+      uv.push(u.getX(i), u.getY(i));
+    }
+    for (let i = 0; i < idx.count; i += 1) index.push(idx.getX(i) + offset);
+    offset += p.count;
+    cone.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(index);
+  return g;
+}
+const TREE_CROWN_FIR = buildFirCrownGeometry();
+
+const treeCrownGeometry = (style: TerrainComponent['foliage']['treeMesh']) =>
+  style === 'fir' ? TREE_CROWN_FIR : style === 'round' ? TREE_CROWN_SPHERE : TREE_CROWN_CONE;
+
 function TerrainFoliage({ terrain, chunks }: { terrain: TerrainComponent; chunks: TerrainChunkKey[] }) {
   const foliage = terrain.foliage;
   const matrices = useMemo(() => generateFoliage(terrain, chunks), [terrain, chunks]);
@@ -435,6 +569,8 @@ function TerrainFoliage({ terrain, chunks }: { terrain: TerrainComponent; chunks
   const windVec = env?.wind ?? [0, 0, 0];
   const turbulence = env?.windTurbulence ?? 0;
   const windStrength = foliage.windStrength ?? 1;
+  // BOTW-style player parting (Tier "interactive vegetation") + soft turf/canopy normals (Tier 7.3).
+  const interactStrength = foliage.interactStrength ?? 1;
   const grassSource = foliage.grassSource ?? (foliage.grassModelAssetId ? 'model' : 'builtin');
   const treeSource = foliage.treeSource ?? (foliage.treeModelAssetId ? 'model' : 'builtin');
 
@@ -451,16 +587,41 @@ function TerrainFoliage({ terrain, chunks }: { terrain: TerrainComponent; chunks
           windVec={windVec}
           turbulence={turbulence}
           windStrength={windStrength}
+          normalLift={0.5}
+          interactStrength={interactStrength}
         />
       ) : (
-        // Built-in: high-quality wind-animated blades (or a cross billboard for the 'cross' style).
+        // Built-in: high-quality wind-animated blades. Color is WHITE because each blade carries its own
+        // ground-borrowed per-instance color (so the field melts into the turf); see generateFoliage.
         <WindFoliage
           geometry={foliage.grassMesh === 'cross' ? GRASS_CROSS_GEOMETRY : BLADE_GEOMETRY}
-          color={foliage.grassColor}
+          color="#ffffff"
           matrices={matrices.grass}
+          colors={matrices.grassColors}
           windVec={windVec}
           turbulence={turbulence}
           windStrength={windStrength}
+          normalLift={0.88}
+          interactStrength={interactStrength}
+          shadow={false}
+          emit={0.62}
+        />
+      )}
+
+      {/* Wildflowers: small brightly-colored blooms (per-instance colors) scattered through the grass;
+          they wind-sway and part around the player exactly like the blades. */}
+      {matrices.flowers.length > 0 && (
+        <WindFoliage
+          geometry={GRASS_CROSS_GEOMETRY}
+          color="#ffffff"
+          matrices={matrices.flowers}
+          colors={matrices.flowerColors}
+          windVec={windVec}
+          turbulence={turbulence}
+          windStrength={windStrength}
+          normalLift={0.35}
+          interactStrength={interactStrength}
+          shadow={false}
         />
       )}
 
@@ -478,6 +639,9 @@ function TerrainFoliage({ terrain, chunks }: { terrain: TerrainComponent; chunks
           windStrength={windStrength * 0.4}
           swaySpeed={1.1}
           baseSway={0.015}
+          normalLift={0.35}
+          interactStrength={interactStrength * 0.5}
+          interactMode={1}
         />
       ) : (
         <>
@@ -485,10 +649,21 @@ function TerrainFoliage({ terrain, chunks }: { terrain: TerrainComponent; chunks
             <cylinderGeometry args={[0.5, 0.65, 1, 6]} />
             <meshStandardMaterial color={foliage.trunkColor} roughness={0.86} />
           </InstancedMatrices>
-          <InstancedMatrices matrices={matrices.crowns}>
-            {foliage.treeMesh === 'round' ? <sphereGeometry args={[0.86, 10, 8]} /> : <coneGeometry args={[0.9, 1.45, 7]} />}
-            <meshStandardMaterial color={foliage.treeColor} roughness={0.92} />
-          </InstancedMatrices>
+          {/* Rigid wind canopy: the whole crown sways as one soft blob and leans away from the player. */}
+          <WindFoliage
+            geometry={treeCrownGeometry(foliage.treeMesh)}
+            color={foliage.treeColor}
+            matrices={matrices.crowns}
+            windVec={windVec}
+            turbulence={turbulence}
+            windStrength={windStrength * 0.5}
+            swaySpeed={1.0}
+            baseSway={0.01}
+            normalLift={0.35}
+            interactStrength={interactStrength * 0.5}
+            interactMode={1}
+            rigid
+          />
         </>
       )}
     </>

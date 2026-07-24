@@ -153,12 +153,33 @@ export function SceneEnvironment({
     [env.skyRotation],
   );
 
+  // Tier 7.2 — atmospheric fog: sample the fog color from the sky so distant geometry dissolves into it.
+  // Procedural sky → the horizon band tinted slightly toward the zenith; other sky modes → the background
+  // color (image panoramas can't be cheaply sampled, so fall back to the authored fog color if set).
+  const atmosphericFogColor = useMemo(() => {
+    if (env.skyMode === 'procedural') {
+      return `#${new THREE.Color(env.skyHorizonColor).lerp(new THREE.Color(env.skyTopColor), 0.25).getHexString()}`;
+    }
+    if (env.skyMode === 'image') return env.fogColor;
+    return env.backgroundColor;
+  }, [env.skyMode, env.skyHorizonColor, env.skyTopColor, env.backgroundColor, env.fogColor]);
+  // Map the existing fogFar control to an exponential density (thicker as fogFar shrinks). ~85% opaque at
+  // fogFar, so the range dial still reads intuitively while the curve gives soft aerial perspective.
+  const atmosphericFogDensity = 1.9 / Math.max(20, env.fogFar);
+
   return (
     <>
       <color attach="background" args={[env.backgroundColor]} />
-      {/* Linear distance fog. Suppressed when volumetric fog is on (PostFx) to avoid doubled haze —
-          the volumetric pass replaces it with height-based mist + sun in-scattering. */}
-      {env.fogEnabled && !env.volumetricFogEnabled && <fog attach="fog" args={[env.fogColor, Math.max(0, env.fogNear), Math.max(env.fogNear + 1, env.fogFar)]} />}
+      {/* Distance fog. Suppressed when volumetric fog is on (PostFx) to avoid doubled haze — the
+          volumetric pass replaces it with height-based mist + sun in-scattering. Atmospheric mode swaps
+          the flat linear haze for sky-colored exponential aerial perspective (Tier 7.2). */}
+      {env.fogEnabled && !env.volumetricFogEnabled && (
+        env.atmosphericFog ? (
+          <fogExp2 attach="fog" args={[atmosphericFogColor, Math.max(0.0002, atmosphericFogDensity)]} />
+        ) : (
+          <fog attach="fog" args={[env.fogColor, Math.max(0, env.fogNear), Math.max(env.fogNear + 1, env.fogFar)]} />
+        )
+      )}
 
       {/* Ambient fill. `hemisphere` grades sky→ground so undersides read cooler/darker; `flat` is the
           legacy constant term. Same intensity either way, so switching is purely a quality choice. */}
