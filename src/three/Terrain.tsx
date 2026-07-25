@@ -13,8 +13,10 @@ import {
   WindFoliage,
   WindFoliageImage,
 } from './foliageWind';
+import { StylizedGrass } from './stylizedGrass';
 import type { SceneObject, TerrainComponent, Vector3Tuple } from '../types';
 import {
+  defaultStylizedGrass,
   sampleFoliageMask,
   sampleTerrainLocalHeight,
   sampleTerrainMaterialLayer,
@@ -263,7 +265,11 @@ function generateFoliage(terrain: TerrainComponent, chunks: TerrainChunkKey[]) {
   // bounded disc around the player — so it stays one cheap instanced draw call no matter how big the world.
   // Want denser? Raise foliage.density toward 1; want a bigger dense radius? raise the cap (costs more CPU
   // on regen). Lawn-thick everywhere isn't free — concentrate the budget near the camera instead.
-  const grassPerChunk = wantsGrass ? Math.floor(chunkArea * (useMask ? 2 : foliage.density * 2)) : 0;
+  // Scale the candidate count by grass style so `density` means the same "how covered is the ground" either
+  // way. A clump card is only ~0.9 world units wide, so a lawn needs them OVERLAPPING — at parity with the
+  // single-blade count they scatter as isolated tufts on bare ground rather than turf.
+  const grassPerBlade = foliage.grassMesh === 'clump' ? 1.8 : 1;
+  const grassPerChunk = wantsGrass ? Math.floor(chunkArea * grassPerBlade * (useMask ? 2 : foliage.density * 2)) : 0;
   const treesPerChunk = wantsTrees ? Math.max(0, Math.floor(chunkArea * (useMask ? 0.006 : foliage.treeDensity * 0.006))) : 0;
   const maxGrass = 60000;
   const maxTrees = 2000;
@@ -452,8 +458,18 @@ function TerrainFoliage({ terrain, chunks }: { terrain: TerrainComponent; chunks
           turbulence={turbulence}
           windStrength={windStrength}
         />
+      ) : foliage.grassMesh === 'clump' ? (
+        // Built-in default: stylized painted-clump cards (gradient + colour variation + interaction).
+        <StylizedGrass
+          color={foliage.grassColor}
+          settings={foliage.stylizedGrass ?? defaultStylizedGrass()}
+          matrices={matrices.grass}
+          windVec={windVec}
+          turbulence={turbulence}
+          windStrength={windStrength}
+        />
       ) : (
-        // Built-in: high-quality wind-animated blades (or a cross billboard for the 'cross' style).
+        // Legacy simple shapes: a single wind-animated blade (or a cross billboard for the 'cross' style).
         <WindFoliage
           geometry={foliage.grassMesh === 'cross' ? GRASS_CROSS_GEOMETRY : BLADE_GEOMETRY}
           color={foliage.grassColor}

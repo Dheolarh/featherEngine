@@ -37,7 +37,55 @@ export interface MeshRendererComponent {
 }
 
 export type TerrainFoliageMode = 'grass' | 'trees' | 'mixed';
-export type TerrainGrassMeshStyle = 'blade' | 'cross' | 'tuft';
+/** `clump` is the stylized painted-card grass (the default look); the others are the legacy simple shapes. */
+export type TerrainGrassMeshStyle = 'clump' | 'blade' | 'cross' | 'tuft';
+/** How grass dissolves as it approaches the render distance. */
+export type GrassFadeMode = 'off' | 'smooth' | 'dither';
+
+/**
+ * The stylized-grass look. Grouped exactly like a dedicated grass shader's material so the mental model
+ * transfers: a master tint (the foliage `grassColor`), a root->tip gradient over it, world-space colour
+ * variation, wind, bend/perspective shaping, actor interaction, and distance fade.
+ */
+export interface StylizedGrassSettings {
+  /** Tip colour of the vertical gradient — multiplies the grass tint. */
+  gradientTop: string;
+  /** Root colour of the vertical gradient. Dark values give grass its planted, self-shadowed base. */
+  gradientBottom: string;
+  /** 0..1 — slides where the dark root ends and the gradient starts climbing. */
+  gradientOffset: number;
+  /** 0..1 — 0 is a soft blend, 1 squeezes the gradient into a hard two-tone band. */
+  gradientContrast: number;
+  /** World-space frequency of the patch-to-patch colour variation (smaller = broader patches). */
+  colorNoiseScale: number;
+  /** 0..1 — how strongly the variation tints the grass. 0 disables it. */
+  colorNoiseStrength: number;
+  colorNoiseLow: string;
+  colorNoiseHigh: string;
+  /** How fast the wind gust pattern scrolls across the field. */
+  windSpeed: number;
+  /** World-space frequency of the wind gust noise (smaller = longer, rolling gust fronts). */
+  windNoiseScale: number;
+  /** 0..1 blade height at which bending starts — below it the clump stays rooted. */
+  bendPivot: number;
+  /** 0..1 — how far tips lean toward the camera as the view angle steepens (keeps top-down views full). */
+  perspectiveCorrection: number;
+  /** 0..1 blade height at which perspective correction starts. */
+  perspectiveHeightStart: number;
+  /** How far actors shove grass aside, in world units. */
+  interactionStrength: number;
+  /** How far actors mash grass downward, in world units. */
+  pushDownAmount: number;
+  /** Colour multiplier applied to grass currently bent by an actor, so trodden paths stay readable. */
+  trailTint: string;
+  /** 0..1 — how far the shading normal leans toward world up. High values light grass like soft turf. */
+  normalLift: number;
+  fadeMode: GrassFadeMode;
+  /** Distance (world units) where the fade begins. */
+  fadeStart: number;
+  /** Distance where grass is fully gone. */
+  fadeEnd: number;
+}
 export type TerrainTreeMeshStyle = 'cone' | 'round';
 /** Where a foliage instance's mesh comes from: engine primitive, a 2D image billboard, or a 3D model asset. */
 export type TerrainFoliageSource = 'builtin' | 'image' | 'model';
@@ -92,9 +140,12 @@ export interface TerrainFoliageComponent {
   /** Image (texture) assets for the 'image' 2D-billboard source (alpha-cutout cross quads). */
   grassImageAssetId?: string;
   treeImageAssetId?: string;
+  /** Master tint for grass. With the `clump` mesh style the gradient and variation multiply over this. */
   grassColor: string;
   trunkColor: string;
   treeColor: string;
+  /** Look/motion settings for the stylized `clump` grass. Ignored by the other grass mesh styles. */
+  stylizedGrass?: StylizedGrassSettings;
   /** Multiplier on the global scene wind for foliage sway (0 = stiff/no sway, the blades just stand). */
   windStrength?: number;
   /**

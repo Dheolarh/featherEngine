@@ -3,8 +3,14 @@ import { Brush, Eraser, Mountain, Palette, Plus, Settings2, Sprout, Trash2 } fro
 import { useEditorStore } from '../store/editorStore';
 import { useStableActiveObjects } from '../store/stableSelectors';
 import { RangeField } from './InspectorPanel';
-import { withTerrainDefaults } from '../terrain/terrain';
-import type { AssetItem, TerrainBrushMode, TerrainComponent, TerrainSculptOperation } from '../types';
+import { defaultStylizedGrass, withTerrainDefaults } from '../terrain/terrain';
+import type {
+  AssetItem,
+  StylizedGrassSettings,
+  TerrainBrushMode,
+  TerrainComponent,
+  TerrainSculptOperation,
+} from '../types';
 
 type TerrainTab = 'sculpt' | 'paint' | 'foliage' | 'settings';
 
@@ -206,6 +212,75 @@ function PaintControls({
   );
 }
 
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="node-field">
+      <span>{label}</span>
+      <input type="color" value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+/**
+ * The stylized-grass material. Grouped the way a dedicated grass shader groups it — colour, variation,
+ * wind, shape, interaction, fade — so the settings map onto what you see in the viewport.
+ */
+function StylizedGrassControls({
+  settings,
+  onChange,
+}: {
+  settings: StylizedGrassSettings;
+  onChange: (patch: Partial<StylizedGrassSettings>) => void;
+}) {
+  return (
+    <>
+      <h4 className="inspector-subhead">Grass Gradient</h4>
+      <p className="field-hint">Both colors multiply Grass Color: the tip color lifts it, the root color darkens it.</p>
+      <ColorField label="Tip Color" value={settings.gradientTop} onChange={(gradientTop) => onChange({ gradientTop })} />
+      <ColorField label="Root Color" value={settings.gradientBottom} onChange={(gradientBottom) => onChange({ gradientBottom })} />
+      <RangeField label="Gradient Offset" value={settings.gradientOffset} max={0.95} onChange={(gradientOffset) => onChange({ gradientOffset })} />
+      <RangeField label="Gradient Contrast" value={settings.gradientContrast} onChange={(gradientContrast) => onChange({ gradientContrast })} />
+
+      <h4 className="inspector-subhead">Color Variation</h4>
+      <p className="field-hint">Breaks the field into broad patches so it doesn't read as one flat carpet. Strength 0 turns it off.</p>
+      <RangeField label="Variation Strength" value={settings.colorNoiseStrength} onChange={(colorNoiseStrength) => onChange({ colorNoiseStrength })} />
+      <RangeField label="Patch Size" value={settings.colorNoiseScale} min={0.005} max={0.3} step={0.005} onChange={(colorNoiseScale) => onChange({ colorNoiseScale })} />
+      <ColorField label="Patch Color A" value={settings.colorNoiseLow} onChange={(colorNoiseLow) => onChange({ colorNoiseLow })} />
+      <ColorField label="Patch Color B" value={settings.colorNoiseHigh} onChange={(colorNoiseHigh) => onChange({ colorNoiseHigh })} />
+
+      <h4 className="inspector-subhead">Wind &amp; Shape</h4>
+      <RangeField label="Gust Speed" value={settings.windSpeed} max={3} step={0.05} onChange={(windSpeed) => onChange({ windSpeed })} />
+      <RangeField label="Gust Size" value={settings.windNoiseScale} min={0.005} max={0.3} step={0.005} onChange={(windNoiseScale) => onChange({ windNoiseScale })} />
+      <p className="field-hint">Smaller gust size = longer rolling waves across the field.</p>
+      <RangeField label="Bend Pivot" value={settings.bendPivot} max={0.95} onChange={(bendPivot) => onChange({ bendPivot })} />
+      <p className="field-hint">Height where bending starts — below it the clump stays rooted in the ground.</p>
+      <RangeField label="Perspective Correction" value={settings.perspectiveCorrection} max={2} step={0.05} onChange={(perspectiveCorrection) => onChange({ perspectiveCorrection })} />
+      <p className="field-hint">Leans tips toward the camera as you look down, so a top-down view still reads as a full lawn.</p>
+      <RangeField label="Correction Start" value={settings.perspectiveHeightStart} max={0.95} onChange={(perspectiveHeightStart) => onChange({ perspectiveHeightStart })} />
+      <RangeField label="Turf Normals" value={settings.normalLift} onChange={(normalLift) => onChange({ normalLift })} />
+      <p className="field-hint">Leans shading toward straight up so grass lights like soft turf instead of flat cards.</p>
+
+      <h4 className="inspector-subhead">Interaction</h4>
+      <p className="field-hint">Characters and vehicles part the grass as they move through it during Play.</p>
+      <RangeField label="Push Aside" value={settings.interactionStrength} max={2} step={0.05} onChange={(interactionStrength) => onChange({ interactionStrength })} />
+      <RangeField label="Push Down" value={settings.pushDownAmount} max={1} step={0.05} onChange={(pushDownAmount) => onChange({ pushDownAmount })} />
+      <ColorField label="Trail Tint" value={settings.trailTint} onChange={(trailTint) => onChange({ trailTint })} />
+
+      <h4 className="inspector-subhead">Distance Fade</h4>
+      <label className="node-field">
+        <span>Fade Mode</span>
+        <select value={settings.fadeMode} onChange={(event) => onChange({ fadeMode: event.target.value as StylizedGrassSettings['fadeMode'] })}>
+          <option value="dither">Dither</option>
+          <option value="smooth">Smooth (shrink)</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+      <NumberField label="Fade Start" value={settings.fadeStart} min={1} step={1} onChange={(fadeStart) => onChange({ fadeStart })} />
+      <NumberField label="Fade End" value={settings.fadeEnd} min={2} step={1} onChange={(fadeEnd) => onChange({ fadeEnd })} />
+    </>
+  );
+}
+
 function FoliageControls({
   objectId,
   terrain,
@@ -278,6 +353,7 @@ function FoliageControls({
         <label className="node-field">
           <span>Grass Mesh</span>
           <select value={foliage.grassMesh} onChange={(event) => setFoliage({ grassMesh: event.target.value as TerrainComponent['foliage']['grassMesh'] })}>
+            <option value="clump">Stylized clump</option>
             <option value="blade">Blade</option>
             <option value="cross">Cross</option>
             <option value="tuft">Tuft</option>
@@ -326,6 +402,12 @@ function FoliageControls({
         <span>Grass Color</span>
         <input type="color" value={foliage.grassColor} onChange={(event) => setFoliage({ grassColor: event.target.value })} />
       </label>
+      {grassSource === 'builtin' && foliage.grassMesh === 'clump' && (
+        <StylizedGrassControls
+          settings={foliage.stylizedGrass ?? defaultStylizedGrass()}
+          onChange={(patch) => setFoliage({ stylizedGrass: { ...(foliage.stylizedGrass ?? defaultStylizedGrass()), ...patch } })}
+        />
+      )}
       <label className="node-field">
         <span>Trunk Color</span>
         <input type="color" value={foliage.trunkColor} onChange={(event) => setFoliage({ trunkColor: event.target.value })} />

@@ -1,5 +1,6 @@
 import type {
   SceneObject,
+  StylizedGrassSettings,
   TerrainComponent,
   TerrainFoliageComponent,
   TerrainMaterialLayer,
@@ -12,6 +13,73 @@ const clampInt = (value: number, min: number, max: number) => Math.trunc(clamp(N
 const smoothstep = (t: number) => t * t * (3 - 2 * t);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+/**
+ * The stylized grass look: warm yellow-green tips falling to a dark, cool root, broken up by broad
+ * world-space colour patches. Tuned by rendering the field and measuring it against a painted-clump
+ * reference rather than picked by eye.
+ */
+export const defaultStylizedGrass = (): StylizedGrassSettings => ({
+  // These multiply the grass tint, and multiplying two low-blue greens squares the blue deficiency — which
+  // is what turns stylized grass into acid-green plastic. Both ends deliberately carry blue so the rendered
+  // result keeps the reference's softer, slightly desaturated foliage hue.
+  gradientTop: '#f0f2d4',
+  gradientBottom: '#4a4f3e',
+  gradientOffset: 0.05,
+  gradientContrast: 0.45,
+  colorNoiseScale: 0.045,
+  colorNoiseStrength: 0.35,
+  colorNoiseLow: '#eef1c8',
+  colorNoiseHigh: '#8fb257',
+  windSpeed: 0.35,
+  windNoiseScale: 0.06,
+  bendPivot: 0.25,
+  perspectiveCorrection: 0.55,
+  perspectiveHeightStart: 0.3,
+  interactionStrength: 0.55,
+  pushDownAmount: 0.35,
+  trailTint: '#c9d98f',
+  normalLift: 0.75,
+  fadeMode: 'dither',
+  fadeStart: 45,
+  fadeEnd: 70,
+});
+
+/**
+ * One-click grass looks. Each is a grass tint plus the gradient/variation overrides that carry the mood —
+ * everything else falls back to {@link defaultStylizedGrass}. Kept small and hand-tuned rather than
+ * generated, because these are art direction, not math.
+ */
+export const GRASS_PRESETS = {
+  lush: { label: 'Lush Green', grassColor: '#9ed070', settings: {} },
+  meadow: {
+    label: 'Sunny Meadow',
+    grassColor: '#a8cc4e',
+    settings: { gradientTop: '#f4ecA0', colorNoiseHigh: '#b6c469', colorNoiseStrength: 0.45, gradientContrast: 0.45 },
+  },
+  dry: {
+    label: 'Dry Savanna',
+    grassColor: '#c9ab5a',
+    settings: { gradientTop: '#f0dc95', gradientBottom: '#4a3b2a', colorNoiseLow: '#f2e6bd', colorNoiseHigh: '#a98f4e', colorNoiseStrength: 0.5 },
+  },
+  forest: {
+    label: 'Forest Floor',
+    grassColor: '#5d8f3f',
+    settings: { gradientTop: '#b9cf72', gradientBottom: '#232a33', gradientContrast: 0.68, colorNoiseHigh: '#4c7a3a' },
+  },
+  arcade: {
+    label: 'Vibrant Arcade',
+    grassColor: '#7add2f',
+    settings: { gradientTop: '#d5d85b', gradientBottom: '#1f1124', gradientContrast: 0.72, colorNoiseStrength: 0.28 },
+  },
+  frost: {
+    label: 'Frosted',
+    grassColor: '#93b89a',
+    settings: { gradientTop: '#dff0e4', gradientBottom: '#2b3444', colorNoiseLow: '#eef6f4', colorNoiseHigh: '#7fa39b' },
+  },
+} as const satisfies Record<string, { label: string; grassColor: string; settings: Partial<StylizedGrassSettings> }>;
+
+export type GrassPresetId = keyof typeof GRASS_PRESETS;
+
 export const defaultTerrainFoliage = (): TerrainFoliageComponent => ({
   enabled: true,
   mode: 'mixed',
@@ -20,15 +88,16 @@ export const defaultTerrainFoliage = (): TerrainFoliageComponent => ({
   minScale: 0.75,
   maxScale: 1.65,
   slopeLimit: 0.68,
-  grassMesh: 'blade',
+  grassMesh: 'clump',
   treeMesh: 'cone',
   grassSource: 'builtin',
   treeSource: 'builtin',
-  grassColor: '#4f9b48',
+  grassColor: '#9ed070',
   trunkColor: '#6b4a2f',
   treeColor: '#2f7d45',
   windStrength: 1,
   usePaintMask: false,
+  stylizedGrass: defaultStylizedGrass(),
 });
 
 export const defaultTerrainMaterialLayers = (): TerrainMaterialLayer[] => [
@@ -129,7 +198,34 @@ function normalizeTerrainDefaults(terrain?: Partial<TerrainComponent>): TerrainC
       treeSource: foliage.treeSource ?? (foliage.treeModelAssetId ? 'model' : 'builtin'),
       windStrength: clamp(foliage.windStrength ?? 1, 0, 4),
       usePaintMask: foliage.usePaintMask ?? false,
+      stylizedGrass: normalizeStylizedGrass(foliage.stylizedGrass),
     },
+  };
+}
+
+function normalizeStylizedGrass(settings?: Partial<StylizedGrassSettings>): StylizedGrassSettings {
+  const base = defaultStylizedGrass();
+  if (!settings) return base;
+  const merged = { ...base, ...settings };
+  const fadeStart = clamp(merged.fadeStart, 1, 4000);
+  return {
+    ...merged,
+    gradientOffset: clamp(merged.gradientOffset, 0, 0.95),
+    gradientContrast: clamp(merged.gradientContrast, 0, 1),
+    colorNoiseScale: clamp(merged.colorNoiseScale, 0.001, 2),
+    colorNoiseStrength: clamp(merged.colorNoiseStrength, 0, 1),
+    windSpeed: clamp(merged.windSpeed, 0, 8),
+    windNoiseScale: clamp(merged.windNoiseScale, 0.001, 2),
+    bendPivot: clamp(merged.bendPivot, 0, 0.95),
+    perspectiveCorrection: clamp(merged.perspectiveCorrection, 0, 2),
+    perspectiveHeightStart: clamp(merged.perspectiveHeightStart, 0, 0.95),
+    interactionStrength: clamp(merged.interactionStrength, 0, 4),
+    pushDownAmount: clamp(merged.pushDownAmount, 0, 2),
+    normalLift: clamp(merged.normalLift, 0, 1),
+    fadeMode: merged.fadeMode === 'off' || merged.fadeMode === 'smooth' ? merged.fadeMode : 'dither',
+    fadeStart,
+    // Keep the fade a real range — an end at or below the start would divide by zero in the shader.
+    fadeEnd: clamp(merged.fadeEnd, fadeStart + 1, 5000),
   };
 }
 

@@ -52,6 +52,28 @@ const VALUE_TYPES = ['number', 'string', 'boolean', 'vector3'] as const;
 const graphValue = z.union([z.number(), z.string(), z.boolean(), vec3]);
 const asGraphValue = (value: string | number | boolean | number[]) =>
   (Array.isArray(value) ? asVec3(value) : value) as GraphValue;
+const stylizedGrassPatchSchema = z.object({
+  gradientTop: z.string().optional().describe('Tip hex color — multiplies grassColor.'),
+  gradientBottom: z.string().optional().describe('Root hex color — dark values plant the grass in the ground.'),
+  gradientOffset: z.number().min(0).max(0.95).optional().describe('Where the dark root ends, 0..1 up the blade.'),
+  gradientContrast: z.number().min(0).max(1).optional().describe('0 soft blend, 1 hard two-tone band.'),
+  colorNoiseScale: z.number().min(0.001).max(2).optional().describe('Patch frequency; smaller = broader patches.'),
+  colorNoiseStrength: z.number().min(0).max(1).optional().describe('Patch-to-patch color variation, 0 disables.'),
+  colorNoiseLow: z.string().optional(),
+  colorNoiseHigh: z.string().optional(),
+  windSpeed: z.number().min(0).max(8).optional().describe('How fast gusts scroll across the field.'),
+  windNoiseScale: z.number().min(0.001).max(2).optional().describe('Gust size; smaller = longer rolling waves.'),
+  bendPivot: z.number().min(0).max(0.95).optional().describe('Height where bending starts; below it the clump stays rooted.'),
+  perspectiveCorrection: z.number().min(0).max(2).optional().describe('Leans tips toward the camera when looking down so top-down views stay full.'),
+  perspectiveHeightStart: z.number().min(0).max(0.95).optional(),
+  interactionStrength: z.number().min(0).max(4).optional().describe('How far characters/vehicles shove grass aside during Play.'),
+  pushDownAmount: z.number().min(0).max(2).optional().describe('How far actors mash grass down.'),
+  trailTint: z.string().optional().describe('Hex color multiplier on grass currently bent by an actor.'),
+  normalLift: z.number().min(0).max(1).optional().describe('Leans shading toward straight up; high = soft turf lighting.'),
+  fadeMode: z.enum(['off', 'smooth', 'dither']).optional(),
+  fadeStart: z.number().min(1).max(4000).optional().describe('Distance where grass starts fading out.'),
+  fadeEnd: z.number().min(2).max(5000).optional().describe('Distance where grass is fully gone.'),
+});
 const terrainFoliagePatchSchema = z.object({
   enabled: z.boolean().optional(),
   mode: z.enum(['grass', 'trees', 'mixed']).optional(),
@@ -60,7 +82,11 @@ const terrainFoliagePatchSchema = z.object({
   minScale: z.number().min(0.1).max(12).optional(),
   maxScale: z.number().min(0.1).max(16).optional(),
   slopeLimit: z.number().min(0).max(1).optional().describe('Minimum normal Y for placement; higher avoids steep slopes.'),
-  grassMesh: z.enum(['blade', 'cross', 'tuft']).optional(),
+  grassMesh: z
+    .enum(['clump', 'blade', 'cross', 'tuft'])
+    .optional()
+    .describe("'clump' (default) is the stylized painted-card grass with gradient/variation/interaction; the rest are simple legacy shapes."),
+  stylizedGrass: stylizedGrassPatchSchema.optional().describe("Look/motion of the 'clump' grass. Prefer set_grass_look for a whole look; use this to tweak single settings."),
   treeMesh: z.enum(['cone', 'round']).optional(),
   grassSource: z.enum(['builtin', 'image', 'model']).optional().describe("Grass mesh source: 'builtin' high-quality wind-animated blades (default), 'image' a 2D billboard from grassImageAssetId, or 'model' from grassModelAssetId."),
   treeSource: z.enum(['builtin', 'image', 'model']).optional().describe("Tree mesh source: 'builtin', 'image' billboard (treeImageAssetId), or 'model' (treeModelAssetId)."),
@@ -1188,6 +1214,22 @@ const rawEngineTools = {
       }
       store().updateTerrain(objectId, patch as Partial<TerrainComponent>);
       return `Updated terrain ${objectId}.`;
+    },
+  }),
+
+  set_grass_look: tool({
+    description:
+      'Apply a one-click stylized grass look to a terrain (switches it to the painted-clump grass). Use this when the user asks for a grass mood/style ("lusher grass", "dry savanna", "dark forest floor") instead of hand-setting colors. Follow up with update_terrain foliage.stylizedGrass to fine-tune.',
+    inputSchema: z.object({
+      objectId: z.string(),
+      preset: z.enum(['lush', 'meadow', 'dry', 'forest', 'arcade', 'frost']),
+    }),
+    execute: async ({ objectId, preset }) => {
+      const object = findObject(objectId);
+      if (!object) return `No object with id ${objectId}.`;
+      if (!object.terrain) return `Object ${objectId} is not a terrain object.`;
+      const label = store().applyGrassPreset(objectId, preset);
+      return label ? `Grass on ${objectId} set to ${label}.` : `Unknown grass preset ${preset}.`;
     },
   }),
 

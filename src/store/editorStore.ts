@@ -112,7 +112,7 @@ import { applyPhysicsMaterialPreset } from '../runtime/physicsMaterials';
 import { resolveMaterial } from '../three/materialResolve';
 import { WATER_LOOK_KEYS, waterStylePatch } from '../three/presets';
 import { defaultSceneEnvironment, withSceneEnvironmentDefaults } from '../three/environmentSettings';
-import { applyTerrainFoliagePaint, applyTerrainPaint, applyTerrainSculpt, createTerrainHeightSampler, terrainLocalPointFromWorld, withTerrainDefaults } from '../terrain/terrain';
+import { GRASS_PRESETS, applyTerrainFoliagePaint, applyTerrainPaint, applyTerrainSculpt, createTerrainHeightSampler, defaultStylizedGrass, terrainLocalPointFromWorld, withTerrainDefaults, type GrassPresetId } from '../terrain/terrain';
 import { worldTransformOf, worldToLocalUnderParent } from '../utils/transformHierarchy';
 import type { ModelInspection } from '../three/inspectModel';
 import { collectPackage, collectPrefabPackage, type PackageContent, type PackageSeeds, type PackageSource } from '../project/package';
@@ -598,6 +598,8 @@ interface EditorState {
   updateRenderer: (id: string, patch: Partial<MeshRendererComponent>) => void;
   setObjectModel: (id: string, modelAssetId?: string) => void;
   updateTerrain: (id: string, patch: Partial<TerrainComponent>) => void;
+  /** Apply a one-click grass look (switches the terrain to stylized clump grass). Returns the preset label. */
+  applyGrassPreset: (id: string, presetId: GrassPresetId) => string | null;
   setTerrainBrush: (patch: Partial<TerrainBrushSettings>) => void;
   applyTerrainBrush: (objectId: string, worldPosition: Vector3Tuple) => void;
   sculptTerrainAt: (
@@ -1958,6 +1960,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             foliage: {
               ...current.foliage,
               ...(patch.foliage ? stripUndefined(patch.foliage) : {}),
+              // stylizedGrass is a nested block: merge it field-by-field so a caller tweaking one setting
+              // (say gradientContrast) doesn't silently reset the other ~18 back to defaults.
+              stylizedGrass: {
+                ...(current.foliage.stylizedGrass ?? defaultStylizedGrass()),
+                ...(patch.foliage?.stylizedGrass ? stripUndefined(patch.foliage.stylizedGrass) : {}),
+              },
             },
           });
           const synced = syncTerrainLayerColors(terrain);
@@ -1965,6 +1973,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }),
       ),
     ),
+  applyGrassPreset: (id, presetId) => {
+    const preset = GRASS_PRESETS[presetId];
+    if (!preset) return null;
+    // updateTerrain merges foliage field-by-field, so these four are all that need naming — density,
+    // scale, paint mask and the rest of the terrain's foliage setup are left exactly as authored.
+    get().updateTerrain(id, {
+      foliage: {
+        grassSource: 'builtin',
+        grassMesh: 'clump',
+        grassColor: preset.grassColor,
+        stylizedGrass: { ...defaultStylizedGrass(), ...preset.settings },
+      } as TerrainComponent['foliage'],
+    });
+    return preset.label;
+  },
   setTerrainBrush: (patch) =>
     set((state) => ({
       terrainBrush: {
