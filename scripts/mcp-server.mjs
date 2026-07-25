@@ -104,7 +104,7 @@ function buildMcpServer() {
         content: [
           {
             type: 'text',
-            text: 'Feather Engine editor is not connected. Open the editor (npm run dev → http://localhost:1420, or npm run tauri:dev) with a project loaded — it attaches to this relay automatically within a few seconds.',
+            text: 'Feather Engine editor is not connected. Open the editor (npm run dev → http://localhost:17420, or npm run tauri:dev) with a project loaded — it attaches to this relay automatically within a few seconds.',
           },
         ],
       };

@@ -19,6 +19,13 @@ export const defaultSceneEnvironment = (): SceneEnvironmentSettings => ({
   fogColor: '#101623',
   fogNear: 16,
   fogFar: 44,
+  // Off keeps every existing scene rendering exactly as authored; the stylized outdoor look opts in
+  // (via a template or render preset) rather than being retrofitted onto projects that never asked.
+  aerialFogEnabled: false,
+  aerialFogHeightFalloff: 0.02,
+  aerialFogSunColor: '#FFE9C0',
+  aerialFogInscatter: 0.75,
+  aerialFogInscatterPower: 6,
   volumetricFogEnabled: false,
   volumetricFogDensity: 0.1,
   volumetricFogColor: '#cfd8e8',

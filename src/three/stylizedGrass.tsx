@@ -2,12 +2,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { StylizedGrassSettings, Vector3Tuple } from '../types';
-import {
-  MAX_FOLIAGE_INTERACTORS,
-  getFoliageInteractorCount,
-  getFoliageInteractorSlots,
-  syncFoliageInteractors,
-} from './foliageInteractors';
+import { MAX_FOLIAGE_INTERACTORS, foliageInteractorUniforms } from './foliageInteractors';
 
 /** Foliage is decorative — never let it catch pointer rays (it would block terrain sculpt/paint). */
 const ignoreFoliageRaycast = () => null;
@@ -198,7 +193,7 @@ export interface GrassUniforms {
   uPerspective: { value: number };
   uPerspStart: { value: number };
   uInteractors: { value: THREE.Vector4[] };
-  uInteractCount: { value: number };
+  uInteractorCount: { value: number };
   uInteractStrength: { value: number };
   uPushDown: { value: number };
   uTrailTint: { value: THREE.Color };
@@ -227,8 +222,10 @@ function makeGrassUniforms(): GrassUniforms {
     uNormalLift: { value: 0.75 },
     uPerspective: { value: 0.35 },
     uPerspStart: { value: 0.3 },
-    uInteractors: { value: getFoliageInteractorSlots() },
-    uInteractCount: { value: 0 },
+    // Shared module singletons: the runtime tick rewrites these in place each frame, so every foliage
+    // draw call (blades, flowers, clumps) reads one consistent interactor list with zero React churn.
+    uInteractors: foliageInteractorUniforms.uInteractors,
+    uInteractorCount: foliageInteractorUniforms.uInteractorCount,
     uInteractStrength: { value: 0.55 },
     uPushDown: { value: 0.35 },
     uTrailTint: { value: new THREE.Color('#c9d98f') },
@@ -249,7 +246,7 @@ uniform float uBendPivot;
 uniform float uPerspective;
 uniform float uPerspStart;
 uniform vec4  uInteractors[${MAX_FOLIAGE_INTERACTORS}];
-uniform int   uInteractCount;
+uniform int   uInteractorCount;
 uniform float uInteractStrength;
 uniform float uPushDown;
 uniform vec3  uFade;
@@ -306,7 +303,7 @@ const VERTEX_BODY = `
   float nfBendAmt = 0.0;
   vec3 nfPushW = vec3(0.0);
   for (int i = 0; i < ${MAX_FOLIAGE_INTERACTORS}; i++) {
-    if (i >= uInteractCount) break;
+    if (i >= uInteractorCount) break;
     vec4 nfIt = uInteractors[i];
     if (nfIt.w <= 0.0) continue;
     vec3 nfDelta = nfWorld - nfIt.xyz;
@@ -456,6 +453,7 @@ export function StylizedGrass({
   windVec,
   turbulence,
   windStrength,
+  interactStrength = 1,
 }: {
   color: string;
   settings: StylizedGrassSettings;
@@ -463,6 +461,8 @@ export function StylizedGrass({
   windVec: Vector3Tuple;
   turbulence: number;
   windStrength: number;
+  /** Per-terrain multiplier on how hard actors part the grass (the shared foliage.interactStrength). */
+  interactStrength?: number;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const uniforms = useRef<GrassUniforms>(makeGrassUniforms());
@@ -481,7 +481,7 @@ export function StylizedGrass({
     mesh.computeBoundingSphere();
   }, [matrices]);
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const u = uniforms.current;
     u.uTime.value += Math.min(delta, 1 / 20) * (1 + turbulence);
     u.uWind.value.set(windVec[0], 0, windVec[2]);
@@ -501,14 +501,11 @@ export function StylizedGrass({
     u.uNormalLift.value = settings.normalLift;
     u.uPerspective.value = settings.perspectiveCorrection;
     u.uPerspStart.value = settings.perspectiveHeightStart;
-    u.uInteractStrength.value = settings.interactionStrength;
-    u.uPushDown.value = settings.pushDownAmount;
+    u.uInteractStrength.value = settings.interactionStrength * interactStrength;
+    u.uPushDown.value = settings.pushDownAmount * interactStrength;
     u.uTrailTint.value.set(settings.trailTint);
     const fadeMode = settings.fadeMode === 'smooth' ? 1 : settings.fadeMode === 'dither' ? 2 : 0;
     u.uFade.value.set(settings.fadeStart, Math.max(settings.fadeEnd, settings.fadeStart + 1), fadeMode);
-
-    syncFoliageInteractors(state.clock.elapsedTime, state.camera);
-    u.uInteractCount.value = getFoliageInteractorCount();
   });
 
   if (matrices.length === 0) return null;

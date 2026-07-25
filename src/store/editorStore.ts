@@ -38,6 +38,7 @@ import {
   type ParticleConfig,
   type ParticleSystemDefinition,
   type RenderSettings,
+  type RenderPresetId,
   type QualityLevel,
   type SceneEnvironmentSettings,
   type SceneStreamingSettings,
@@ -105,12 +106,13 @@ import { isRagdoll, setRagdoll, getRagdollRoot } from '../runtime/ragdollState';
 import { sendParticleCommand } from '../runtime/particleBus';
 import { addVehicleDent, clearVehicleDents, clearVehicleDentsFor } from '../runtime/vehicleDamageBus';
 import { publishTransforms, publishRenderTransforms, clearTransformBuffer, type BufferedTransform } from '../runtime/transformBuffer';
+import { updateFoliageInteractors, clearFoliageInteractors, MAX_FOLIAGE_INTERACTORS, type FoliageInteractor } from '../three/foliageInteractors';
 import { resetReplayRecorder, resetReplayBuffer, clearReplayRecorder, captureReplayFrame, beginReplay, sampleActiveReplay, endReplay } from '../runtime/replayRecorder';
 import { beginPerceptionFrame, clearPerception, cachedLineOfSight, storeLineOfSight } from '../runtime/aiPerception';
 import { withParticleDefaults, defaultParticleConfig, particlePresets, particleAssetConfig, type ParticlePresetId } from '../runtime/particlePresets';
 import { applyPhysicsMaterialPreset } from '../runtime/physicsMaterials';
 import { resolveMaterial } from '../three/materialResolve';
-import { WATER_LOOK_KEYS, waterStylePatch } from '../three/presets';
+import { WATER_LOOK_KEYS, findRenderPreset, waterStylePatch } from '../three/presets';
 import { defaultSceneEnvironment, withSceneEnvironmentDefaults } from '../three/environmentSettings';
 import { GRASS_PRESETS, applyTerrainFoliagePaint, applyTerrainPaint, applyTerrainSculpt, createTerrainHeightSampler, defaultStylizedGrass, terrainLocalPointFromWorld, withTerrainDefaults, type GrassPresetId } from '../terrain/terrain';
 import { worldTransformOf, worldToLocalUnderParent } from '../utils/transformHierarchy';
@@ -684,6 +686,12 @@ interface EditorState {
   equipInventorySlot: (objectId: string, index: number) => void;
   /** Update project-wide render/post-processing settings (bloom, vignette). */
   updateRenderSettings: (patch: Partial<RenderSettings>) => void;
+  /**
+   * Apply a named art-direction "Render Look" (RENDER_PRESETS): stamps the preset's tonemapping + ambient
+   * fill onto the given scene's environment and its bloom shape + color grade (and the selected id) onto the
+   * project render settings — one coherent visual identity in a single call. Sky/sun/fog are left untouched.
+   */
+  applyRenderPreset: (sceneId: string, preset: RenderPresetId) => void;
   /** Configure a `kind: 'light'` object's light (type/color/intensity/distance/angle). Creates the component if absent. */
   setObjectLight: (objectId: string, patch: Partial<LightComponent>) => void;
   /** Add/patch a local reflection probe on an object (captures a cubemap for nearby reflective surfaces). Creates it if absent. */
@@ -2730,6 +2738,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   updateRenderSettings: (patch) =>
     set((state) => ({ renderSettings: { ...state.renderSettings, ...stripUndefined(patch) }, isDirty: true })),
+  applyRenderPreset: (sceneId, presetId) => {
+    const preset = findRenderPreset(presetId);
+    if (!preset) return;
+    // Tonemapping + ambient fill are per-scene; bloom + grade are project-wide. Stamp both, and record the
+    // selected id so the picker highlights it and the AI snapshot can report the active look.
+    get().updateSceneEnvironment(sceneId, preset.environment);
+    get().updateRenderSettings({ ...preset.renderSettings, colorGrade: preset.colorGrade, renderPreset: presetId });
+  },
   setObjectLight: (objectId, patch) =>
     set((state) =>
       mapActiveSceneObjects(state, (objects) =>
@@ -5540,6 +5556,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       clearReplayRecorder(); // drop the replay ring + any active clip
       clearPerception();
       clearVehicleDents();
+      clearFoliageInteractors(); // grass stops parting once the actors are gone
       return {
         isPlaying,
         runtimeTime: 0,
@@ -10989,6 +11006,40 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (physicsRenderTransforms) publishRenderTransforms(physicsRenderTransforms);
       // Record this frame's transforms into the instant-replay ring (throttled to REPLAY_HZ internally).
       captureReplayFrame(allObjects, runtimeTime);
+
+      // --- BOTW-style vegetation interaction: hand the foliage shaders the actors wading through it. ---
+      // Characters/vehicles ALWAYS part & flatten the grass they walk over. When physics is enabled, any
+      // moving rigid body (a rolling ball, a tumbling crate, a kinematic mover) parts it too — so props
+      // knock the grass down as they pass. The shader reads this shared list (foliageInteractors.ts), which
+      // has only 8 slots: characters/vehicles claim them first, then the NEAREST physics bodies fill the
+      // rest (distant props never steal a slot from the grass the camera is actually looking at).
+      const primaryInteractors: FoliageInteractor[] = [];
+      const bodyInteractors: FoliageInteractor[] = [];
+      for (const object of allObjects) {
+        const scale = object.transform.scale;
+        const horiz = Math.max(Math.abs(scale[0]), Math.abs(scale[2])) || 1;
+        if (object.character?.enabled || object.vehicle?.enabled) {
+          primaryInteractors.push({ position: object.transform.position, radius: (object.vehicle?.enabled ? 2.8 : 1.4) * horiz });
+        } else if (object.physics?.enabled && (object.physics.bodyType === 'dynamic' || object.physics.bodyType === 'kinematic')) {
+          // Radius from the body's footprint so a big crate flattens a bigger patch than a pebble.
+          bodyInteractors.push({ position: object.transform.position, radius: Math.max(1, horiz * 1.15) });
+        }
+      }
+      let foliageInteractors = primaryInteractors;
+      const freeSlots = MAX_FOLIAGE_INTERACTORS - primaryInteractors.length;
+      if (freeSlots > 0 && bodyInteractors.length > 0) {
+        if (bodyInteractors.length > freeSlots) {
+          // Keep the bodies nearest the player/camera focus (first primary interactor, else world origin).
+          const ref = primaryInteractors[0]?.position ?? [0, 0, 0];
+          bodyInteractors.sort(
+            (a, b) =>
+              (a.position[0] - ref[0]) ** 2 + (a.position[2] - ref[2]) ** 2 -
+              ((b.position[0] - ref[0]) ** 2 + (b.position[2] - ref[2]) ** 2),
+          );
+        }
+        foliageInteractors = primaryInteractors.concat(bodyInteractors.slice(0, freeSlots));
+      }
+      updateFoliageInteractors(foliageInteractors);
 
       // --- Animator pass: feed object state into parameters, then run the state machine. ---
       // Runs after physics so "speed"/"verticalSpeed" reflect the object's final motion this frame.

@@ -11,6 +11,7 @@ import {
 } from './environmentSettings';
 import { useEditorStore } from '../store/editorStore';
 import { qualityProfile } from './quality';
+import { resetAerialFog, setAerialFog } from './aerialFog';
 
 const skyVertexShader = `
 varying vec3 vDirection;
@@ -123,6 +124,36 @@ function ImageSky({ environment }: { environment: SceneEnvironmentSettings }) {
   );
 }
 
+/**
+ * Feeds the scene's sun + aerial settings into the shared fog uniforms from `aerialFog.ts`. Those
+ * uniform objects are shared by reference across every fogged material, so this one effect updates
+ * the whole scene at once — there is no per-material bookkeeping to do.
+ *
+ * Disabled scenes are actively reset rather than just skipped, because the uniforms are global: a
+ * scene with aerial fog off would otherwise inherit whatever the last scene left behind.
+ */
+function AerialFogSync({ environment }: { environment: SceneEnvironmentSettings }) {
+  const enabled = Boolean(environment.aerialFogEnabled) && environment.fogEnabled;
+  const sunDirection = useMemo(() => sunDirectionFromEnvironment(environment), [environment]);
+
+  useEffect(() => {
+    if (!enabled) {
+      resetAerialFog();
+      return;
+    }
+    setAerialFog({
+      sunDirection,
+      sunColor: environment.aerialFogSunColor ?? environment.sunColor,
+      heightFalloff: environment.aerialFogHeightFalloff ?? 0.02,
+      inscatterPower: environment.aerialFogInscatterPower ?? 6,
+      inscatter: environment.aerialFogInscatter ?? 0.75,
+    });
+    return () => resetAerialFog();
+  }, [enabled, sunDirection, environment]);
+
+  return null;
+}
+
 export function SceneEnvironment({
   environment,
   shadows = false,
@@ -153,12 +184,36 @@ export function SceneEnvironment({
     [env.skyRotation],
   );
 
+  // Tier 7.2 — atmospheric fog: sample the fog color from the sky so distant geometry dissolves into it.
+  // Procedural sky → the horizon band tinted slightly toward the zenith; other sky modes → the background
+  // color (image panoramas can't be cheaply sampled, so fall back to the authored fog color if set).
+  const atmosphericFogColor = useMemo(() => {
+    if (env.skyMode === 'procedural') {
+      return `#${new THREE.Color(env.skyHorizonColor).lerp(new THREE.Color(env.skyTopColor), 0.25).getHexString()}`;
+    }
+    if (env.skyMode === 'image') return env.fogColor;
+    return env.backgroundColor;
+  }, [env.skyMode, env.skyHorizonColor, env.skyTopColor, env.backgroundColor, env.fogColor]);
+  // Map the existing fogFar control to an exponential density (thicker as fogFar shrinks). ~85% opaque at
+  // fogFar, so the range dial still reads intuitively while the curve gives soft aerial perspective.
+  const atmosphericFogDensity = 1.9 / Math.max(20, env.fogFar);
+
   return (
     <>
       <color attach="background" args={[env.backgroundColor]} />
-      {/* Linear distance fog. Suppressed when volumetric fog is on (PostFx) to avoid doubled haze —
-          the volumetric pass replaces it with height-based mist + sun in-scattering. */}
-      {env.fogEnabled && !env.volumetricFogEnabled && <fog attach="fog" args={[env.fogColor, Math.max(0, env.fogNear), Math.max(env.fogNear + 1, env.fogFar)]} />}
+      {/* Distance fog. Suppressed when volumetric fog is on (PostFx) to avoid doubled haze — the
+          volumetric pass replaces it with height-based mist + sun in-scattering. Atmospheric mode swaps
+          the flat linear haze for sky-colored exponential aerial perspective (Tier 7.2). */}
+      {env.fogEnabled && !env.volumetricFogEnabled && (
+        env.atmosphericFog ? (
+          <fogExp2 attach="fog" args={[atmosphericFogColor, Math.max(0.0002, atmosphericFogDensity)]} />
+        ) : (
+          <fog attach="fog" args={[env.fogColor, Math.max(0, env.fogNear), Math.max(env.fogNear + 1, env.fogFar)]} />
+        )
+      )}
+      {/* Height falloff + sun in-scatter on top of whichever fog model is active. Also gated on
+          volumetric fog, so the two haze systems never stack. */}
+      {!env.volumetricFogEnabled && <AerialFogSync environment={env} />}
 
       {/* Ambient fill. `hemisphere` grades sky→ground so undersides read cooler/darker; `flat` is the
           legacy constant term. Same intensity either way, so switching is purely a quality choice. */}

@@ -138,7 +138,7 @@ npm install
 npm run dev
 ```
 
-Then open the URL printed in the terminal (default [http://localhost:1420](http://localhost:1420)).
+Then open the URL printed in the terminal (default [http://localhost:17420](http://localhost:17420)).
 From the launcher, start a template or open the demo scene.
 
 ### Desktop app (Tauri)

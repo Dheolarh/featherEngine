@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { AlertTriangle, Car, Clapperboard, Crosshair, FolderOpen, Gamepad2, Gauge, PersonStanding, Plus, RotateCcw, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, Car, Clapperboard, Crosshair, FolderOpen, Gamepad2, Gauge, PersonStanding, Plus, RotateCcw, Sparkles, Sprout, X } from 'lucide-react';
 import { isDesktop } from '../platform';
 import { useProjectStore } from '../store/projectStore';
 import { clearRecovery, readRecovery } from '../store/autosave';
@@ -9,6 +9,7 @@ import { createFirstPersonTemplate } from '../project/firstPersonTemplate';
 import { createFilmModeTemplate } from '../project/filmModeTemplate';
 import { createDrivingTemplate } from '../project/drivingTemplate';
 import { createSimRacingTemplate } from '../project/simRacingTemplate';
+import { createMeadowTemplate } from '../project/meadowTemplate';
 
 type TemplateChoice = {
   icon: LucideIcon;
@@ -30,6 +31,7 @@ function formatAgo(ms: number): string {
 
 const TEMPLATES: TemplateChoice[] = [
   { icon: PersonStanding, title: 'Third-person', blurb: 'Character + camera tutorial world', build: createThirdPersonTemplate },
+  { icon: Sprout, title: 'Meadows', blurb: 'Walk through interactive BOTW-style grass', build: createMeadowTemplate },
   { icon: Crosshair, title: 'First-person shooter', blurb: 'Neon FPS with guns & grenades', build: createFirstPersonTemplate },
   { icon: Car, title: 'Driving', blurb: 'NFS-lite neon cruise & garage', build: createDrivingTemplate },
   { icon: Gauge, title: 'Sim racing', blurb: 'Realistic car physics & laps', build: createSimRacingTemplate },

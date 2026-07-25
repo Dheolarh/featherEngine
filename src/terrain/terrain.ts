@@ -96,6 +96,8 @@ export const defaultTerrainFoliage = (): TerrainFoliageComponent => ({
   trunkColor: '#6b4a2f',
   treeColor: '#2f7d45',
   windStrength: 1,
+  interactStrength: 1,
+  flowerDensity: 0,
   usePaintMask: false,
   stylizedGrass: defaultStylizedGrass(),
 });

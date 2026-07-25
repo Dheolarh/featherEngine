@@ -86,7 +86,7 @@ export interface StylizedGrassSettings {
   /** Distance where grass is fully gone. */
   fadeEnd: number;
 }
-export type TerrainTreeMeshStyle = 'cone' | 'round';
+export type TerrainTreeMeshStyle = 'cone' | 'round' | 'fir';
 /** Where a foliage instance's mesh comes from: engine primitive, a 2D image billboard, or a 3D model asset. */
 export type TerrainFoliageSource = 'builtin' | 'image' | 'model';
 
@@ -148,6 +148,17 @@ export interface TerrainFoliageComponent {
   stylizedGrass?: StylizedGrassSettings;
   /** Multiplier on the global scene wind for foliage sway (0 = stiff/no sway, the blades just stand). */
   windStrength?: number;
+  /**
+   * How strongly grass/flowers part and flatten around a passing player or actor during Play (BOTW-style).
+   * 1 = natural, 0 = ignores actors, >1 = exaggerated. Undefined defaults to 1 (interaction on).
+   */
+  interactStrength?: number;
+  /**
+   * Wildflower density scattered through the grass, 0..1. Small brightly-colored blooms (varied red/
+   * yellow/white/purple/pink) mixed among the blades — they wind-sway and part around the player like the
+   * grass. 0/undefined = no flowers. Only appears where grass does (grass/mixed mode).
+   */
+  flowerDensity?: number;
   /**
    * When true, grass/trees scatter ONLY where painted (the terrain's foliageOverrides mask) instead of
    * uniformly by density — the Unreal-style hand-painted foliage workflow. The foliage paint brush flips
