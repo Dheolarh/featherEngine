@@ -296,6 +296,7 @@ function FoliageControls({
   const brush = useEditorStore((state) => state.terrainBrush);
   const setTerrainBrush = useEditorStore((state) => state.setTerrainBrush);
   const foliage = terrain.foliage;
+  const treeSpecs = useEditorStore((state) => state.treeSpecs);
   const setFoliage = (patch: Partial<TerrainComponent['foliage']>) => updateTerrain(objectId, { foliage: { ...foliage, ...patch } });
   const grassSource = foliage.grassSource ?? (foliage.grassModelAssetId ? 'model' : 'builtin');
   const treeSource = foliage.treeSource ?? (foliage.treeModelAssetId ? 'model' : 'builtin');
@@ -376,6 +377,22 @@ function FoliageControls({
         </select>
       </label>
       {treeSource === 'builtin' && (
+        <label className="node-field">
+          <span>Tree Asset</span>
+          <select value={foliage.treeSpecId ?? ''} onChange={(event) => setFoliage({ treeSpecId: event.target.value || undefined })}>
+            <option value="">Simple crown (cone/round/fir)</option>
+            {treeSpecs.map((spec) => (
+              <option key={spec.id} value={spec.id}>
+                {spec.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {treeSource === 'builtin' && foliage.treeSpecId && (
+        <p className="field-hint">Scattering a real parametric tree. Edit it in the Tree Builder panel and every tree here updates.</p>
+      )}
+      {treeSource === 'builtin' && !foliage.treeSpecId && (
         <label className="node-field">
           <span>Tree Mesh</span>
           <select value={foliage.treeMesh} onChange={(event) => setFoliage({ treeMesh: event.target.value as TerrainComponent['foliage']['treeMesh'] })}>

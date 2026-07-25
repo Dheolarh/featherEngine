@@ -12,4 +12,5 @@ export * from './environment';
 export * from './vehicle';
 export * from './gameplay';
 export * from './cinematics';
+export * from './tree';
 export * from './project';

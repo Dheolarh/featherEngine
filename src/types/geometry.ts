@@ -144,6 +144,12 @@ export interface TerrainFoliageComponent {
   grassColor: string;
   trunkColor: string;
   treeColor: string;
+  /**
+   * Scatter a parametric tree ASSET from the project's tree library instead of the built-in cone/fir
+   * crowns. Editing that asset in the Tree Builder restyles every scattered tree at once.
+   * Requires treeSource 'builtin'. Empty/undefined falls back to the simple built-in crowns.
+   */
+  treeSpecId?: string;
   /** Look/motion settings for the stylized `clump` grass. Ignored by the other grass mesh styles. */
   stylizedGrass?: StylizedGrassSettings;
   /** Multiplier on the global scene wind for foliage sway (0 = stiff/no sway, the blades just stand). */

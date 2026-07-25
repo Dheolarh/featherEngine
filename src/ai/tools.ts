@@ -88,6 +88,7 @@ const terrainFoliagePatchSchema = z.object({
     .optional()
     .describe("'clump' (default) is the stylized painted-card grass with gradient/variation/interaction; the rest are simple legacy shapes."),
   stylizedGrass: stylizedGrassPatchSchema.optional().describe("Look/motion of the 'clump' grass. Prefer set_grass_look for a whole look; use this to tweak single settings."),
+  treeSpecId: z.string().optional().describe('Scatter a parametric tree ASSET from the project tree library (see list_tree_specs) instead of the simple crowns. "" clears it.'),
   treeMesh: z.enum(['cone', 'round', 'fir']).optional().describe("Built-in tree shape: 'fir' = stylized layered conifer (stacked tiers — the BOTW/stylized-nature look, best default), 'cone' = single cone, 'round' = single sphere crown."),
   grassSource: z.enum(['builtin', 'image', 'model']).optional().describe("Grass mesh source: 'builtin' high-quality wind-animated blades (default), 'image' a 2D billboard from grassImageAssetId, or 'model' from grassModelAssetId."),
   treeSource: z.enum(['builtin', 'image', 'model']).optional().describe("Tree mesh source: 'builtin', 'image' billboard (treeImageAssetId), or 'model' (treeModelAssetId)."),
@@ -1273,6 +1274,81 @@ const rawEngineTools = {
       store().updateTerrain(objectId, patch as Partial<TerrainComponent>);
       return `Updated terrain ${objectId}.`;
     },
+  }),
+
+  list_tree_specs: tool({
+    description: 'List the project\'s reusable parametric tree assets (the Tree Builder library) with their ids, so you can scatter one on terrain or restyle it.',
+    inputSchema: z.object({}),
+    execute: async () =>
+      JSON.stringify(
+        store().treeSpecs.map((spec) => ({ id: spec.id, name: spec.name, archetype: spec.archetype, height: spec.trunk.height })),
+      ),
+  }),
+
+  create_tree_spec: tool({
+    description:
+      'Add a new tree asset to the project library, based on an archetype. Objects and terrain scatters reference it by id, so editing it later restyles every tree using it at once.',
+    inputSchema: z.object({
+      archetype: z.enum(['conifer', 'broadleaf', 'birch', 'willow', 'palm', 'shrub', 'snag']),
+      name: z.string().optional(),
+    }),
+    execute: async ({ archetype, name }) => `Created tree asset ${store().createTreeSpec(archetype, name)}.`,
+  }),
+
+  update_tree_spec: tool({
+    description:
+      'Restyle a tree asset in the project library. Every placed tree AND every terrain-scattered tree using it updates. Use list_tree_specs for ids.',
+    inputSchema: z.object({
+      specId: z.string(),
+      name: z.string().optional(),
+      trunk: z.object({ height: z.number().optional(), baseRadius: z.number().optional(), taper: z.number().optional(), lean: z.number().optional(), curl: z.number().optional(), flare: z.number().optional() }).optional(),
+      branches: z.object({ levels: z.number().optional(), angle: z.number().optional(), gravity: z.number().optional(), lengthRatio: z.number().optional() }).optional(),
+      foliage: z.object({ strategy: z.enum(['blob', 'cards', 'skirt', 'fronds', 'strands', 'none']).optional(), size: z.number().optional(), density: z.number().optional(), droop: z.number().optional() }).optional(),
+      chop: z.object({
+        enabled: z.boolean().optional(),
+        breakPoints: z.array(z.object({ height: z.number(), hits: z.number(), label: z.string().optional() })).optional().describe('Heights up the trunk (0-1) where it can be severed, each with its hit count.'),
+        topplePush: z.number().optional(),
+      }).optional(),
+    }),
+    execute: async ({ specId, ...patch }) => {
+      const spec = store().treeSpecs.find((entry) => entry.id === specId);
+      if (!spec) return `No tree asset with id ${specId}.`;
+      store().updateTreeSpec(specId, {
+        ...(patch.name ? { name: patch.name } : {}),
+        ...(patch.trunk ? { trunk: { ...spec.trunk, ...patch.trunk } } : {}),
+        ...(patch.branches ? { branches: { ...spec.branches, ...patch.branches } } : {}),
+        ...(patch.foliage ? { foliage: { ...spec.foliage, ...patch.foliage } } : {}),
+        ...(patch.chop ? { chop: { ...spec.chop, ...patch.chop } } : {}),
+      });
+      return `Updated tree asset ${specId}.`;
+    },
+  }),
+
+  create_tree: tool({
+    description:
+      'Create a parametric tree. Geometry is generated from an archetype spec + seed (never a stored mesh), so a forest costs almost nothing and one spec edit restyles every instance. Trees sway with the global scene wind, part around passing actors, and can be chopped down Zelda-style.',
+    inputSchema: z.object({
+      archetype: z.enum(['conifer', 'broadleaf', 'birch', 'willow', 'palm', 'shrub', 'snag']),
+      position: vec3.optional().describe('World position; defaults to the origin. Trees sit ON the ground (y=0).'),
+      seed: z.number().optional().describe('Same seed = identical tree. Omit for one derived from the object id.'),
+      name: z.string().optional(),
+    }),
+    execute: async ({ archetype, position, seed, name }) => {
+      const id = store().createTree(archetype, { position: position ? asVec3(position) : undefined, seed, name });
+      return `Created ${archetype} tree ${id}.`;
+    },
+  }),
+
+  chop_tree: tool({
+    description:
+      'Land one axe hit on a tree at a world point. Each break point takes several hits; the last one severs the trunk there and the part above falls as a real physics log (the stump stays). Break points are authored per tree via update_tree.',
+    inputSchema: z.object({
+      objectId: z.string(),
+      worldPoint: vec3.describe('Where the axe landed. The nearest intact break point within tolerance is the one that takes the hit.'),
+      direction: vec3.optional().describe('Swing direction — the log topples away along this.'),
+    }),
+    execute: async ({ objectId, worldPoint, direction }) =>
+      store().chopTreeAt(objectId, asVec3(worldPoint), direction ? asVec3(direction) : undefined),
   }),
 
   set_grass_look: tool({

@@ -8355,3 +8355,53 @@ button {
   margin-top: 4px;
   flex: none;
 }
+
+/* --- Tree Builder ------------------------------------------------------------------------------- */
+/* Three columns: asset list, live preview, parameters — matching the Terrain panel's shell. */
+.terrain-preview-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.tree-preview-canvas {
+  flex: 1;
+  min-height: 220px;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #1a1f27;
+}
+.tree-preview-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-dim, #8b93a1);
+}
+.tree-seed-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+.tree-seed-strip button {
+  justify-content: center;
+}
+/* Break-point rows carry two numbers + a delete, so give them explicit columns instead of letting
+   them wrap onto three lines at narrow inspector widths. */
+.tree-breakpoint-row {
+  display: grid;
+  grid-template-columns: minmax(48px, 1fr) 64px 56px 28px;
+  align-items: center;
+  gap: 6px;
+}
+.tree-breakpoint-row input {
+  min-width: 0;
+}
+
+/* The Tree Builder adds a preview column between the asset list and the parameters, so it needs its own
+   three-column track — the Terrain panel's two-column grid drops the third child onto a new row. */
+.terrain-editor-body.tree-builder-body {
+  grid-template-columns: minmax(168px, 210px) minmax(0, 1fr) minmax(220px, 290px);
+}

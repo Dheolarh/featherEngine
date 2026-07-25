@@ -8,6 +8,7 @@ import { ParticleSystemEditorPanel } from './ParticleSystemEditorPanel';
 import { AnimatorEditorPanel } from './AnimatorEditorPanel';
 import { UIEditorPanel } from './UIEditorPanel';
 import { TerrainEditorPanel } from './TerrainEditorPanel';
+import { TreeBuilderPanel } from './TreeBuilderPanel';
 import { SceneSettingsPanel } from './SceneSettingsPanel';
 import { CinematicPanel } from './CinematicPanel';
 import { broadcastPanelClosed, initStoreSync } from '../sync/storeSync';
@@ -19,6 +20,7 @@ const PANELS: Record<string, () => JSX.Element> = {
   scripting: VisualScriptingPanel,
   materials: MaterialEditorPanel,
   terrain: TerrainEditorPanel,
+  trees: TreeBuilderPanel,
   particles: ParticleSystemEditorPanel,
   animator: AnimatorEditorPanel,
   ui: UIEditorPanel,

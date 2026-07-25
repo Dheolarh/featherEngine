@@ -65,6 +65,7 @@ import { WaterEnvCapture } from '../three/WaterEnvCapture';
 import { ReflectionProbeApply, ReflectionProbeCapture } from '../three/ReflectionProbes';
 import { UnderwaterOverlay } from '../three/UnderwaterOverlay';
 import { Terrain, TerrainBrushCursor } from '../three/Terrain';
+import { TreeMesh } from '../three/TreeMesh';
 import { highestTerrainWorldHeight } from '../terrain/terrain';
 import type { MaterialOverrides, SceneObject } from '../types';
 
@@ -150,6 +151,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
   // Runtime projectile — glowing tracer + point light instead of a dull sphere.
   if (object.projectile) return <ProjectileVisual object={object} />;
   if (object.terrain?.enabled) return <Terrain object={object} />;
+  if (object.tree?.enabled) return <TreeMesh object={object} />;
   // Cloth replaces the object's normal mesh with a deforming Verlet sheet (separate from Rapier). Placed
   // among the top early-returns (before any hooks) so toggling cloth never changes this component's hook
   // count — ClothSim owns its own hooks. It resolves its material from the object's renderer internally.
@@ -658,7 +660,9 @@ function renderObjectTree(objects: SceneObject[], opts: TreeRenderOpts): ReactNo
         : object;
     // Empties are organizational; hide their gizmo box during Play but keep the group so children
     // (and authored particle/effect empties) still position correctly.
-    const drawSelf = !(opts.isPlaying && object.kind === 'empty' && !object.effect && !object.particles);
+    // Trees are 'empty' objects carrying a tree component, so they must be exempted here too — otherwise
+    // every tree in the scene stops drawing the moment you press Play.
+    const drawSelf = !(opts.isPlaying && object.kind === 'empty' && !object.effect && !object.particles && !object.tree);
     const kids = childrenByParent.get(object.id);
     return (
       <SceneObjectView

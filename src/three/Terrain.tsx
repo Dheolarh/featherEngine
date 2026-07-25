@@ -14,6 +14,7 @@ import {
   WindFoliageImage,
 } from './foliageWind';
 import { StylizedGrass } from './stylizedGrass';
+import { ScatteredTrees } from './TreeMesh';
 import type { SceneObject, TerrainComponent, Vector3Tuple } from '../types';
 import {
   defaultStylizedGrass,
@@ -386,7 +387,11 @@ function generateFoliage(terrain: TerrainComponent, chunks: TerrainChunkKey[]) {
         if (mask <= 0 || terrainHash01(terrain.seed + 7005, chunk.x, chunk.z, i) > mask) continue;
       }
       const h = sampleTerrainLocalHeight(terrain, localX, localZ);
-      const s = THREE.MathUtils.lerp(foliage.minScale, foliage.maxScale, terrainHash01(terrain.seed + 7003, chunk.x, chunk.z, i)) * 1.9;
+      // The 1.9 boost exists because the built-in cone/sphere crowns are only ~1 unit tall. A parametric
+      // tree asset already specifies its real height (a pine is 12 units), so boosting it too gives a
+      // 30-unit monster — scale those by the authored range alone.
+      const treeScaleBoost = foliage.treeSpecId ? 0.75 : 1.9;
+      const s = THREE.MathUtils.lerp(foliage.minScale, foliage.maxScale, terrainHash01(terrain.seed + 7003, chunk.x, chunk.z, i)) * treeScaleBoost;
       const yaw = terrainHash01(terrain.seed + 7004, chunk.x, chunk.z, i) * Math.PI * 2;
       treeModels.push(composeMatrix([localX, h, localZ], yaw, [s, s, s]));
       if (foliage.treeMesh === 'fir') {
@@ -583,6 +588,12 @@ function TerrainFoliage({ terrain, chunks }: { terrain: TerrainComponent; chunks
   const interactStrength = foliage.interactStrength ?? 1;
   const grassSource = foliage.grassSource ?? (foliage.grassModelAssetId ? 'model' : 'builtin');
   const treeSource = foliage.treeSource ?? (foliage.treeModelAssetId ? 'model' : 'builtin');
+  // Scattered parametric trees resolve their spec from the project library by id, so the forest and the
+  // Tree Builder stay in lockstep with no per-chunk copies to invalidate.
+  const treeSpecs = useEditorStore((state) => state.treeSpecs);
+  const treeSpec = treeSource === 'builtin' && foliage.treeSpecId
+    ? treeSpecs.find((entry) => entry.id === foliage.treeSpecId)
+    : undefined;
 
   return (
     <>
@@ -647,7 +658,10 @@ function TerrainFoliage({ terrain, chunks }: { terrain: TerrainComponent; chunks
         />
       )}
 
-      {treeSource === 'model' ? (
+      {treeSpec ? (
+        // A tree ASSET from the project library — editing it in the Tree Builder restyles the whole forest.
+        <ScatteredTrees spec={treeSpec} matrices={matrices.treeModels} />
+      ) : treeSource === 'model' ? (
         <FoliageModelClones assetId={foliage.treeModelAssetId} matrices={matrices.treeModels} limit={180} />
       ) : treeSource === 'image' && foliage.treeImageAssetId ? (
         // Tree billboards sway gently (mostly the canopy) — softer wind + slower idle flutter than grass.

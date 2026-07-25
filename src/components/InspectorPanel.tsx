@@ -1,4 +1,4 @@
-import { ChevronRight, Link2, MousePointer2, Palette, Settings2, Unlink } from 'lucide-react';
+import { ChevronRight, Link2, MousePointer2, Palette, Settings2, Trash2, Unlink } from 'lucide-react';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useGLTF } from '@react-three/drei';
@@ -8,13 +8,14 @@ import { useAssetUrl } from '../three/ModelAsset';
 import { DRACO_DECODER_PATH, extendGLTFLoader } from '../three/gltfDecoders';
 import { focusWorkspacePanel } from './workspacePanels';
 import { SocketPickerModal } from './SocketPickerModal';
-import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, ReflectionProbeComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
+import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, ReflectionProbeComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, TreeArchetype, TreeComponent, TreeSpec, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
 import { resolveVehicleWheels } from '../runtime/vehicleWheels';
 import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { particlePresetIds } from '../runtime/particlePresets';
 import { PHYSICS_MATERIAL_PRESETS, applyPhysicsMaterialPreset } from '../runtime/physicsMaterials';
 import { WATER_STYLE_PRESETS } from '../three/presets';
 import { withTerrainDefaults } from '../terrain/terrain';
+import { treeSpecFromArchetype } from '../tree/treeSpec';
 
 const axes = ['X', 'Y', 'Z'] as const;
 
@@ -1982,6 +1983,111 @@ function ParticleSection({
   );
 }
 
+/**
+ * Parametric tree controls. The archetype picker rebuilds the spec from scratch (archetypes are the
+ * starting points, not a locked type), while everything below tunes the current spec in place.
+ */
+function TreeSection({
+  tree,
+  onChange,
+}: {
+  tree: TreeComponent;
+  onChange: (patch: Partial<TreeComponent>) => void;
+}) {
+  const spec = tree.spec;
+  const patchSpec = (patch: Partial<TreeSpec>) => onChange({ spec: { ...spec, ...patch } });
+  const patchChop = (patch: Partial<TreeSpec['chop']>) => patchSpec({ chop: { ...spec.chop, ...patch } });
+  const setBreakPoint = (index: number, patch: Partial<TreeSpec['chop']['breakPoints'][number]>) =>
+    patchChop({ breakPoints: spec.chop.breakPoints.map((bp, i) => (i === index ? { ...bp, ...patch } : bp)) });
+
+  return (
+    <InspectorSection title="Tree">
+      <label className="field-row">
+        <span>Enabled</span>
+        <input type="checkbox" checked={tree.enabled} onChange={(event) => onChange({ enabled: event.target.checked })} />
+      </label>
+      <label className="field-row">
+        <span>Archetype</span>
+        <select
+          value={spec.archetype}
+          onChange={(event) => {
+            const archetype = event.target.value as TreeArchetype;
+            // Rebuilding from the archetype resets tuning on purpose — these are starting points.
+            onChange({ spec: treeSpecFromArchetype(archetype, spec.id, spec.name) });
+          }}
+        >
+          <option value="broadleaf">Broadleaf</option>
+          <option value="conifer">Conifer</option>
+          <option value="birch">Birch</option>
+          <option value="willow">Willow</option>
+          <option value="palm">Palm</option>
+          <option value="shrub">Shrub</option>
+          <option value="snag">Dead tree</option>
+        </select>
+      </label>
+      <label className="field-row">
+        <span>Seed</span>
+        <NumberInput value={tree.seed} step={1} onChange={(seed) => onChange({ seed: Math.trunc(seed) })} />
+      </label>
+      <button className="full-button" onClick={() => onChange({ seed: Math.trunc(Math.random() * 100000) })}>
+        Reroll Seed
+      </button>
+      <p className="field-hint">Same seed always rebuilds the identical tree — reroll for a different one of the same species.</p>
+
+      <h4 className="inspector-subhead">Shape</h4>
+      <label className="field-row">
+        <span>Height</span>
+        <NumberInput value={spec.trunk.height} min={0.2} step={0.5} onChange={(height) => patchSpec({ trunk: { ...spec.trunk, height } })} />
+      </label>
+      <label className="field-row">
+        <span>Trunk Radius</span>
+        <NumberInput value={spec.trunk.baseRadius} min={0.02} step={0.05} onChange={(baseRadius) => patchSpec({ trunk: { ...spec.trunk, baseRadius } })} />
+      </label>
+      <label className="field-row">
+        <span>Lean</span>
+        <NumberInput value={spec.trunk.lean} step={1} onChange={(lean) => patchSpec({ trunk: { ...spec.trunk, lean } })} />
+      </label>
+      <RangeField label="Branch Levels" value={spec.branches.levels} min={0} max={3} step={1} onChange={(levels) => patchSpec({ branches: { ...spec.branches, levels } })} />
+      <RangeField label="Foliage Size" value={spec.foliage.size} min={0.05} max={5} step={0.05} onChange={(size) => patchSpec({ foliage: { ...spec.foliage, size } })} />
+      <RangeField label="Foliage Density" value={spec.foliage.density} min={0} max={8} step={0.5} onChange={(density) => patchSpec({ foliage: { ...spec.foliage, density } })} />
+
+      <h4 className="inspector-subhead">Chopping</h4>
+      <label className="field-row">
+        <span>Choppable</span>
+        <input type="checkbox" checked={spec.chop.enabled} onChange={(event) => patchChop({ enabled: event.target.checked })} />
+      </label>
+      <p className="field-hint">Break points are heights up the trunk where the tree can be severed. The lowest fells it; higher ones buck the downed trunk into logs.</p>
+      {spec.chop.breakPoints.map((bp, index) => (
+        <div key={index} className="field-row">
+          <span>{bp.label ?? `Cut ${index + 1}`}</span>
+          <NumberInput value={bp.height} min={0.01} max={0.98} step={0.01} onChange={(height) => setBreakPoint(index, { height })} />
+          <NumberInput value={bp.hits} min={1} step={1} onChange={(hits) => setBreakPoint(index, { hits: Math.trunc(hits) })} />
+          <button
+            className="icon-button compact"
+            title="Remove this break point"
+            onClick={() => patchChop({ breakPoints: spec.chop.breakPoints.filter((_, i) => i !== index) })}
+          >
+            <Trash2 size={13} aria-hidden />
+          </button>
+        </div>
+      ))}
+      <p className="field-hint">Height up the trunk (0–1), then how many hits to sever there.</p>
+      <button
+        className="full-button"
+        onClick={() =>
+          patchChop({
+            breakPoints: [...spec.chop.breakPoints, { height: Math.min(0.95, (spec.chop.breakPoints.at(-1)?.height ?? 0.1) + 0.2), hits: 2 }],
+          })
+        }
+      >
+        Add Break Point
+      </button>
+      <RangeField label="Hit Tolerance" value={spec.chop.tolerance} min={0.1} max={4} step={0.1} onChange={(tolerance) => patchChop({ tolerance })} />
+      <RangeField label="Topple Push" value={spec.chop.topplePush} min={0} max={20} step={0.5} onChange={(topplePush) => patchChop({ topplePush })} />
+    </InspectorSection>
+  );
+}
+
 function TerrainSection({
   terrain,
   onChange,
@@ -2837,6 +2943,7 @@ export function InspectorPanel() {
   const setObjectMaterial = useEditorStore((state) => state.setObjectMaterial);
   const setObjectMaterialSlot = useEditorStore((state) => state.setObjectMaterialSlot);
   const updateTerrain = useEditorStore((state) => state.updateTerrain);
+  const updateTree = useEditorStore((state) => state.updateTree);
   const setActiveMaterial = useEditorStore((state) => state.setActiveMaterial);
   const materials = useEditorStore((state) => state.materials);
   const assets = useEditorStore((state) => state.assets);
@@ -2977,6 +3084,8 @@ export function InspectorPanel() {
           {object.terrain && (
             <TerrainSection terrain={object.terrain} onChange={(patch) => updateTerrain(object.id, patch)} />
           )}
+
+          {object.tree && <TreeSection tree={object.tree} onChange={(patch) => updateTree(object.id, patch)} />}
 
           {object.renderer && (
             <RendererSection

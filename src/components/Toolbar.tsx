@@ -23,6 +23,7 @@ import {
   Settings,
   Square,
   Trash2,
+  TreePine,
   Undo2,
   X,
 } from 'lucide-react';
@@ -36,7 +37,19 @@ import { useEditorPrefs } from '../store/editorPrefsStore';
 import { applyCustomLayout, applyWorkspaceLayout, resetWorkspaceLayout, WORKSPACE_LAYOUTS } from './Workspace';
 import { PreferencesModal } from './PreferencesModal';
 import { BuildReportDialog } from './BuildReportDialog';
-import type { SceneObjectKind } from '../types';
+import type { SceneObjectKind, TreeArchetype } from '../types';
+import { focusWorkspacePanel } from './workspacePanels';
+
+/** Parametric trees aren't a SceneObjectKind (they're a component), so they get their own Add entries. */
+const treeTools: Array<{ archetype: TreeArchetype; label: string }> = [
+  { archetype: 'broadleaf', label: 'Tree — Broadleaf' },
+  { archetype: 'conifer', label: 'Tree — Conifer' },
+  { archetype: 'birch', label: 'Tree — Birch' },
+  { archetype: 'willow', label: 'Tree — Willow' },
+  { archetype: 'palm', label: 'Tree — Palm' },
+  { archetype: 'shrub', label: 'Bush' },
+  { archetype: 'snag', label: 'Dead Tree' },
+];
 
 const creationTools: Array<{ kind: SceneObjectKind; label: string; icon: typeof Box }> = [
   { kind: 'empty', label: 'Empty', icon: Square },
@@ -94,6 +107,7 @@ function AddMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const createObject = useEditorStore((state) => state.createObject);
+  const createTree = useEditorStore((state) => state.createTree);
 
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
@@ -120,6 +134,22 @@ function AddMenu() {
               }}
             >
               <Icon size={14} aria-hidden />
+              <span>{label}</span>
+            </button>
+          ))}
+          <div className="file-menu-section">Trees</div>
+          {treeTools.map(({ archetype, label }) => (
+            <button
+              key={archetype}
+              onClick={() => {
+                setOpen(false);
+                createTree(archetype);
+                // The Inspector shares a dock group with Scene and Scene is the default active tab, so
+                // without this the new tree's controls are created behind a tab you never thought to click.
+                focusWorkspacePanel('inspector');
+              }}
+            >
+              <TreePine size={14} aria-hidden />
               <span>{label}</span>
             </button>
           ))}

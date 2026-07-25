@@ -92,6 +92,9 @@ import {
   type UIComponent,
   type UISurface,
   type UIPresetKind,
+  type TreeArchetype,
+  type TreeComponent,
+  type TreeSpec,
   type WaterVolumeComponent,
 } from '../types';
 import { getActivePhysics, startPhysics, stopPhysics, type PhysicsContactEvent, type VehicleWheelState } from '../runtime/physicsWorld';
@@ -114,6 +117,16 @@ import { applyPhysicsMaterialPreset } from '../runtime/physicsMaterials';
 import { resolveMaterial } from '../three/materialResolve';
 import { WATER_LOOK_KEYS, findRenderPreset, waterStylePatch } from '../three/presets';
 import { defaultSceneEnvironment, withSceneEnvironmentDefaults } from '../three/environmentSettings';
+import { chopTree, clearTreeChops } from '../runtime/treeChop';
+import { DEFAULT_TREE_IDS, defaultTreeLibrary, normalizeTreeSpec, treeSpecFromArchetype } from '../tree/treeSpec';
+
+/** Stable per-object tree seed derived from its id, so the same tree rebuilds identically on reload. */
+const seedFromId = (id: string): number => {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i += 1) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return (h >>> 0) % 100000;
+};
+import { highestTerrainWorldHeight } from '../terrain/terrain';
 import { GRASS_PRESETS, applyTerrainFoliagePaint, applyTerrainPaint, applyTerrainSculpt, createTerrainHeightSampler, defaultStylizedGrass, terrainLocalPointFromWorld, withTerrainDefaults, type GrassPresetId } from '../terrain/terrain';
 import { worldTransformOf, worldToLocalUnderParent } from '../utils/transformHierarchy';
 import type { ModelInspection } from '../three/inspectModel';
@@ -335,6 +348,9 @@ interface EditorState {
   uiDocuments: UIDocument[];
   /** Reusable object templates (prefabs). */
   prefabs: Prefab[];
+  /** Reusable parametric tree assets, edited in the Tree Builder. */
+  treeSpecs: TreeSpec[];
+  activeTreeSpecId: string;
   /** Id of the prefab currently open in the prefab editor, or null when editing a normal scene. */
   editingPrefabId: string | null;
   /** While editing a prefab, the scene to return to when the editor closes. */
@@ -600,6 +616,21 @@ interface EditorState {
   updateRenderer: (id: string, patch: Partial<MeshRendererComponent>) => void;
   setObjectModel: (id: string, modelAssetId?: string) => void;
   updateTerrain: (id: string, patch: Partial<TerrainComponent>) => void;
+  /** Add a tree asset to the project library (copied from an archetype). Returns its id. */
+  createTreeSpec: (archetype: TreeArchetype, name?: string) => string;
+  /** Patch a library tree asset. Every object and scattered instance referencing it updates. */
+  updateTreeSpec: (specId: string, patch: Partial<TreeSpec>) => void;
+  /** Duplicate a library tree asset. */
+  duplicateTreeSpec: (specId: string) => string;
+  /** Remove a library tree asset, detaching any object that referenced it (they keep their inline copy). */
+  deleteTreeSpec: (specId: string) => void;
+  setActiveTreeSpec: (specId: string) => void;
+  /** Create a parametric tree object from an archetype. Returns the new object's id. */
+  createTree: (archetype: TreeArchetype, options?: { position?: Vector3Tuple; seed?: number; name?: string }) => string;
+  /** Patch a tree object's component (spec, seed, choppable). The spec is re-normalized on every edit. */
+  updateTree: (id: string, patch: Partial<TreeComponent>) => void;
+  /** Land one axe hit on a tree. Severs it (spawning the felled log) once that break point runs out of hits. */
+  chopTreeAt: (objectId: string, worldPoint: Vector3Tuple, direction?: Vector3Tuple) => string;
   /** Apply a one-click grass look (switches the terrain to stylized clump grass). Returns the preset label. */
   applyGrassPreset: (id: string, presetId: GrassPresetId) => string | null;
   setTerrainBrush: (patch: Partial<TerrainBrushSettings>) => void;
@@ -1206,6 +1237,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   graphs: [{ id: graphId, name: 'Player Controller', nodes: starterNodes, edges: starterEdges }],
   uiDocuments: [],
   prefabs: [],
+  treeSpecs: defaultTreeLibrary(),
+  activeTreeSpecId: DEFAULT_TREE_IDS.oak,
   editingPrefabId: null,
   prefabReturnSceneId: null,
   prefabThumbnailQueue: [],
@@ -1981,6 +2014,94 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }),
       ),
     ),
+  createTreeSpec: (archetype, name) => {
+    const id = makeId('tree');
+    set((state) => ({
+      treeSpecs: [...state.treeSpecs, treeSpecFromArchetype(archetype, id, name)],
+      activeTreeSpecId: id,
+      isDirty: true,
+    }));
+    return id;
+  },
+  updateTreeSpec: (specId, patch) =>
+    set((state) => ({
+      treeSpecs: state.treeSpecs.map((spec) =>
+        spec.id === specId ? normalizeTreeSpec({ ...spec, ...patch, id: specId }) : spec,
+      ),
+      isDirty: true,
+    })),
+  duplicateTreeSpec: (specId) => {
+    const id = makeId('tree');
+    set((state) => {
+      const source = state.treeSpecs.find((spec) => spec.id === specId);
+      if (!source) return state;
+      return {
+        treeSpecs: [...state.treeSpecs, { ...source, id, name: `${source.name} Copy` }],
+        activeTreeSpecId: id,
+        isDirty: true,
+      };
+    });
+    return id;
+  },
+  deleteTreeSpec: (specId) =>
+    set((state) => ({
+      treeSpecs: state.treeSpecs.filter((spec) => spec.id !== specId),
+      activeTreeSpecId:
+        state.activeTreeSpecId === specId ? state.treeSpecs.find((s) => s.id !== specId)?.id ?? '' : state.activeTreeSpecId,
+      // Objects keep their inline spec copy — dropping the library entry must never delete their tree.
+      ...mapActiveSceneObjects(state, (objects) =>
+        objects.map((object) =>
+          object.tree?.specId === specId ? { ...object, tree: { ...object.tree, specId: undefined } } : object,
+        ),
+      ),
+      isDirty: true,
+    })),
+  setActiveTreeSpec: (specId) => set({ activeTreeSpecId: specId }),
+  createTree: (archetype, options = {}) => {
+    const id = makeId('obj');
+    set((state) => {
+      // Prefer the project's library entry for this archetype so the new tree is LINKED to the asset —
+      // editing it in the Tree Builder then updates this tree along with every other instance.
+      const libraryEntry = state.treeSpecs.find((entry) => entry.archetype === archetype);
+      const spec = libraryEntry ?? treeSpecFromArchetype(archetype, `${archetype}-${id}`);
+      // Trees grow FROM the ground, so they spawn at y=0 rather than the usual 2-unit drop-in height —
+      // and on a heightmapped landscape y=0 is buried or floating, so snap to the terrain surface.
+      const requested = options.position ?? [0, 0, 0];
+      const groundY = highestTerrainWorldHeight(selectActiveObjects(state), requested[0], requested[2]);
+      const next: SceneObject = {
+        id,
+        name: options.name ?? spec.name,
+        kind: 'empty',
+        transform: defaultTransform([requested[0], groundY ?? requested[1], requested[2]]),
+        tree: { enabled: true, spec, specId: libraryEntry?.id, seed: options.seed ?? seedFromId(id) },
+      } as SceneObject;
+      return { ...mapActiveSceneObjects(state, (objects) => [...objects, next]), selectedObjectId: id };
+    });
+    return id;
+  },
+  updateTree: (id, patch) =>
+    set((state) =>
+      mapActiveSceneObjects(state, (objects) =>
+        objects.map((object) => {
+          if (object.id !== id || !object.tree) return object;
+          const merged = { ...object.tree, ...stripUndefined(patch) };
+          return { ...object, tree: { ...merged, spec: normalizeTreeSpec(merged.spec) } };
+        }),
+      ),
+    ),
+  chopTreeAt: (objectId, worldPoint, direction) => {
+    const object = selectActiveObjects(get()).find((item) => item.id === objectId);
+    if (!object) return `No object with id ${objectId}.`;
+    if (!object.tree?.enabled) return `Object ${objectId} is not a tree.`;
+    const result = chopTree(object, worldPoint, direction ?? [1, 0, 0]);
+    if (!result) return `That hit missed every break point on ${object.name}.`;
+    if (!result.severed) {
+      return `Hit ${object.name} — ${result.hitsLeft} more to sever.`;
+    }
+    const logs = result.logs ?? [];
+    if (logs.length) set((state) => mapActiveSceneObjects(state, (objects) => [...objects, ...logs]));
+    return `Felled ${object.name} at break point ${result.breakPointIndex}.`;
+  },
   applyGrassPreset: (id, presetId) => {
     const preset = GRASS_PRESETS[presetId];
     if (!preset) return null;
@@ -5557,6 +5678,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       clearPerception();
       clearVehicleDents();
       clearFoliageInteractors(); // grass stops parting once the actors are gone
+      clearTreeChops(); // felled trees stand back up with the rest of the Play snapshot
       return {
         isPlaying,
         runtimeTime: 0,
@@ -11497,6 +11619,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       blueprints: state.blueprints,
       graphs: state.graphs,
       prefabs: state.prefabs ?? [],
+      treeSpecs: state.treeSpecs ?? [],
       renderSettings: state.renderSettings,
     };
   },
@@ -11515,6 +11638,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         joint: object.joint ? { ...defaultJoint(), ...object.joint } : object.joint,
         cloth: object.cloth ? { ...defaultCloth(), ...object.cloth } : object.cloth,
         cable: object.cable ? { ...defaultCable(), ...object.cable } : object.cable,
+        tree: object.tree ? { ...object.tree, spec: normalizeTreeSpec(object.tree.spec) } : object.tree,
       });
       const scenes = rawScenes.map((scene) => ({
         ...scene,
@@ -11526,6 +11650,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...prefab,
         objects: prefab.objects.map(normalizeSceneObject),
       }));
+      // A project saved before the tree library existed gets the starter set, so the Tree Builder is
+      // never empty and the foliage scatter always has something to reference.
+      const treeSpecs = (project.treeSpecs?.length ? project.treeSpecs : defaultTreeLibrary()).map((spec) =>
+        normalizeTreeSpec(spec),
+      );
       const activeSceneId = scenes.some((scene) => scene.id === project.activeSceneId)
         ? project.activeSceneId
         : scenes[0].id;
@@ -11570,6 +11699,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         blueprints: project.blueprints,
         graphs: normalizedGraphs,
         prefabs,
+        treeSpecs,
+        activeTreeSpecId: treeSpecs[0]?.id ?? '',
         editingPrefabId: null,
         prefabReturnSceneId: null,
         // Regenerate thumbnails for any prefabs that were saved without one.

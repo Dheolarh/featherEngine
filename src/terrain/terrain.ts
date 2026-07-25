@@ -198,6 +198,7 @@ function normalizeTerrainDefaults(terrain?: Partial<TerrainComponent>): TerrainC
       // Back-compat: a project saved with only a model asset (before the source field) keeps using it.
       grassSource: foliage.grassSource ?? (foliage.grassModelAssetId ? 'model' : 'builtin'),
       treeSource: foliage.treeSource ?? (foliage.treeModelAssetId ? 'model' : 'builtin'),
+      treeSpecId: foliage.treeSpecId || undefined,
       windStrength: clamp(foliage.windStrength ?? 1, 0, 4),
       usePaintMask: foliage.usePaintMask ?? false,
       stylizedGrass: normalizeStylizedGrass(foliage.stylizedGrass),

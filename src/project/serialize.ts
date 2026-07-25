@@ -8,6 +8,7 @@ import {
 import { defaultSceneEnvironment } from '../three/environmentSettings';
 import { defaultRenderSettings } from '../store/editor/defaults';
 import { DEFAULT_RENDER_PRESET, renderPresetEnvironmentPatch, renderPresetRenderPatch } from '../three/presets';
+import { defaultTreeLibrary } from '../tree/treeSpec';
 
 export const SCENES_DIR = 'scenes';
 export const ASSETS_DIR = 'assets';
@@ -46,6 +47,7 @@ export function splitProject(project: NodeForgeProject): {
     blueprints: project.blueprints,
     graphs: project.graphs,
     prefabs: project.prefabs,
+    treeSpecs: project.treeSpecs,
     renderSettings: project.renderSettings,
   };
   const sceneFiles = realScenes.map((scene) => ({ path: sceneFile(scene.id), scene }));
@@ -74,6 +76,7 @@ export function joinProject(manifest: ProjectManifest, scenes: Scene[]): NodeFor
     blueprints: manifest.blueprints,
     graphs: manifest.graphs,
     prefabs: manifest.prefabs ?? [],
+    treeSpecs: manifest.treeSpecs ?? [],
     renderSettings: manifest.renderSettings,
   };
 }
@@ -111,6 +114,7 @@ export function migrateLoaded(raw: unknown): NodeForgeProject {
       blueprints: (data.blueprints as NodeForgeProject['blueprints']) ?? [],
       graphs: (data.graphs as NodeForgeProject['graphs']) ?? [],
       prefabs: (data.prefabs as NodeForgeProject['prefabs']) ?? [],
+      treeSpecs: (data.treeSpecs as NodeForgeProject['treeSpecs']) ?? [],
       renderSettings: data.renderSettings as NodeForgeProject['renderSettings'],
     };
   }
@@ -145,6 +149,7 @@ export function migrateLoaded(raw: unknown): NodeForgeProject {
       blueprints: (data.blueprints as NodeForgeProject['blueprints']) ?? [],
       graphs: (data.graphs as NodeForgeProject['graphs']) ?? [],
       prefabs: (data.prefabs as NodeForgeProject['prefabs']) ?? [],
+      treeSpecs: (data.treeSpecs as NodeForgeProject['treeSpecs']) ?? [],
       renderSettings: data.renderSettings as NodeForgeProject['renderSettings'],
     };
   }
@@ -180,5 +185,6 @@ export function blankProject(name: string): NodeForgeProject {
     blueprints: [],
     graphs: [],
     prefabs: [],
+    treeSpecs: defaultTreeLibrary(),
   };
 }

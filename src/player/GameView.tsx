@@ -46,6 +46,7 @@ import {
 import { qualityProfile } from '../three/quality';
 import { SceneEnvironment } from '../three/SceneEnvironment';
 import { Terrain } from '../three/Terrain';
+import { TreeMesh } from '../three/TreeMesh';
 import { FragmentMesh } from '../three/FragmentMesh';
 import { readTransform } from '../runtime/transformBuffer';
 import type { SceneObject, Vector3Tuple } from '../types';
@@ -76,6 +77,7 @@ function gameSceneSignature(state: ReturnType<typeof useEditorStore.getState>) {
         object.character?.enabled ? 'c' : '',
         object.vehicle?.enabled ? 'v' : '',
         object.terrain?.enabled ? 'terrain' : '',
+        object.tree?.enabled ? `tree:${object.tree.spec.archetype}:${object.tree.seed}` : '',
         object.effect?.kind ?? '',
         object.projectile ? 'projectile' : '',
         renderer?.enabled === false ? 'off' : '',
@@ -105,6 +107,7 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
   // Runtime projectile — glowing tracer + point light.
   if (object.projectile) return <ProjectileVisual object={object} />;
   if (object.terrain?.enabled) return <Terrain object={object} />;
+  if (object.tree?.enabled) return <TreeMesh object={object} />;
   const renderer = object.renderer;
   const baseResolved = useResolvedMaterial(renderer);
   // Interaction focus highlight: warm emissive rim so the player sees what they can use (Unreal-style).

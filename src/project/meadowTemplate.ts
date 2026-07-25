@@ -1,4 +1,5 @@
 import { getPlatform } from '../platform';
+import { DEFAULT_TREE_IDS } from '../tree/treeSpec';
 import { useProjectStore } from '../store/projectStore';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { inspectModel } from '../three/inspectModel';
@@ -92,6 +93,9 @@ export async function createMeadowTemplate(): Promise<string | undefined> {
     treeSource: 'builtin',
     grassMesh: 'blade',
     treeMesh: 'fir',
+    // Scatter the project's Pine ASSET rather than the simple stacked-cone crown: same one-click meadow,
+    // but every tree is a real parametric tree the Tree Builder can restyle (and an axe can fell).
+    treeSpecId: DEFAULT_TREE_IDS.pine,
     grassColor: '#46a03c',
     treeColor: '#3f9a4e',
     trunkColor: '#5b3f2b',

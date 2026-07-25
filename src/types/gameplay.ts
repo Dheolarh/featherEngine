@@ -4,6 +4,7 @@ import type { AnimatorComponent, CharacterControllerComponent } from './animatio
 import type { CableComponent, ClothComponent, JointComponent, PhysicsComponent, WaterVolumeComponent } from './physics';
 import type { AttachmentComponent, LightComponent, ReflectionProbeComponent, ScriptGraphComponent, UIComponent, ViewModelComponent } from './environment';
 import type { VehicleComponent } from './vehicle';
+import type { TreeComponent } from './tree';
 
 export interface SceneObject {
   id: string;
@@ -29,6 +30,8 @@ export interface SceneObject {
   ui?: UIComponent;
   /** Procedural streamed terrain surface and optional instanced foliage. */
   terrain?: TerrainComponent;
+  /** Parametric tree — geometry is regenerated from its spec + seed, never stored. See {@link TreeComponent}. */
+  tree?: TreeComponent;
   /** Unreal-style water/physics volume: swim mode for characters plus buoyancy/drag/waves for dynamic bodies. */
   water?: WaterVolumeComponent;
   /** Per-instance data (e.g. this enemy's `health`), read/written by scripts and world UI bindings via `self.*`. */

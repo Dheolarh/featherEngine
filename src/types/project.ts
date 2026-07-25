@@ -1,3 +1,4 @@
+import type { TreeSpec } from './tree';
 import type { Edge } from '@xyflow/react';
 import type { AssetType, GraphValue, GraphValueType } from './common';
 import type { MaterialDefinition } from './geometry';
@@ -359,6 +360,8 @@ export interface NodeForgeProject {
   blueprints: ScriptBlueprint[];
   graphs: ProjectGraph[];
   uiDocuments: UIDocument[];
+  /** Reusable parametric tree assets. Objects reference one by `tree.specId`; editing it restyles them all. */
+  treeSpecs: TreeSpec[];
   /** Reusable object templates. See `Prefab`. */
   prefabs: Prefab[];
   /** Project-wide render / post-processing settings (bloom, vignette). */
@@ -386,6 +389,8 @@ export interface ProjectManifest {
   blueprints: ScriptBlueprint[];
   graphs: ProjectGraph[];
   uiDocuments: UIDocument[];
+  /** Reusable parametric tree assets. Objects reference one by `tree.specId`; editing it restyles them all. */
+  treeSpecs: TreeSpec[];
   /** Reusable object templates. See `Prefab`. */
   prefabs: Prefab[];
   /** Project-wide render / post-processing settings (bloom, vignette). */

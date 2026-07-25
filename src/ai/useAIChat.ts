@@ -81,6 +81,16 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Painted terrain';
     case 'paint_foliage':
       return input.erase ? 'Erased foliage' : 'Painted foliage';
+    case 'list_tree_specs':
+      return 'Listed tree assets';
+    case 'create_tree_spec':
+      return `Created ${input.archetype} tree asset`;
+    case 'update_tree_spec':
+      return 'Updated tree asset';
+    case 'create_tree':
+      return `Created ${input.archetype} tree`;
+    case 'chop_tree':
+      return 'Chopped tree';
     case 'set_grass_look':
       return `Grass look: ${input.preset}`;
     case 'add_terrain_layer':
