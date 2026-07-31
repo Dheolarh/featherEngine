@@ -118,6 +118,8 @@ import { resolveMaterial } from '../three/materialResolve';
 import { WATER_LOOK_KEYS, findRenderPreset, waterStylePatch } from '../three/presets';
 import { defaultSceneEnvironment, withSceneEnvironmentDefaults } from '../three/environmentSettings';
 import { chopTree, clearTreeChops } from '../runtime/treeChop';
+import { isRollInvulnerable, meleeComboDamage } from '../runtime/combatFeel';
+import { wrapDayCycleTime } from '../three/dayCycle';
 import { DEFAULT_TREE_IDS, defaultTreeLibrary, normalizeTreeSpec, treeSpecFromArchetype } from '../tree/treeSpec';
 
 /** Stable per-object tree seed derived from its id, so the same tree rebuilds identically on reload. */
@@ -427,6 +429,14 @@ interface EditorState {
   runtimeCoyote: Record<string, number>;
   /** Remaining attack time (seconds) per object — drives the "attacking" param. */
   runtimeAttack: Record<string, number>;
+  /** Current melee combo index (0-based) per character while a chain is live. */
+  runtimeMeleeCombo: Record<string, number>;
+  /** Buffered attack press waiting to fire the next combo hit (per character). */
+  runtimeMeleeBuffer: Record<string, boolean>;
+  /** Wall-clock seconds of melee hitstop remaining (global). */
+  runtimeHitstop: number;
+  /** Live day-cycle clock in [0,1) while Playing — mirrors environment.dayCycleTime when Play starts. */
+  runtimeDayCycleTime: number;
   /** Remaining reload time (seconds) per object — drives the "reloading" param. */
   runtimeReload: Record<string, number>;
   /** Remaining interact time (seconds) per object — drives the "interacting" param. */
@@ -1279,6 +1289,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   runtimeTurnInPlace: {},
   runtimeCoyote: {},
   runtimeAttack: {},
+  runtimeMeleeCombo: {},
+  runtimeMeleeBuffer: {},
+  runtimeHitstop: 0,
+  runtimeDayCycleTime: 0.35,
   runtimeReload: {},
   runtimeInteract: {},
   runtimeFootstep: {},
@@ -1362,6 +1376,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ? { ...scene, environment: { ...withSceneEnvironmentDefaults(scene.environment), ...stripUndefined(patch) } }
           : scene,
       ),
+      ...(patch.dayCycleTime !== undefined && id === state.activeSceneId
+        ? { runtimeDayCycleTime: wrapDayCycleTime(patch.dayCycleTime) }
+        : {}),
       isDirty: true,
     })),
   deleteScene: (id) =>
@@ -5590,7 +5607,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           runtimeTurnInPlace: {},
           runtimeCoyote: {},
           runtimeAttack: {},
-      runtimeReload: {},
+          runtimeMeleeCombo: {},
+          runtimeMeleeBuffer: {},
+          runtimeHitstop: 0,
+          runtimeDayCycleTime: state.scenes.find((s) => s.id === state.activeSceneId)?.environment?.dayCycleTime ?? 0.35,
+          runtimeReload: {},
       runtimeInteract: {},
       runtimeFootstep: {},
       runtimeCooldowns: {},
@@ -5707,6 +5728,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeTurnInPlace: {},
         runtimeCoyote: {},
         runtimeAttack: {},
+        runtimeMeleeCombo: {},
+        runtimeMeleeBuffer: {},
+        runtimeHitstop: 0,
+        runtimeDayCycleTime: 0.35,
       runtimeReload: {},
       runtimeInteract: {},
       runtimeFootstep: {},
@@ -5863,6 +5888,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Global time scale (Set Time Scale node): scales scripts, timers, physics and motion in one place.
       // At 0 (paused) the tick still RUNS — key/UI events keep firing so the pause menu can unpause —
       // but nothing advances and the physics step is skipped (physics.frame early-outs on dt <= 0).
+      // Melee hitstop uses WALL-CLOCK seconds so a 90ms hitstop stays ~90ms of real time even while
+      // runtimeTimeScale is dipped.
+      const wallDelta = delta;
+      let nextHitstop = Math.max(0, (state.runtimeHitstop ?? 0) - wallDelta);
+      let hitstopEnded = false;
+      if ((state.runtimeHitstop ?? 0) > 0 && nextHitstop <= 0) hitstopEnded = true;
       delta *= state.runtimeTimeScale ?? 1;
       beginPerceptionFrame(); // advance the AI perception clock (throttled line-of-sight cache)
       const activeObjects = selectActiveObjects(state);
@@ -6079,17 +6110,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       let pendingQuality: QualityLevel | undefined;
       // A Set Time Scale node fired this frame → applied at the end of the tick (next frame runs at the new speed).
       let pendingTimeScale: number | undefined;
+      if (hitstopEnded) pendingTimeScale = 1; // restore after melee hitstop (a Set Time Scale node later this tick still wins)
       // A Start Replay node fired this frame → begin instant-replay playback at the end of the tick.
       let pendingReplaySeconds: number | undefined;
       // action.setEnvironment patches accumulated this frame — sky/fog/sun overrides applied to the active
       // scene's environment at the end of the tick. Each successive node overlays on top.
       let pendingEnvironment: Partial<SceneEnvironmentSettings> | undefined;
+      let pendingTimeOfDay: number | undefined;
+      let pendingDayCycleEnable: boolean | undefined;
       // Combat feedback counters (bumped on hits / when the local player is hurt) + per-enemy attack cooldowns.
       let hitMarker = state.runtimeHitMarker;
       let killMarker = state.runtimeKillMarker;
       let hurt = state.runtimeHurt;
       const nextEnemyCd: Record<string, number> = {};
-      const meleeSwings = new Set<string>(); // characters that started an attack swing this frame (melee hit-test)
+      /** Characters that started a melee swing this frame → combo index used for damage scaling. */
+      const meleeSwings = new Map<string, number>();
       // On lethal damage: a rigged target (character/animator) goes LIMP like the player (ragdoll), so it crumples
       // instead of vanishing; a simple prop (e.g. the target dummy) just despawns.
       // Destructibles already shattered this frame, so one hit doesn't spawn chunks twice.
@@ -6251,6 +6286,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const nextTurnInPlace: Record<string, number> = {};
       const nextCoyote: Record<string, number> = {};
       const nextAttack: Record<string, number> = {};
+      const nextMeleeCombo: Record<string, number> = {};
+      const nextMeleeBuffer: Record<string, boolean> = {};
       const nextReload: Record<string, number> = {};
       const nextInteract: Record<string, number> = {};
       // Distance-since-last-footstep per character (carried across frames) → footstep audio cadence.
@@ -6691,6 +6728,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
             case 'query.grounded': {
               return position[1] <= (object.character?.groundLevel ?? 0) + 0.05;
+            }
+
+            case 'query.getTimeOfDay': {
+              const env = state.scenes.find((scene) => scene.id === state.activeSceneId)?.environment;
+              if (env?.dayCycleEnabled) return state.runtimeDayCycleTime ?? env.dayCycleTime ?? 0.35;
+              return env?.dayCycleTime ?? 0.35;
             }
 
             // Has Save: true when the slot holds saved data — gate a "Continue" button / skip-intro branch.
@@ -7856,6 +7899,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             if (node.data.nodeKind === 'action.setTimeScale') {
               // Clamped 0..4: 0 pauses (tick keeps running so the graph can unpause), <1 slow-mo, >1 fast-forward.
               pendingTimeScale = Math.min(4, Math.max(0, toNumber(valueInput(node, 'scale', Number(node.data.numberValue ?? 1)))));
+            }
+
+            if (node.data.nodeKind === 'action.setTimeOfDay') {
+              const t = wrapDayCycleTime(toNumber(valueInput(node, 'time', Number(node.data.timeOfDay ?? node.data.numberValue ?? 0.35))));
+              pendingTimeOfDay = t;
+              // Setting time of day also turns the cycle on so the sky actually updates.
+              pendingDayCycleEnable = true;
             }
 
             if (node.data.nodeKind === 'action.setQuality') {
@@ -9700,14 +9750,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
         if (rollRemaining > 0) nextRoll[object.id] = rollRemaining;
 
-        // Attack: a short pulse on the attack key that the animator turns into a punch / weapon swing.
+        // Attack / melee combo: a short pulse on the attack key. With meleeComboCount > 1, presses during
+        // the swing (within meleeComboWindow) buffer the next hit — Cubelands-style input buffering.
         let attackRemaining = state.runtimeAttack[object.id] ?? 0;
-        if (attackRemaining <= 0 && currentKeys[cc.keyAttack]) {
-          attackRemaining = 0.18;
-          if (cc.attackSoundId) pushSound(cc.attackSoundId, [...object.transform.position] as Vector3Tuple); // swing/whoosh on the swing's first frame
-          meleeSwings.add(object.id); // melee hit-test this frame (skipped later if a ranged weapon is out)
-        } else if (attackRemaining > 0) attackRemaining = Math.max(0, attackRemaining - delta);
+        let comboIndex = state.runtimeMeleeCombo[object.id] ?? 0;
+        let attackBuffered = Boolean(state.runtimeMeleeBuffer[object.id]);
+        const comboCount = Math.max(1, Math.min(3, Math.trunc(cc.meleeComboCount ?? 1)));
+        const comboWindow = Math.max(0.05, cc.meleeComboWindow ?? 0.35);
+        const startMeleeSwing = (index: number) => {
+          const pulse = 0.18 + index * 0.05;
+          attackRemaining = pulse;
+          comboIndex = index;
+          attackBuffered = false;
+          if (cc.attackSoundId) pushSound(cc.attackSoundId, [...object.transform.position] as Vector3Tuple);
+          meleeSwings.set(object.id, index);
+        };
+        if (attackRemaining <= 0) {
+          if (attackBuffered && comboIndex + 1 < comboCount) {
+            startMeleeSwing(comboIndex + 1);
+          } else if (currentKeys[cc.keyAttack]) {
+            startMeleeSwing(0);
+          } else {
+            comboIndex = 0;
+            attackBuffered = false;
+          }
+        } else {
+          const elapsed = Math.max(0, 0.18 + comboIndex * 0.05 - attackRemaining);
+          if (keyPressedThisTick(cc.keyAttack) && comboIndex + 1 < comboCount && elapsed <= comboWindow) {
+            attackBuffered = true;
+          }
+          attackRemaining = Math.max(0, attackRemaining - delta);
+          if (attackRemaining <= 0 && !(attackBuffered && comboIndex + 1 < comboCount)) {
+            comboIndex = 0;
+            attackBuffered = false;
+          }
+        }
         if (attackRemaining > 0) nextAttack[object.id] = attackRemaining;
+        if (comboIndex > 0 || attackRemaining > 0) nextMeleeCombo[object.id] = comboIndex;
+        if (attackBuffered) nextMeleeBuffer[object.id] = true;
 
         // Reload: a longer pulse on the reload key (ranged weapon) → the "reloading" param. On start it
         // refills `ammo` to `ammoMax` (if the character owns those instance variables).
@@ -10677,6 +10757,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
         const hasHealth = nextObjectVariables[other]?.health !== undefined || target.variables?.health !== undefined;
         if (hasHealth && !(other === playerId && cinematicActive)) {
+          if (
+            target.character &&
+            isRollInvulnerable(state.runtimeRoll[other] ?? nextRoll[other] ?? 0, resolveCharacter(target.character))
+          ) {
+            // Dodge i-frames: projectile still dies on contact, but no HP loss.
+          } else {
           const cur = toNumber(nextObjectVariables[other]?.health ?? target.variables?.health ?? 0);
           const next = Math.max(0, cur - proj.damage);
           mutableObjectVars(other, target.variables).health = next;
@@ -10693,6 +10779,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           if (proj.ownerId === playerId) hitMarker += 1;
           if (other === playerId) hurt += 1;
           if (proj.debug) prints.push(`🎯 ${obj.name} [${obj.id.slice(-4)}] hit ${target.name}: -${proj.damage} hp → ${next}${next <= 0 ? ' (destroyed)' : ''}`);
+          }
         } else if (proj.debug) {
           prints.push(`🎯 ${obj.name} [${obj.id.slice(-4)}] hit ${target.name} (no health var — no damage)`);
         }
@@ -10750,12 +10837,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               if (los && los.objectId !== playerId && los.distance < dist3 - 0.15) blocked = true;
             }
             if (near && !blocked && cd <= 0 && hasHealth) {
-              const dmg = toNumber(e.variables.enemyDamage ?? 10);
-              const cur = toNumber(nextObjectVariables[playerId]?.health ?? player.variables?.health ?? 0);
-              mutableObjectVars(playerId, player.variables).health = Math.max(0, cur - dmg);
-              recordDamage(playerId, Math.min(dmg, cur));
-              hurt += 1;
-              if (player.character?.hurtSoundId) pushSound(player.character.hurtSoundId, [...player.transform.position] as Vector3Tuple);
+              const playerIFrames =
+                player.character &&
+                isRollInvulnerable(state.runtimeRoll[playerId] ?? nextRoll[playerId] ?? 0, resolveCharacter(player.character));
+              if (!playerIFrames) {
+                const dmg = toNumber(e.variables.enemyDamage ?? 10);
+                const cur = toNumber(nextObjectVariables[playerId]?.health ?? player.variables?.health ?? 0);
+                mutableObjectVars(playerId, player.variables).health = Math.max(0, cur - dmg);
+                recordDamage(playerId, Math.min(dmg, cur));
+                hurt += 1;
+                if (player.character?.hurtSoundId) pushSound(player.character.hurtSoundId, [...player.transform.position] as Vector3Tuple);
+              }
               cd = 1;
             }
             if (cd > 0) nextEnemyCd[e.id] = cd;
@@ -10766,7 +10858,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Melee hits: a character that started an attack swing this frame WITHOUT a ranged weapon out (sword
       // swing / punch) damages every object with `health` in a front cone within meleeRange. Ranged shots are
       // handled by the projectile system, so attackers in RangedMode are skipped here.
-      for (const attackerId of meleeSwings) {
+      for (const [attackerId, swingComboIndex] of meleeSwings) {
         const attacker = resolvedObjectById.get(attackerId);
         if (!attacker?.character) continue;
         const ctrl = attacker.animator?.controllerId ? controllerById.get(attacker.animator.controllerId) : undefined;
@@ -10775,15 +10867,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         if (isRanged) continue; // the gun's projectiles deal the damage, not the swing
         const acc = resolveCharacter(attacker.character);
         const range = acc.meleeRange ?? 2.4;
-        const dmg = acc.meleeDamage ?? 34;
+        const dmg = meleeComboDamage(acc.meleeDamage ?? 34, swingComboIndex);
         const ap = attacker.transform.position;
         const facing = attacker.transform.rotation[1] - (acc.modelYawOffset ?? 0);
         const fwd: [number, number] = [Math.sin(facing), Math.cos(facing)];
         const meleeExclude = new Set(shotPassThrough); // projectiles + corpses never block a swing
         meleeExclude.add(attackerId);
+        let landedHit = false;
         for (const target of resolvedObjects) {
           if (target.id === attackerId || target.projectile || isRagdoll(target.id)) continue;
           if (target.id === playerId && cinematicActive) continue; // player is invulnerable during cutscenes
+          // Dodge i-frames: a rolling target inside its rollIFrame window takes no melee damage.
+          if (
+            target.character &&
+            isRollInvulnerable(state.runtimeRoll[target.id] ?? nextRoll[target.id] ?? 0, resolveCharacter(target.character))
+          ) {
+            continue;
+          }
           const hasHealth = nextObjectVariables[target.id]?.health !== undefined || target.variables?.health !== undefined;
           if (!hasHealth) continue;
           const dx = target.transform.position[0] - ap[0];
@@ -10804,6 +10904,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           const next = Math.max(0, cur - dmg);
           mutableObjectVars(target.id, target.variables).health = next;
           recordDamage(target.id, cur - next);
+          landedHit = true;
           spawned.push(makeDamageNumber(target.transform.position, dmg));
           spawned.push(makeImpactObject(target.transform.position, '#ffd27f'));
           if (attackerId === playerId) hitMarker += 1;
@@ -10813,6 +10914,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             if (attackerId === playerId && target.id !== playerId) killMarker += 1;
             killTarget(target, target.id); // explosive → blast; rig → ragdoll; prop → despawn
           }
+        }
+        // Hitstop: brief global slow-mo on a successful melee connect (wall-clock duration).
+        const hitstop = acc.meleeHitstop ?? 0;
+        if (landedHit && hitstop > 0) {
+          nextHitstop = Math.max(nextHitstop, hitstop);
+          const scale = Math.max(0.01, Math.min(1, acc.meleeHitstopScale ?? 0.05));
+          pendingTimeScale = Math.min(pendingTimeScale ?? 1, scale);
         }
       }
 
@@ -11102,10 +11210,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const groundedIdSet = new Set(groundedIds);
       const swimmingIdSet = new Set(swimmingIds);
       const climbingIdSet = new Set(climbingIds);
+      // Day cycle: advance the live clock (wall-clock so hitstop/slow-mo doesn't stall the sun), and
+      // write time / enable flags from Set Time Of Day into the scene environment when needed.
+      const activeEnv = state.scenes.find((scene) => scene.id === state.activeSceneId)?.environment;
+      let nextDayCycleTime = state.runtimeDayCycleTime ?? activeEnv?.dayCycleTime ?? 0.35;
+      if (pendingTimeOfDay !== undefined) nextDayCycleTime = pendingTimeOfDay;
+      else if (activeEnv?.dayCycleEnabled || pendingDayCycleEnable) {
+        const duration = Math.max(30, activeEnv?.dayCycleDuration ?? 360);
+        nextDayCycleTime = wrapDayCycleTime(nextDayCycleTime + wallDelta / duration);
+      }
+      if (pendingTimeOfDay !== undefined || pendingDayCycleEnable) {
+        pendingEnvironment = {
+          ...(pendingEnvironment ?? {}),
+          ...(pendingDayCycleEnable ? { dayCycleEnabled: true } : {}),
+          dayCycleTime: nextDayCycleTime,
+        };
+      }
+
       // IDENTITY GUARD (perf): when every object survived the tick with the same identity (idle scene —
       // nothing moved, scripted, spawned or despawned), keep the previous scenes array wholesale. This is
       // what stops every selectActiveObjects subscriber + the scene's React reconciliation from churning
-      // at 60fps while the world is still.
+      // at 60fps while the world is still. Day-cycle visuals are applied in SceneEnvironment from
+      // runtimeDayCycleTime without rewriting scenes every frame.
       const sceneObjectsUnchanged = !pendingEnvironment && keepArray(activeObjects, allObjects) === activeObjects;
       const nextScenes = sceneObjectsUnchanged
         ? state.scenes
@@ -11376,6 +11502,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             runtimeTurnInPlace: {},
             runtimeCoyote: {},
             runtimeAttack: {},
+            runtimeMeleeCombo: {},
+            runtimeMeleeBuffer: {},
+            runtimeHitstop: 0,
+            runtimeDayCycleTime: 0.35,
             runtimeReload: {},
             runtimeInteract: {},
             runtimeFootstep: {},
@@ -11450,6 +11580,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeTurnInPlace: keepRecord(state.runtimeTurnInPlace, nextTurnInPlace),
         runtimeCoyote: keepRecord(state.runtimeCoyote, nextCoyote),
         runtimeAttack: keepRecord(state.runtimeAttack, nextAttack),
+        runtimeMeleeCombo: keepRecord(state.runtimeMeleeCombo, nextMeleeCombo),
+        runtimeMeleeBuffer: keepRecord(state.runtimeMeleeBuffer, nextMeleeBuffer),
+        runtimeHitstop: nextHitstop,
+        runtimeDayCycleTime: nextDayCycleTime,
         runtimeReload: keepRecord(state.runtimeReload, nextReload),
         runtimeInteract: keepRecord(state.runtimeInteract, nextInteract),
         runtimeFootstep: keepRecord(state.runtimeFootstep, nextFootstep),
@@ -11735,6 +11869,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeTurnInPlace: {},
         runtimeCoyote: {},
         runtimeAttack: {},
+        runtimeMeleeCombo: {},
+        runtimeMeleeBuffer: {},
+        runtimeHitstop: 0,
+        runtimeDayCycleTime: 0.35,
       runtimeReload: {},
       runtimeInteract: {},
       runtimeFootstep: {},

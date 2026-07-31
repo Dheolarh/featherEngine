@@ -49,6 +49,7 @@ import {
   Rewind,
   Spline,
   Sparkles,
+  Sun,
   SlidersHorizontal,
   Terminal,
   Timer,
@@ -103,6 +104,7 @@ export const outputTypeOf: Partial<Record<GraphNodeKind, GraphValueType>> = {
   'logic.not': 'boolean',
   'query.grounded': 'boolean',
   'save.has': 'boolean',
+  'query.getTimeOfDay': 'number',
   'query.raycast': 'boolean',
   'query.overlapSphere': 'boolean',
   'query.cableTension': 'number',
@@ -270,6 +272,8 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'save.load': Database,
   'save.clear': Trash2,
   'save.has': Database,
+  'query.getTimeOfDay': Sun,
+  'action.setTimeOfDay': Sun,
   'action.setTimeScale': Timer,
   'action.startReplay': Rewind,
   'action.print': Terminal,
@@ -339,6 +343,7 @@ const valueProducerKinds = new Set<GraphNodeKind>([
   'input.driveInput',
   'query.vehicleSpeed',
   'query.grounded',
+  'query.getTimeOfDay',
   'save.has',
   'animator.getParam',
   'animator.getState',
@@ -575,6 +580,8 @@ const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: string 
       return [{ id: 'amount', label: 'Amount' }];
     case 'action.setTimeScale':
       return [{ id: 'scale', label: 'Scale' }];
+    case 'action.setTimeOfDay':
+      return [{ id: 'time', label: 'Time' }];
     case 'action.startReplay':
       return [{ id: 'seconds', label: 'Seconds' }];
     case 'action.setJointMotor':
@@ -679,6 +686,10 @@ function nodeDetail(
       return data.saveSlot ?? 'slot1';
     case 'action.setTimeScale':
       return `${Number(data.numberValue ?? 1)}×`;
+    case 'action.setTimeOfDay':
+      return `${Number(data.timeOfDay ?? data.numberValue ?? 0.35).toFixed(2)}`;
+    case 'query.getTimeOfDay':
+      return '0–1';
     case 'action.startReplay':
       return `${Number(data.numberValue ?? 8)}s`;
     case 'action.print':

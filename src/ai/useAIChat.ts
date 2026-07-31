@@ -189,6 +189,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Built third-person template';
     case 'create_meadow_template':
       return 'Built Meadows template';
+    case 'create_cube_realm_template':
+      return 'Built Cube Realm template';
     case 'create_first_person_template':
       return 'Built FPS template';
     case 'create_film_mode_template':

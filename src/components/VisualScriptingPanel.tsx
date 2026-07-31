@@ -109,7 +109,7 @@ export const nodeGroups: Array<{
   {
     title: 'Runtime',
     icon: Waypoints,
-    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Spawn Decal', 'Explode', 'Set Environment', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Start Replay', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Face Player', 'Print'],
+    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Spawn Decal', 'Explode', 'Set Environment', 'Get Time Of Day', 'Set Time Of Day', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Start Replay', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Face Player', 'Print'],
   },
   {
     title: 'Physics',
@@ -171,6 +171,9 @@ const environmentFields: Array<{ key: EnvPatchKey; label: string; type: 'color' 
   { key: 'environmentIntensity', label: 'Environment Intensity', type: 'number', step: 0.05, min: 0 },
   { key: 'wind', label: 'Wind', type: 'vector', step: 0.5 },
   { key: 'windTurbulence', label: 'Wind Turbulence', type: 'number', step: 0.05, min: 0 },
+  { key: 'dayCycleEnabled', label: 'Day Cycle', type: 'boolean' },
+  { key: 'dayCycleDuration', label: 'Day Length (s)', type: 'number', step: 30, min: 30 },
+  { key: 'dayCycleTime', label: 'Time Of Day', type: 'number', step: 0.01, min: 0 },
 ];
 
 const emptyValue = (type: GraphValueType): GraphValue => {
@@ -565,7 +568,8 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
     node.data.nodeKind === 'event.timer' ||
     node.data.nodeKind === 'logic.cooldown' ||
     node.data.nodeKind === 'logic.delay' ||
-    node.data.nodeKind === 'action.setTimeScale';
+    node.data.nodeKind === 'action.setTimeScale' ||
+    node.data.nodeKind === 'action.setTimeOfDay';
   const updatesParamName =
     node.data.nodeKind === 'animator.setFloat' ||
     node.data.nodeKind === 'animator.setBool' ||
@@ -842,13 +846,23 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
                       ? 'Seconds'
                     : node.data.nodeKind === 'action.setTimeScale'
                       ? 'Time scale (1 normal · 0 paused · 0.2 slow-mo)'
+                      : node.data.nodeKind === 'action.setTimeOfDay'
+                        ? 'Time of day (0 midnight · 0.25 sunrise · 0.5 noon)'
                       : 'Number'}
             </span>
             <input
               type="number"
               step="0.1"
-              value={node.data.numberValue ?? 0}
-              onChange={(event) => updateGraphNodeData(node.id, { numberValue: Number(event.target.value) })}
+              value={
+                node.data.nodeKind === 'action.setTimeOfDay'
+                  ? (node.data.timeOfDay ?? node.data.numberValue ?? 0.35)
+                  : (node.data.numberValue ?? 0)
+              }
+              onChange={(event) =>
+                node.data.nodeKind === 'action.setTimeOfDay'
+                  ? updateGraphNodeData(node.id, { timeOfDay: Number(event.target.value), numberValue: Number(event.target.value) })
+                  : updateGraphNodeData(node.id, { numberValue: Number(event.target.value) })
+              }
             />
           </label>
         )}

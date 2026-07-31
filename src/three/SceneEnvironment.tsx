@@ -9,6 +9,7 @@ import {
   sunPositionFromEnvironment,
   withSceneEnvironmentDefaults,
 } from './environmentSettings';
+import { withDayCycleVisuals } from './dayCycle';
 import { useEditorStore } from '../store/editorStore';
 import { qualityProfile } from './quality';
 import { resetAerialFog, setAerialFog } from './aerialFog';
@@ -161,7 +162,15 @@ export function SceneEnvironment({
   environment?: Partial<SceneEnvironmentSettings>;
   shadows?: boolean;
 }) {
-  const env = withSceneEnvironmentDefaults(environment);
+  const dayCycleTime = useEditorStore((state) => state.runtimeDayCycleTime);
+  const isPlaying = useEditorStore((state) => state.isPlaying);
+  // During Play (and when the cycle is on in the editor), drive sun/sky from the day-cycle ramp.
+  const env = useMemo(() => {
+    const resolved = withSceneEnvironmentDefaults(environment);
+    if (!resolved.dayCycleEnabled) return resolved;
+    const t = isPlaying ? dayCycleTime : (resolved.dayCycleTime ?? 0.35);
+    return withDayCycleVisuals(resolved, t);
+  }, [environment, dayCycleTime, isPlaying]);
   const sunPosition = useMemo(() => sunPositionFromEnvironment(env), [env]);
   const lightIntensity = Math.max(0, env.environmentIntensity);
   // IBL cubemap resolution follows the quality preset — sharper reflections at High/Epic.

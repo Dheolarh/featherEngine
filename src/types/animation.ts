@@ -382,6 +382,30 @@ export interface CharacterControllerComponent {
   meleeDamage?: number;
   /** Melee hit reach (world units) for the front-cone damage check. Default 2.4. */
   meleeRange?: number;
+  /**
+   * How many melee swings chain from buffered attack presses (1–3). 1 = single swing (legacy). With 2–3,
+   * pressing Attack again during a swing queues the next hit (Cubelands-style input buffering).
+   */
+  meleeComboCount?: number;
+  /**
+   * Seconds after a swing starts during which another Attack press is remembered for the next combo hit.
+   * Default 0.35. Ignored when meleeComboCount is 1.
+   */
+  meleeComboWindow?: number;
+  /**
+   * On a successful melee hit, briefly dip global `runtimeTimeScale` for this many real seconds (hitstop).
+   * 0 = off (default). ~0.09 matches a snappy action-game feel.
+   */
+  meleeHitstop?: number;
+  /** Time-scale used during melee hitstop (default 0.05). Clamped to ≥ 0.01. */
+  meleeHitstopScale?: number;
+  /**
+   * Invulnerability during a dodge roll: seconds from roll START when i-frames begin.
+   * Pair with `rollIFrameEnd`. Both 0 (default) = no i-frames.
+   */
+  rollIFrameStart?: number;
+  /** Seconds from roll START when i-frames end (must be > rollIFrameStart). */
+  rollIFrameEnd?: number;
   /** Aim key (held) — drives the "aiming" parameter (ranged-weapon aim pose). */
   keyAim: string;
   /** Reload key — pulses the "reloading" parameter (ranged-weapon reload). */

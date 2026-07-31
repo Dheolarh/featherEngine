@@ -46,6 +46,9 @@ export const defaultSceneEnvironment = (): SceneEnvironmentSettings => ({
   contactShadowY: 0,
   contactShadowScale: 14,
   contactShadowOpacity: 0.36,
+  dayCycleEnabled: false,
+  dayCycleDuration: 360,
+  dayCycleTime: 0.35,
 });
 
 export function withSceneEnvironmentDefaults(
