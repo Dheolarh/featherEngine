@@ -190,6 +190,8 @@ export type GraphNodeKind =
   | 'action.setQuality'
   | 'action.setTimeScale'
   | 'action.setEnvironment'
+  | 'action.setTimeOfDay'
+  | 'query.getTimeOfDay'
   | 'action.startReplay';
 
 export interface NodeForgeNodeData extends Record<string, unknown> {
@@ -330,7 +332,12 @@ export interface NodeForgeNodeData extends Record<string, unknown> {
     /** Global wind force [x,y,z] — drives cloth + wind-affected dynamic bodies. Change it live to gust/storm. */
     wind: Vector3Tuple;
     windTurbulence: number;
+    dayCycleEnabled: boolean;
+    dayCycleDuration: number;
+    dayCycleTime: number;
   }>;
+  /** action.setTimeOfDay: normalized time of day in [0, 1). */
+  timeOfDay?: number;
   /** action.setVisible: whether the target object is shown (false hides it during Play). */
   visible?: boolean;
   /** action.spawnAttached: weapon model asset to spawn + which bone/socket on the owner to attach it to,

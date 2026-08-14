@@ -11,13 +11,25 @@ export const execTrace = {
   enabled: false,
   /** nodeId → performance.now() timestamp of its most recent execution. */
   nodes: new Map<string, number>(),
+  /** nodeId → executions since the last panel poll window (cleared by resetExecWindowCounts). */
+  counts: new Map<string, number>(),
 };
 
 export function markExec(nodeId: string) {
-  if (execTrace.enabled) execTrace.nodes.set(nodeId, performance.now());
+  if (!execTrace.enabled) return;
+  execTrace.nodes.set(nodeId, performance.now());
+  execTrace.counts.set(nodeId, (execTrace.counts.get(nodeId) ?? 0) + 1);
+}
+
+/** Snapshot helper: clear per-window hit counts after the editor has read them. */
+export function resetExecWindowCounts() {
+  execTrace.counts.clear();
 }
 
 export function setExecTraceEnabled(enabled: boolean) {
   execTrace.enabled = enabled;
-  if (!enabled) execTrace.nodes.clear();
+  if (!enabled) {
+    execTrace.nodes.clear();
+    execTrace.counts.clear();
+  }
 }

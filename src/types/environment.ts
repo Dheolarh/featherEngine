@@ -155,6 +155,19 @@ export interface SceneEnvironmentSettings {
   sunAzimuth: number;
   /** Sun height in degrees. */
   sunElevation: number;
+  /**
+   * When on, Play advances `dayCycleTime` and drives sun/sky colors from a built-in day ramp
+   * (Cubelands-style day/night). Authored sunElevation/sunColor remain the editor preview when the
+   * cycle is off, and the starting snapshot when it turns on.
+   */
+  dayCycleEnabled?: boolean;
+  /** Real seconds for a full 0→1 day loop while Playing. Default 360 (~6 minutes). */
+  dayCycleDuration?: number;
+  /**
+   * Normalized time of day in [0, 1): 0 = midnight, 0.25 ≈ sunrise, 0.5 = noon, 0.75 ≈ sunset.
+   * Scrubbed in Scene Settings; advanced automatically in Play when dayCycleEnabled.
+   */
+  dayCycleTime?: number;
   fogEnabled: boolean;
   fogColor: string;
   fogNear: number;

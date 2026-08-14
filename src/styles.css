@@ -3645,6 +3645,26 @@ body.is-scrubbing * {
   cursor: help;
 }
 
+/* Exec hit count during Play: how many times this node ran in the last poll window. */
+.nfn-hit-badge {
+  position: absolute;
+  top: -10px;
+  left: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: #ffd34d;
+  color: #1a1400;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-3xs);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 2px 8px rgba(255, 211, 77, 0.45);
+  pointer-events: none;
+}
+
 /* Live output value shown on a value node during Play (fed by the value trace). */
 .nfn-live-value {
   position: absolute;
@@ -5544,6 +5564,15 @@ body.is-scrubbing * {
   font: inherit;
   font-size: var(--text-sm);
   outline: none;
+}
+
+.node-search-filter-hint {
+  padding: 5px 11px 7px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--text-3xs);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .node-search-list {

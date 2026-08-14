@@ -405,6 +405,41 @@ export function SceneSettingsPanel() {
             onChange={(event) => updateEnvironment({ sunElevation: num(event.target.value, environment.sunElevation) })}
           />
         </label>
+        <label className="field-row" title="Animate sun/sky over time while Playing (Cubelands-style day/night).">
+          <span>Day Cycle</span>
+          <input
+            type="checkbox"
+            checked={environment.dayCycleEnabled ?? false}
+            onChange={(event) => updateEnvironment({ dayCycleEnabled: event.target.checked })}
+          />
+        </label>
+        {(environment.dayCycleEnabled ?? false) && (
+          <>
+            <label className="field-row">
+              <span>Day Length (s)</span>
+              <input
+                type="number"
+                min={30}
+                step={30}
+                value={environment.dayCycleDuration ?? 360}
+                onChange={(event) => updateEnvironment({ dayCycleDuration: num(event.target.value, environment.dayCycleDuration ?? 360) })}
+              />
+            </label>
+            <label className="field-row" title="0 = midnight · 0.25 ≈ sunrise · 0.5 = noon · 0.75 ≈ sunset">
+              <span>Time of Day</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={environment.dayCycleTime ?? 0.35}
+                onChange={(event) => updateEnvironment({ dayCycleTime: num(event.target.value, environment.dayCycleTime ?? 0.35) })}
+              />
+              <em style={{ marginLeft: 8, opacity: 0.7 }}>{(environment.dayCycleTime ?? 0.35).toFixed(2)}</em>
+            </label>
+            <p className="field-hint">While Day Cycle is on, sun/sky colors follow this clock. Scrub to preview; Play advances it.</p>
+          </>
+        )}
         <label className="field-row">
           <span><CloudFog size={14} aria-hidden /> Fog</span>
           <input type="checkbox" checked={environment.fogEnabled} onChange={(event) => updateEnvironment({ fogEnabled: event.target.checked })} />

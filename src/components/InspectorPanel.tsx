@@ -1512,9 +1512,24 @@ function CharacterSection({
           <h4 className="inspector-subhead">Roll / Dodge</h4>
           {num('Roll Speed', 'rollSpeed')}
           {num('Roll Duration', 'rollDuration', 0.05)}
+          {num('I-Frame Start', 'rollIFrameStart', 0.02, 0)}
+          {num('I-Frame End', 'rollIFrameEnd', 0.02, 0)}
           <p className="field-hint">
             Roll distance ≈ {(cc.rollSpeed * cc.rollDuration).toFixed(1)} units (speed × duration). The dodge goes
-            toward the held movement direction (sideways/backwards too — vital while locked on).
+            toward the held movement direction (sideways/backwards too — vital while locked on). I-frames are seconds
+            from roll start (e.g. 0.08–0.42); both 0 = no invulnerability.
+          </p>
+
+          <h4 className="inspector-subhead">Melee Combat</h4>
+          {num('Melee Damage', 'meleeDamage', 1, 34)}
+          {num('Melee Range', 'meleeRange', 0.1, 2.4)}
+          {num('Combo Hits', 'meleeComboCount', 1, 1)}
+          {(cc.meleeComboCount ?? 1) > 1 && num('Combo Buffer (s)', 'meleeComboWindow', 0.05, 0.35)}
+          {num('Hitstop (s)', 'meleeHitstop', 0.01, 0)}
+          {(cc.meleeHitstop ?? 0) > 0 && num('Hitstop Scale', 'meleeHitstopScale', 0.01, 0.05)}
+          <p className="field-hint">
+            Combo Hits 1–3: Attack again during a swing to chain (input buffer). Hitstop briefly slows the whole game
+            on a successful melee connect (0 = off).
           </p>
 
           <h4 className="inspector-subhead">Sprint Slide</h4>

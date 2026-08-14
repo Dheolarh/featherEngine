@@ -49,6 +49,7 @@ import {
   Rewind,
   Spline,
   Sparkles,
+  Sun,
   SlidersHorizontal,
   Terminal,
   Timer,
@@ -64,6 +65,9 @@ import {
 } from 'lucide-react';
 import type { GraphNodeKind, GraphNodeTone, GraphValueType, NodeForgeNode } from '../types';
 import { keyLabelByCode } from '../utils/keyboardCodes';
+import { outputTypeOf } from '../store/editor/wireTypes';
+
+export { outputTypeOf, outputTypeForHandle, inputTypeForHandle, valueTypesCompatible } from '../store/editor/wireTypes';
 
 /** Wire/handle colors per data type. 'any' = type not statically known (e.g. variable.get). */
 export const VALUE_TYPE_COLORS: Record<GraphValueType | 'any', string> = {
@@ -74,60 +78,6 @@ export const VALUE_TYPE_COLORS: Record<GraphValueType | 'any', string> = {
   any: '#9aa6c0',
 };
 export const EXEC_WIRE_COLOR = '#d6deef';
-
-/** Static output type of a value-producing node, used to color its value-out port and outgoing wires. */
-export const outputTypeOf: Partial<Record<GraphNodeKind, GraphValueType>> = {
-  'value.number': 'number',
-  'value.random': 'number',
-  'math.add': 'number',
-  'math.subtract': 'number',
-  'math.multiply': 'number',
-  'math.divide': 'number',
-  'math.modulo': 'number',
-  'math.clamp': 'number',
-  'math.lerp': 'number',
-  'math.distance': 'number',
-  'math.mapRange': 'number',
-  'math.floor': 'number',
-  'math.vectorLength': 'number',
-  'math.dot': 'number',
-  'animator.getParam': 'number',
-  'query.vehicleSpeed': 'number',
-  'event.receiveDamage': 'number',
-  'value.string': 'string',
-  'animator.getState': 'string',
-  'value.boolean': 'boolean',
-  'logic.compare': 'boolean',
-  'logic.and': 'boolean',
-  'logic.or': 'boolean',
-  'logic.not': 'boolean',
-  'query.grounded': 'boolean',
-  'save.has': 'boolean',
-  'query.raycast': 'boolean',
-  'query.overlapSphere': 'boolean',
-  'query.cableTension': 'number',
-  'math.abs': 'number',
-  'math.min': 'number',
-  'math.max': 'number',
-  'math.round': 'number',
-  'math.power': 'number',
-  'math.sin': 'number',
-  'math.cos': 'number',
-  'string.append': 'string',
-  'value.vector3': 'vector3',
-  'ai.playerLocation': 'vector3',
-  'input.move': 'vector3',
-  'input.driveInput': 'vector3',
-  'math.vectorAdd': 'vector3',
-  'math.vectorSubtract': 'vector3',
-  'math.vectorScale': 'vector3',
-  'math.normalize': 'vector3',
-  'math.makeVector': 'vector3',
-  'action.getPosition': 'vector3',
-  'action.getRotation': 'vector3',
-  'action.getScale': 'vector3',
-  'query.velocity': 'vector3',
-};
 
 const valueTypeLabels: Record<GraphValueType | 'any', string> = {
   number: 'Number',
@@ -270,6 +220,8 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'save.load': Database,
   'save.clear': Trash2,
   'save.has': Database,
+  'query.getTimeOfDay': Sun,
+  'action.setTimeOfDay': Sun,
   'action.setTimeScale': Timer,
   'action.startReplay': Rewind,
   'action.print': Terminal,
@@ -280,7 +232,7 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'variable.setObject': Database,
 };
 
-const valueProducerKinds = new Set<GraphNodeKind>([
+export const valueProducerKinds = new Set<GraphNodeKind>([
   'logic.compare',
   'logic.and',
   'logic.or',
@@ -339,13 +291,14 @@ const valueProducerKinds = new Set<GraphNodeKind>([
   'input.driveInput',
   'query.vehicleSpeed',
   'query.grounded',
+  'query.getTimeOfDay',
   'save.has',
   'animator.getParam',
   'animator.getState',
   'ai.playerLocation',
 ]);
 
-const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: string }> => {
+export const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: string }> => {
   switch (kind) {
     case 'logic.branch':
       return [{ id: 'condition', label: 'Condition' }];
@@ -575,6 +528,8 @@ const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: string 
       return [{ id: 'amount', label: 'Amount' }];
     case 'action.setTimeScale':
       return [{ id: 'scale', label: 'Scale' }];
+    case 'action.setTimeOfDay':
+      return [{ id: 'time', label: 'Time' }];
     case 'action.startReplay':
       return [{ id: 'seconds', label: 'Seconds' }];
     case 'action.setJointMotor':
@@ -679,6 +634,10 @@ function nodeDetail(
       return data.saveSlot ?? 'slot1';
     case 'action.setTimeScale':
       return `${Number(data.numberValue ?? 1)}×`;
+    case 'action.setTimeOfDay':
+      return `${Number(data.timeOfDay ?? data.numberValue ?? 0.35).toFixed(2)}`;
+    case 'query.getTimeOfDay':
+      return '0–1';
     case 'action.startReplay':
       return `${Number(data.numberValue ?? 8)}s`;
     case 'action.print':
@@ -789,6 +748,11 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
       {runtimeError && (
         <span className="nfn-error-badge" title={runtimeError} aria-label={`Runtime error: ${runtimeError}`}>
           <AlertTriangle size={12} aria-hidden /> error
+        </span>
+      )}
+      {typeof data.execHitCount === 'number' && data.execHitCount > 1 && (
+        <span className="nfn-hit-badge" title={`Executed ${data.execHitCount}× in the last moment`} aria-label={`Executed ${data.execHitCount} times`}>
+          ×{data.execHitCount}
         </span>
       )}
       {inputPinCount > 0 && <span className="nfn-port-rail in" aria-hidden />}

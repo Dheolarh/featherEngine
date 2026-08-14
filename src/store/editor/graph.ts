@@ -128,6 +128,8 @@ export const nodeDescriptions: Record<string, string> = {
   'Load Game': 'Restores persistent variables from local save storage.',
   'Has Save': 'Outputs true when the save slot holds data — gate a "Continue" button or skip an intro.',
   'Set Time Scale': 'Sets global game speed: 1 = normal, 0 = paused (input/UI keep running), 0.2 = slow-mo.',
+  'Get Time Of Day': 'Outputs the active scene\'s normalized time of day (0–1): 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. Follows the day cycle during Play.',
+  'Set Time Of Day': 'Sets normalized time of day (0–1) and optionally enables the day cycle. Drives sun/sky when Day Cycle is on.',
   'Start Replay': 'Plays an instant replay of the last few seconds (freezes the sim, glides the meshes through the recorded motion). Wire the seconds into the node or set it; great on a goal/kill/crash event.',
   'Clear Save': 'Deletes a local save slot.',
   Print: 'Logs a message to the on-screen console during Play.',
@@ -275,6 +277,8 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Clear Save': 'save.clear',
   'Has Save': 'save.has',
   'Set Time Scale': 'action.setTimeScale',
+  'Get Time Of Day': 'query.getTimeOfDay',
+  'Set Time Of Day': 'action.setTimeOfDay',
   'Start Replay': 'action.startReplay',
   Print: 'action.print',
   'Show UI': 'ui.show',
@@ -465,6 +469,18 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
       return {
         label: `Set Time Scale: ${Number(data.numberValue ?? 1)}`,
         description: 'Sets the global game speed. 1 = normal, 0 = paused (scripts still receive input so they can unpause), values between = slow motion. Resets to 1 when a scene loads.',
+      };
+    case 'query.getTimeOfDay':
+      return {
+        label: 'Get Time Of Day',
+        description:
+          'Outputs normalized time of day (0–1). During Play with Day Cycle on this follows the live clock; otherwise it reads the scene\'s authored dayCycleTime.',
+      };
+    case 'action.setTimeOfDay':
+      return {
+        label: `Set Time Of Day: ${Number(data.timeOfDay ?? data.numberValue ?? 0.35).toFixed(2)}`,
+        description:
+          'Sets normalized time of day (0–1) on the active scene. When Day Cycle is enabled, sun/sky update immediately. Wire a Number into Time, or set the node field.',
       };
     case 'action.startReplay':
       return {
@@ -1163,6 +1179,7 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
     nodeKind === 'query.cableTension' ||
     nodeKind === 'query.velocity' ||
     nodeKind === 'query.grounded' ||
+    nodeKind === 'query.getTimeOfDay' ||
     nodeKind === 'save.has' ||
     nodeKind === 'animator.getParam' ||
     nodeKind === 'animator.getState' ||

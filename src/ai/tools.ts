@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { type UITemplateKind, type UIThemeKind } from '../store/editor/ui';
+import { inputTypeForHandle, outputTypeForHandle, valueTypesCompatible } from '../store/editor/wireTypes';
 import { undo as undoHistory, redo as redoHistory } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
 import { getPlatform } from '../platform';
@@ -35,6 +36,7 @@ import { graphToFeatherScript } from '../scripting/featherScript';
 import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { createThirdPersonTemplate } from '../project/thirdPersonTemplate';
 import { createMeadowTemplate } from '../project/meadowTemplate';
+import { createCubeRealmTemplate } from '../project/cubeRealmTemplate';
 import { createFirstPersonTemplate } from '../project/firstPersonTemplate';
 import { createFilmModeTemplate } from '../project/filmModeTemplate';
 import { createDrivingTemplate } from '../project/drivingTemplate';
@@ -178,6 +180,17 @@ const environmentPatchSchema = z.object({
   contactShadowY: z.number().optional().describe('World Y the contact-shadow plane sits at — match the ground height. Default 0.'),
   contactShadowScale: z.number().min(1).optional().describe('Footprint size of the contact-shadow plane in world units. Default 14; raise for big scenes.'),
   contactShadowOpacity: z.number().min(0).max(1).optional().describe('Contact shadow darkness 0–1. Default 0.36.'),
+  dayCycleEnabled: z
+    .boolean()
+    .optional()
+    .describe('When on, Play advances time of day and drives sun/sky from a built-in day/night ramp.'),
+  dayCycleDuration: z.number().min(30).optional().describe('Real seconds for a full day loop while Playing. Default 360 (~6 min).'),
+  dayCycleTime: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe('Normalized time of day 0–1 (0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset).'),
 });
 const runtimeEnvironmentPatchSchema = environmentPatchSchema.pick({
   skyTopColor: true,
@@ -203,6 +216,9 @@ const runtimeEnvironmentPatchSchema = environmentPatchSchema.pick({
   volumetricMaxDistance: true,
   wind: true,
   windTurbulence: true,
+  dayCycleEnabled: true,
+  dayCycleDuration: true,
+  dayCycleTime: true,
 });
 const waterPatchSchema = z.object({
   enabled: z.boolean().optional(),
@@ -401,6 +417,7 @@ const NODE_LABELS = [
   'Compare',
   'AND',
   'OR',
+  'Cast',
   'Add',
   'Clamp',
   'Lerp',
@@ -416,6 +433,7 @@ const NODE_LABELS = [
   'Fire Event',
   'Apply Force',
   'Spawn Object',
+  'Spawn Prefab',
   'Destroy Object',
   'Play Sound',
   'Set Material Color',
@@ -443,8 +461,15 @@ const NODE_LABELS = [
   'Set Movement Mode',
   'Set Visible',
   'Set Active',
+  'Burst Particles',
+  'Set Particles Emitting',
+  'Spawn Particle System',
+  'Screen Flash',
+  'Set Environment',
   'Distance To Player',
   'Direction To Player',
+  'Player Location',
+  'Has Line Of Sight',
   'Face Player',
   'Cooldown',
   'For Loop',
@@ -465,6 +490,8 @@ const NODE_LABELS = [
   'Clear Save',
   'Has Save',
   'Set Time Scale',
+  'Get Time Of Day',
+  'Set Time Of Day',
   'Start Replay',
   'Print',
   'Show UI',
@@ -493,6 +520,7 @@ const NODE_LABELS = [
   'Get Rotation',
   'Get Scale',
   'Apply Impulse',
+  'Apply Torque',
   'Set Physics',
   'Set Velocity',
   'Get Velocity',
@@ -500,6 +528,8 @@ const NODE_LABELS = [
   'Find Actor By Tag',
   'Raycast',
   'Overlap Sphere',
+  'Sphere Cast',
+  'Set Joint Motor',
   'Cut Cable',
   'Set Cable Length',
   'Get Cable Tension',
@@ -543,6 +573,7 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   Compare: 'Logic',
   AND: 'Logic',
   OR: 'Logic',
+  Cast: 'Logic',
   Add: 'Math',
   Clamp: 'Math',
   Lerp: 'Math',
@@ -558,6 +589,7 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Fire Event': 'Runtime',
   'Apply Force': 'Physics',
   'Spawn Object': 'Runtime',
+  'Spawn Prefab': 'Runtime',
   'Destroy Object': 'Runtime',
   'Play Sound': 'Audio',
   'Set Material Color': 'Runtime',
@@ -585,8 +617,15 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Set Movement Mode': 'Runtime',
   'Set Visible': 'Runtime',
   'Set Active': 'Runtime',
+  'Burst Particles': 'Runtime',
+  'Set Particles Emitting': 'Runtime',
+  'Spawn Particle System': 'Runtime',
+  'Screen Flash': 'Runtime',
+  'Set Environment': 'Runtime',
   'Distance To Player': 'Runtime',
   'Direction To Player': 'Runtime',
+  'Player Location': 'Runtime',
+  'Has Line Of Sight': 'Runtime',
   'Face Player': 'Runtime',
   Cooldown: 'Logic',
   'For Loop': 'Logic',
@@ -607,6 +646,8 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Clear Save': 'Persistence',
   'Has Save': 'Persistence',
   'Set Time Scale': 'Runtime',
+  'Get Time Of Day': 'Runtime',
+  'Set Time Of Day': 'Runtime',
   'Start Replay': 'Runtime',
   Print: 'Runtime',
   'Show UI': 'UI',
@@ -635,6 +676,7 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Get Rotation': 'Runtime',
   'Get Scale': 'Runtime',
   'Apply Impulse': 'Physics',
+  'Apply Torque': 'Physics',
   'Set Physics': 'Physics',
   'Set Velocity': 'Physics',
   'Get Velocity': 'Physics',
@@ -642,6 +684,8 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Find Actor By Tag': 'Runtime',
   Raycast: 'Runtime',
   'Overlap Sphere': 'Physics',
+  'Sphere Cast': 'Physics',
+  'Set Joint Motor': 'Physics',
   'Cut Cable': 'Physics',
   'Set Cable Length': 'Physics',
   'Get Cable Tension': 'Physics',
@@ -2172,6 +2216,39 @@ const rawEngineTools = {
       keyAttack: z.string().optional(),
       meleeDamage: z.number().optional().describe('Melee damage. Default 34.'),
       meleeRange: z.number().optional().describe('Melee range. Default 2.4.'),
+      meleeComboCount: z
+        .number()
+        .int()
+        .min(1)
+        .max(3)
+        .optional()
+        .describe('Melee combo chain length 1–3. >1 enables attack input buffering between hits. Default 1.'),
+      meleeComboWindow: z
+        .number()
+        .min(0.05)
+        .optional()
+        .describe('Seconds after a swing starts during which another Attack press queues the next combo hit. Default 0.35.'),
+      meleeHitstop: z
+        .number()
+        .min(0)
+        .optional()
+        .describe('Wall-clock seconds of global slow-mo on a successful melee hit (0 = off). ~0.09 feels snappy.'),
+      meleeHitstopScale: z
+        .number()
+        .min(0.01)
+        .max(1)
+        .optional()
+        .describe('runtimeTimeScale during melee hitstop. Default 0.05.'),
+      rollIFrameStart: z
+        .number()
+        .min(0)
+        .optional()
+        .describe('Seconds from roll start when dodge invulnerability begins. Pair with rollIFrameEnd.'),
+      rollIFrameEnd: z
+        .number()
+        .min(0)
+        .optional()
+        .describe('Seconds from roll start when dodge invulnerability ends. Both 0 = no i-frames.'),
       keyAim: z.string().optional(),
       keyReload: z.string().optional(),
       keyInteract: z.string().optional(),
@@ -2430,6 +2507,18 @@ const rawEngineTools = {
       return id
         ? `Created Meadows — player objectId ${id}. Press Play and walk (WASD, Shift sprint, mouse look) through the field: the grass and flowers part and flatten around you and spring back, travelling wind gusts sweep across the blades, the trees sway in the breeze, and distant hills dissolve into the sky. Tune the terrain's Foliage tab (Player Interaction, Wildflowers, density) to taste.`
         : `Couldn't build the meadow template.`;
+    },
+  }),
+
+  create_cube_realm_template: tool({
+    description:
+      'Build the "Cube Realm" Cubelands-inspired action slice. Spawns a third-person hero with melee combo (3-hit buffer), hitstop, and roll i-frames; enables a 6-minute day/night cycle; places smashable crates, chase enemies (grunts + a Warden), and a shrine pressure-plate → gate puzzle. All combat/day-cycle knobs are Inspector-editable after creation. Use for Zelda-like / action-adventure starters.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const id = await createCubeRealmTemplate();
+      return id
+        ? `Created Cube Realm — hero objectId ${id}. Press Play: WASD move, Q roll (i-frames), LMB melee combo (3 hits + hitstop), T lock-on. Smash crates, fight grunts, stand on the cyan shrine plate to lift the gate, then challenge the Warden. Tune Combo/Hitstop/I-frames on the Character Controller and Day Cycle in Scene Settings.`
+        : `Couldn't build the Cube Realm template.`;
     },
   }),
 
@@ -4396,6 +4485,12 @@ const rawEngineTools = {
       startingHealth: z.number().optional().describe('On Receive Damage: give the owning object this HP pool (dies at 0) without a manual health var. 0 = react-only (never dies).'),
       qualityLevel: z.enum(['Low', 'Medium', 'High', 'Epic']).optional().describe('Set Quality: scalability preset to apply at runtime.'),
       damageAmount: z.number().optional().describe('Apply Damage: HP to subtract from the target\'s health variable. Default 10. Use targetObjectId ($self/$player/$trigger/$cast or an id) to pick who takes it.'),
+      timeOfDay: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe('Set Time Of Day: normalized time 0–1 (0 midnight, 0.25 sunrise, 0.5 noon). Also enables the day cycle.'),
       envPatch: runtimeEnvironmentPatchSchema.optional().describe('Set Environment: runtime patch over sky/fog/sun fields. Include only fields to change.'),
       physicsEnabled: z.boolean().optional().describe('Set Physics: enable/disable target physics body during Play.'),
       physicsBodyType: z.enum(['dynamic', 'fixed', 'kinematic']).optional().describe('Set Physics: body type.'),
@@ -4471,6 +4566,7 @@ const rawEngineTools = {
       startingHealth,
       qualityLevel,
       damageAmount,
+      timeOfDay,
       envPatch,
       physicsEnabled,
       physicsBodyType,
@@ -4552,6 +4648,7 @@ const rawEngineTools = {
         startingHealth,
         qualityLevel,
         damageAmount,
+        timeOfDay,
         envPatch: (envPatch ? { ...envPatch, ...(envPatch.wind ? { wind: asVec3(envPatch.wind) } : {}) } : undefined) as NodeForgeNodeData['envPatch'],
         physicsEnabled,
         physicsBodyType,
@@ -4571,7 +4668,7 @@ const rawEngineTools = {
 
   connect_nodes: tool({
     description:
-      'Connect two nodes in a blueprint. Omit handles for execution flow. For typed value flow, use sourceHandle "value-out" and a targetHandle such as value, condition, amount, vector, message, rowKey, a, b, min, max, or t.',
+      'Connect two nodes in a blueprint. Omit handles for execution flow. For typed value flow, use sourceHandle "value-out" and a targetHandle such as value, condition, amount, vector, message, rowKey, a, b, min, max, or t. Value types must match (or be any); number cannot wire into a vector3 pin.',
     inputSchema: z.object({
       blueprintId: z.string(),
       sourceId: z.string(),
@@ -4581,6 +4678,28 @@ const rawEngineTools = {
     }),
     execute: async ({ blueprintId, sourceId, targetId, sourceHandle, targetHandle }) => {
       if (!findBlueprint(blueprintId)) return `No blueprint with id ${blueprintId}.`;
+      const graph = store().graphs.find((g) => g.id === findBlueprint(blueprintId)!.graphId);
+      const sourceNode = graph?.nodes.find((n) => n.id === sourceId);
+      const targetNode = graph?.nodes.find((n) => n.id === targetId);
+      if (!sourceNode || !targetNode) return `Missing source or target node.`;
+      const srcExec = (sourceHandle ?? 'exec-out').startsWith('exec');
+      const tgtExec = (targetHandle ?? 'exec-in').startsWith('exec');
+      if (srcExec !== tgtExec) return `Cannot connect exec to value (or vice versa).`;
+      if (!srcExec) {
+        const sourceType = outputTypeForHandle(
+          sourceNode.data.nodeKind,
+          sourceHandle ?? 'value-out',
+          sourceNode.data.valueType as GraphValueType | undefined,
+        );
+        const targetType = inputTypeForHandle(
+          targetNode.data.nodeKind,
+          targetHandle ?? 'value',
+          targetNode.data.valueType as GraphValueType | undefined,
+        );
+        if (!valueTypesCompatible(sourceType, targetType)) {
+          return `Type mismatch: ${sourceType} cannot connect to ${targetType} (${sourceHandle ?? 'value-out'} → ${targetHandle}).`;
+        }
+      }
       store().connectGraphNodes(blueprintId, sourceId, targetId, sourceHandle, targetHandle);
       return targetHandle
         ? `Connected value ${sourceId}:${sourceHandle ?? 'value-out'} -> ${targetId}:${targetHandle}.`
@@ -4651,6 +4770,12 @@ const rawEngineTools = {
       startingHealth: z.number().optional().describe('On Receive Damage: HP pool for the owning object (dies at 0); 0 = react-only.'),
       qualityLevel: z.enum(['Low', 'Medium', 'High', 'Epic']).optional().describe('Set Quality: scalability preset to apply at runtime.'),
       damageAmount: z.number().optional().describe('Apply Damage: HP to subtract from the target\'s health variable.'),
+      timeOfDay: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe('Set Time Of Day: normalized time 0–1 (also enables the day cycle).'),
       envPatch: runtimeEnvironmentPatchSchema.optional().describe('Set Environment: runtime patch over sky/fog/sun fields. Include only fields to change.'),
       physicsEnabled: z.boolean().optional().describe('Set Physics: enable/disable target physics body during Play.'),
       physicsBodyType: z.enum(['dynamic', 'fixed', 'kinematic']).optional().describe('Set Physics: body type.'),
