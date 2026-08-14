@@ -429,7 +429,8 @@
 :root[data-theme="light"] .project-pill,
 :root[data-theme="light"] .socket-item,
 :root[data-theme="light"] .ai-settings,
-:root[data-theme="light"] .launcher-recent button,
+:root[data-theme="light"] .launcher-recent-main,
+:root[data-theme="light"] .launcher-recent-action,
 :root[data-theme="light"] .terrain-layer-list button,
 :root[data-theme="light"] .terrain-brush-toggle,
 :root[data-theme="light"] .ui-add-menu button,
@@ -1256,6 +1257,45 @@ button {
   background: color-mix(in srgb, var(--danger) 30%, rgba(8, 10, 15, 0.72));
 }
 
+.viewport-maximize {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  z-index: 6;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  transform: translateX(calc(-50% - 78px));
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(8, 10, 15, 0.72);
+  color: var(--text);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  transition:
+    transform var(--motion) var(--ease),
+    background var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
+}
+
+.viewport-maximize:hover {
+  transform: translateX(calc(-50% - 78px)) translateY(-1px);
+  border-color: var(--border-strong);
+}
+
+.viewport-maximize.active {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, rgba(8, 10, 15, 0.72));
+  color: #fff;
+}
+
+.viewport-panel.is-playing {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
 /* Toolbar Export dropdown popover hangs off the right edge. */
 .export-popover {
   right: 0;
@@ -1524,6 +1564,26 @@ button {
   white-space: nowrap;
 }
 
+.hierarchy-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 6px;
+  background: rgba(8, 10, 15, 0.55);
+  color: var(--text);
+  font: inherit;
+}
+
+.hierarchy-list:focus {
+  outline: none;
+}
+
+.hierarchy-list:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
 .hierarchy-row:hover,
 .hierarchy-row.selected {
   color: var(--text);
@@ -1748,6 +1808,45 @@ button {
   margin-bottom: 10px;
 }
 
+.vector-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vector-reset {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.vector-reset:hover {
+  border-color: var(--border);
+  color: var(--text);
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.transform-reset-all {
+  margin-bottom: 8px;
+}
+
+.transform-reset-all .full-button.compact {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--text-2xs);
+}
+
 .vector-field > span,
 .field-row > span,
 .range-field > span {
@@ -1778,7 +1877,21 @@ button {
   color: var(--muted);
   font-size: var(--text-2xs);
   font-style: normal;
-  background: rgba(255, 255, 255, 0.05);
+  font-weight: 700;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.axis-input em:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body.is-scrubbing,
+body.is-scrubbing * {
+  cursor: ew-resize !important;
+  user-select: none !important;
 }
 
 .axis-input input {
@@ -4678,10 +4791,18 @@ button {
   gap: 6px;
 }
 
-.launcher-recent button {
+.launcher-recent-item {
   display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.launcher-recent-main {
+  display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
   padding: 9px 11px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -4691,7 +4812,37 @@ button {
   cursor: pointer;
 }
 
-.launcher-recent button:hover:not(:disabled) {
+.launcher-recent-main:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.launcher-recent-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--motion) var(--ease);
+}
+
+.launcher-recent-item:hover .launcher-recent-actions {
+  opacity: 1;
+}
+
+.launcher-recent-action {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(8, 10, 15, 0.35);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.launcher-recent-action:hover:not(:disabled) {
+  color: var(--text);
   border-color: var(--border-strong);
 }
 

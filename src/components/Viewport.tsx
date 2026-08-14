@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { ContactShadows, Edges, PerformanceMonitor, TransformControls } from '@react-three/drei';
-import { ArrowDownToLine, Camera, ChevronDown, Globe, Gauge, Magnet, Move3D, Pause, Play, Rotate3D, Scaling, View } from 'lucide-react';
+import { ArrowDownToLine, Camera, ChevronDown, Globe, Gauge, Magnet, Maximize2, Minimize2, Move3D, Pause, Play, Rotate3D, Scaling, View } from 'lucide-react';
 import { useViewportPrefs } from '../store/viewportPrefsStore';
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import * as THREE from 'three';
@@ -23,6 +23,7 @@ import { CinematicCamera } from '../three/CinematicCamera';
 import { CinematicPathGizmo } from '../three/CinematicPathGizmo';
 import { EditorCamera, editorNav, type ViewPreset } from '../three/EditorCamera';
 import { ViewCube } from './ViewCube';
+import { maximizeViewportLayout, restoreWorkspaceLayout, isViewportLayoutMaximized } from './workspacePanels';
 import { BoneAttachment } from '../three/BoneAttachment';
 import { useResolvedMaterial, useResolvedMaterialSlots, hasPhysicalLayers } from '../three/resolveMaterial';
 import { useToonMaterial } from '../three/toonMaterial';
@@ -1528,6 +1529,9 @@ export function ViewportPanel() {
   // Bumped to command the editor camera to a standard orientation (ViewCube / numpad presets).
   const [viewCommand, setViewCommand] = useState<{ view: ViewPreset; nonce: number }>({ view: 'persp', nonce: 0 });
   const [previewCamera, setPreviewCamera] = useState(false);
+  const [viewportMaximized, setViewportMaximized] = useState(false);
+  // True when Play auto-maximized the dock — Stop should restore only in that case.
+  const autoMaximizedOnPlay = useRef(false);
   // Adaptive resolution for the editor viewport. Without a cap the Canvas renders at native
   // devicePixelRatio (2–3x on Retina = 4–9x the fragments), which is the biggest "editor feels
   // heavy" cost. Cap at 1.5 and let PerformanceMonitor drop to 1 when the frame rate dips.
@@ -1542,6 +1546,41 @@ export function ViewportPanel() {
   // Adaptive quality only degrades DURING Play — give the user back their authored preset on Stop.
   useEffect(() => {
     if (!isPlaying) resetAutoQuality();
+  }, [isPlaying]);
+
+  // Hierarchy / command palette can request "frame selection" without importing focusNonce.
+  useEffect(() => {
+    const onFocus = () => setFocusNonce((nonce) => nonce + 1);
+    window.addEventListener('nf:focus-selection', onFocus);
+    return () => window.removeEventListener('nf:focus-selection', onFocus);
+  }, []);
+
+  const toggleMaximize = useCallback(() => {
+    if (viewportMaximized || isViewportLayoutMaximized()) {
+      restoreWorkspaceLayout();
+      setViewportMaximized(false);
+      autoMaximizedOnPlay.current = false;
+    } else if (maximizeViewportLayout()) {
+      setViewportMaximized(true);
+    }
+  }, [viewportMaximized]);
+
+  // Auto-maximize on Play; restore on Stop only if we auto-maximized.
+  useEffect(() => {
+    if (isPlaying) {
+      if (!viewportMaximized && !isViewportLayoutMaximized()) {
+        if (maximizeViewportLayout()) {
+          setViewportMaximized(true);
+          autoMaximizedOnPlay.current = true;
+        }
+      }
+      return;
+    }
+    if (autoMaximizedOnPlay.current) {
+      restoreWorkspaceLayout();
+      setViewportMaximized(false);
+      autoMaximizedOnPlay.current = false;
+    }
   }, [isPlaying]);
   const cinematicPreview = useEditorStore((state) => state.editorCinematicPreview);
   const cinematicPreviewFade = useEditorStore((state) => state.editorCinematicPreviewFade);
@@ -1665,6 +1704,10 @@ export function ViewportPanel() {
         case 'f':
           setFocusNonce((nonce) => nonce + 1);
           break;
+        case 'f11':
+          event.preventDefault();
+          // Handled below via a dedicated listener so Play-mode still works — fall through intentionally.
+          break;
         case 'end':
           // Drop the selection onto the geometry below it (Unreal "End" convention).
           if (store.selectedObjectId) {
@@ -1689,6 +1732,19 @@ export function ViewportPanel() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  // F11 maximize works in edit AND play (the edit hotkey block bails while playing).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'F11') return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      event.preventDefault();
+      toggleMaximize();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleMaximize]);
 
   // Box-select bridge to the in-Canvas scene, plus the live marquee rectangle (client coords).
   const sceneApiRef = useRef<SceneApi | null>(null);
@@ -1830,7 +1886,7 @@ export function ViewportPanel() {
   );
 
   return (
-    <section className="viewport-panel">
+    <section className={isPlaying ? 'viewport-panel is-playing' : 'viewport-panel'}>
       <div className="viewport-topbar">
         <div className="viewport-title">
           <View size={16} aria-hidden />
@@ -1953,14 +2009,24 @@ export function ViewportPanel() {
         <QualityControl />
       </div>
       {!editingPrefabId && (
-        <button
-          className={isPlaying ? 'viewport-play active' : 'viewport-play'}
-          title={isPlaying ? 'Stop preview — back to Edit Mode' : 'Play preview'}
-          onClick={() => setPlaying(!isPlaying)}
-        >
-          {isPlaying ? <Pause size={14} aria-hidden /> : <Play size={14} aria-hidden />}
-          <span>{isPlaying ? 'Stop' : 'Play'}</span>
-        </button>
+        <>
+          <button
+            className={viewportMaximized ? 'viewport-maximize active' : 'viewport-maximize'}
+            title={viewportMaximized ? 'Restore layout (F11)' : 'Maximize viewport (F11)'}
+            aria-label={viewportMaximized ? 'Restore layout' : 'Maximize viewport'}
+            onClick={toggleMaximize}
+          >
+            {viewportMaximized ? <Minimize2 size={14} aria-hidden /> : <Maximize2 size={14} aria-hidden />}
+          </button>
+          <button
+            className={isPlaying ? 'viewport-play active' : 'viewport-play'}
+            title={isPlaying ? 'Stop preview — back to Edit Mode' : 'Play preview'}
+            onClick={() => setPlaying(!isPlaying)}
+          >
+            {isPlaying ? <Pause size={14} aria-hidden /> : <Play size={14} aria-hidden />}
+            <span>{isPlaying ? 'Stop' : 'Play'}</span>
+          </button>
+        </>
       )}
       <div
         ref={dropZoneRef}

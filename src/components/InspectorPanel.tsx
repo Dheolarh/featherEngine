@@ -91,6 +91,7 @@ function VectorField({
   rotation,
   step,
   precision,
+  onReset,
 }: {
   label: string;
   value: Vector3Tuple;
@@ -100,19 +101,67 @@ function VectorField({
   step?: number;
   /** Decimal places shown — raise for fine values like scale 0.005. */
   precision?: number;
+  /** Optional one-click reset for this vector row. */
+  onReset?: () => void;
 }) {
   const displayValue = rotation ? (value.map(toDegrees) as Vector3Tuple) : value;
+  const axisStep = step ?? (rotation ? 1 : 0.1);
+
+  const scrubAxis = (index: number, event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startValue = displayValue[index];
+    const fine = event.shiftKey;
+    const target = event.currentTarget;
+    target.setPointerCapture(event.pointerId);
+    document.body.classList.add('is-scrubbing');
+
+    const onMove = (move: PointerEvent) => {
+      const delta = (move.clientX - startX) / 4;
+      const factor = move.shiftKey || fine ? 0.1 : 1;
+      const nextDisplay = [...displayValue] as Vector3Tuple;
+      nextDisplay[index] = startValue + delta * axisStep * factor;
+      onChange(rotation ? (nextDisplay.map(toRadians) as Vector3Tuple) : nextDisplay);
+    };
+    const onUp = () => {
+      target.releasePointerCapture(event.pointerId);
+      document.body.classList.remove('is-scrubbing');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
 
   return (
     <label className="vector-field">
-      <span>{label}</span>
+      <span className="vector-field-label">
+        {label}
+        {onReset && (
+          <button
+            type="button"
+            className="vector-reset"
+            title={`Reset ${label}`}
+            onClick={(event) => {
+              event.preventDefault();
+              onReset();
+            }}
+          >
+            ↺
+          </button>
+        )}
+      </span>
       <div>
         {axes.map((axis, index) => (
           <span key={axis} className="axis-input">
-            <em>{axis}</em>
+            <em title="Drag to scrub (Shift = fine)" onPointerDown={(event) => scrubAxis(index, event)}>
+              {axis}
+            </em>
             <NumberInput
               value={displayValue[index]}
-              step={step ?? (rotation ? 1 : 0.1)}
+              step={axisStep}
               precision={precision ?? 2}
               onChange={(nextValue) => {
                 const next = [...displayValue] as Vector3Tuple;
@@ -3055,6 +3104,20 @@ export function InspectorPanel() {
           </section>
 
           <InspectorSection title="Transform">
+            <div className="transform-reset-all">
+              <button
+                type="button"
+                className="full-button compact"
+                title="Reset position, rotation, and scale"
+                onClick={() => {
+                  updateTransform(object.id, 'position', [0, 0, 0]);
+                  updateTransform(object.id, 'rotation', [0, 0, 0]);
+                  updateTransform(object.id, 'scale', [1, 1, 1]);
+                }}
+              >
+                Reset transform
+              </button>
+            </div>
             {transformValues.map(({ field, label, value }) => (
               <VectorField
                 key={field}
@@ -3066,6 +3129,13 @@ export function InspectorPanel() {
                 step={field === 'scale' ? 0.001 : undefined}
                 precision={field === 'scale' ? 4 : undefined}
                 onChange={(nextValue) => updateTransform(object.id, field, nextValue)}
+                onReset={() =>
+                  updateTransform(
+                    object.id,
+                    field,
+                    field === 'scale' ? [1, 1, 1] : [0, 0, 0],
+                  )
+                }
               />
             ))}
           </InspectorSection>

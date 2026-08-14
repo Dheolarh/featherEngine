@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { AlertTriangle, Car, Clapperboard, Crosshair, FolderOpen, Gamepad2, Gauge, PersonStanding, Plus, RotateCcw, Sparkles, Sprout, X } from 'lucide-react';
-import { isDesktop } from '../platform';
+import { AlertTriangle, Car, Clapperboard, Crosshair, Eye, FolderOpen, Gamepad2, Gauge, PersonStanding, Plus, RotateCcw, Sparkles, Sprout, X } from 'lucide-react';
+import { getPlatform, isDesktop } from '../platform';
 import { useProjectStore } from '../store/projectStore';
 import { clearRecovery, readRecovery } from '../store/autosave';
 import { createThirdPersonTemplate } from '../project/thirdPersonTemplate';
@@ -43,6 +43,7 @@ export function Launcher() {
   const newProject = useProjectStore((state) => state.newProject);
   const openProject = useProjectStore((state) => state.openProject);
   const openRecent = useProjectStore((state) => state.openRecent);
+  const removeRecent = useProjectStore((state) => state.removeRecent);
   const useDemo = useProjectStore((state) => state.useDemo);
   const recentProjects = useProjectStore((state) => state.recentProjects);
   const busy = useProjectStore((state) => state.busy);
@@ -58,6 +59,23 @@ export function Launcher() {
     } catch (error) {
       useProjectStore.setState({ error: error instanceof Error ? error.message : 'Template failed' });
     }
+  };
+
+  const handleReveal = async (event: React.MouseEvent, dir: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      const platform = await getPlatform();
+      await platform.revealFile?.(dir);
+    } catch {
+      // Non-fatal — reveal is a convenience.
+    }
+  };
+
+  const handleRemove = (event: React.MouseEvent, dir: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    removeRecent(dir);
   };
 
   return (
@@ -145,10 +163,37 @@ export function Launcher() {
           <section className="launcher-recent">
             <span className="eyebrow">Recent</span>
             {recentProjects.map((project) => (
-              <button key={project.dir} disabled={busy} onClick={() => void openRecent(project.dir)} title={project.dir}>
-                <strong>{project.name}</strong>
-                <small>{project.dir}</small>
-              </button>
+              <div key={project.dir} className="launcher-recent-item">
+                <button
+                  className="launcher-recent-main"
+                  disabled={busy}
+                  onClick={() => void openRecent(project.dir)}
+                  title={project.dir}
+                >
+                  <strong>{project.name}</strong>
+                  <small>{project.dir}</small>
+                </button>
+                <div className="launcher-recent-actions">
+                  <button
+                    type="button"
+                    className="launcher-recent-action"
+                    title="Reveal in Finder"
+                    disabled={busy}
+                    onClick={(event) => void handleReveal(event, project.dir)}
+                  >
+                    <Eye size={14} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className="launcher-recent-action"
+                    title="Remove from recent"
+                    disabled={busy}
+                    onClick={(event) => handleRemove(event, project.dir)}
+                  >
+                    <X size={14} aria-hidden />
+                  </button>
+                </div>
+              </div>
             ))}
           </section>
         )}

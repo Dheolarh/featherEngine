@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Boxes, Camera, ChevronDown, ChevronRight, Circle, FilePlus2, LampDesk, Mountain, Search, Square, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useEditorStore } from '../store/editorStore';
@@ -37,6 +37,12 @@ function HierarchyRow({
   collapsed,
   onToggleCollapse,
   onContextMenu,
+  renaming,
+  renameDraft,
+  onRenameDraftChange,
+  onCommitRename,
+  onCancelRename,
+  onStartRename,
 }: {
   object: SceneObject;
   depth: number;
@@ -44,6 +50,12 @@ function HierarchyRow({
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
   onContextMenu: (event: React.MouseEvent, object: SceneObject) => void;
+  renaming: boolean;
+  renameDraft: string;
+  onRenameDraftChange: (value: string) => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onStartRename: (object: SceneObject) => void;
 }) {
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId);
   const selectedObjectIds = useEditorStore((state) => state.selectedObjectIds);
@@ -57,17 +69,24 @@ function HierarchyRow({
   // Highlight the whole multi-selection when it's active, otherwise just the single selected object.
   const isMulti = selectedObjectIds.includes(selectedObjectId);
   const isSelected = isMulti ? selectedObjectIds.includes(object.id) : selectedObjectId === object.id;
+  const renameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renaming) renameRef.current?.focus();
+  }, [renaming]);
 
   return (
     <button
       className={clsx('hierarchy-row', isSelected && 'selected')}
       style={{ paddingLeft: 8 + depth * 14 }}
       onClick={(event) => {
+        if (renaming) return;
         // Shift/Ctrl/Cmd-click extends the selection; a plain click replaces it.
         if (event.shiftKey || event.metaKey || event.ctrlKey) toggleSelectObject(object.id);
         else selectObject(object.id);
       }}
       onDoubleClick={() => {
+        if (renaming) return;
         // Open the object's blueprint (creating + attaching one if it has none)
         // and reveal the Scripting panel.
         openObjectScript(object.id);
@@ -76,7 +95,7 @@ function HierarchyRow({
       onContextMenu={(event) => onContextMenu(event, object)}
       // Drag a row onto another to nest it under that object (set parent). Drop on the panel
       // background (handled by the list) to detach to the scene root.
-      draggable
+      draggable={!renaming}
       onDragStart={(event) => {
         event.dataTransfer.setData('application/x-nodeforge-object', object.id);
         event.dataTransfer.effectAllowed = 'move';
@@ -95,7 +114,7 @@ function HierarchyRow({
           setObjectParent(draggedId, object.id);
         }
       }}
-      title={`${object.name}${hasChildren ? ` · ${childCount} child${childCount > 1 ? 'ren' : ''}` : ''}${isInstance ? ' · prefab instance' : ''} — double-click to edit its script, right-click for options`}
+      title={`${object.name}${hasChildren ? ` · ${childCount} child${childCount > 1 ? 'ren' : ''}` : ''}${isInstance ? ' · prefab instance' : ''} — F2 to rename, double-click to edit its script, right-click for options`}
     >
       {hasChildren ? (
         <span
@@ -113,7 +132,39 @@ function HierarchyRow({
         <span className="hierarchy-twisty placeholder" aria-hidden />
       )}
       {isInstance ? <Boxes size={14} className="hierarchy-instance-glyph" aria-hidden /> : <Icon size={14} aria-hidden />}
-      <span className="hierarchy-label">{object.name}</span>
+      {renaming ? (
+        <input
+          ref={renameRef}
+          className="hierarchy-rename-input"
+          value={renameDraft}
+          spellCheck={false}
+          onChange={(event) => onRenameDraftChange(event.target.value)}
+          onBlur={onCommitRename}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              onCommitRename();
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              onCancelRename();
+            }
+          }}
+        />
+      ) : (
+        <span
+          className="hierarchy-label"
+          onDoubleClick={(event) => {
+            // Slow path: Alt+double-click renames; plain double-click still opens scripts above.
+            if (!event.altKey) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onStartRename(object);
+          }}
+        >
+          {object.name}
+        </span>
+      )}
       {hasChildren && collapsed && <small className="hierarchy-count">{childCount}</small>}
     </button>
   );
@@ -131,6 +182,7 @@ export function HierarchyPanel() {
   const sceneObjects = useThrottledActiveObjects();
   const activeSceneName = useEditorStore((state) => state.activeScene()?.name ?? 'Scene');
   const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId);
   const createObject = useEditorStore((state) => state.createObject);
   const createObjectWithProps = useEditorStore((state) => state.createObjectWithProps);
   const deleteSelectedObject = useEditorStore((state) => state.deleteSelectedObject);
@@ -145,11 +197,15 @@ export function HierarchyPanel() {
   const createPrefabFromObject = useEditorStore((state) => state.createPrefabFromObject);
   const applyInstanceToPrefab = useEditorStore((state) => state.applyInstanceToPrefab);
   const revertInstanceToPrefab = useEditorStore((state) => state.revertInstanceToPrefab);
+  const renameObject = useEditorStore((state) => state.renameObject);
   const prefabs = useEditorStore((state) => state.prefabs);
 
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const listRef = useRef<HTMLDivElement>(null);
 
   // When filtering, we show a FLAT list of name matches (nesting is irrelevant when hunting for an
   // object by name) — much clearer than trying to preserve the tree around scattered matches.
@@ -177,6 +233,34 @@ export function HierarchyPanel() {
     });
     return map;
   }, [sceneObjects]);
+
+  // Depth-first visible row order (respects collapse / filter) for keyboard navigation.
+  const visibleRows = useMemo(() => {
+    if (filterText) return filteredObjects;
+    const rows: SceneObject[] = [];
+    const walk = (parentId: string | undefined) => {
+      (childrenByParent.get(parentId) ?? []).forEach((object) => {
+        rows.push(object);
+        if (!collapsed.has(object.id)) walk(object.id);
+      });
+    };
+    walk(undefined);
+    return rows;
+  }, [filterText, filteredObjects, childrenByParent, collapsed]);
+
+  const startRename = (object: SceneObject) => {
+    setRenamingId(object.id);
+    setRenameDraft(object.name);
+  };
+
+  const commitRename = () => {
+    if (!renamingId) return;
+    const next = renameDraft.trim();
+    if (next) renameObject(renamingId, next);
+    setRenamingId(null);
+  };
+
+  const cancelRename = () => setRenamingId(null);
 
   const makePrefab = (object: SceneObject) => {
     const id = createPrefabFromObject(object.id);
@@ -225,6 +309,7 @@ export function HierarchyPanel() {
         ]
       : [];
     const items: ContextMenuEntry[] = [
+      { label: 'Rename', onClick: () => startRename(object) },
       { label: 'Create Prefab', onClick: () => makePrefab(object) },
       'separator',
       ...instanceEntries,
@@ -248,6 +333,68 @@ export function HierarchyPanel() {
     setMenu({ x: event.clientX, y: event.clientY, items });
   };
 
+  // F2 rename when hierarchy (or the app) has focus and we're not typing elsewhere.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'F2') return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      const selected = useEditorStore.getState().selectedObject();
+      if (!selected) return;
+      event.preventDefault();
+      startRename(selected);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const onListKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (renamingId) return;
+    if (!visibleRows.length) return;
+    const index = Math.max(
+      0,
+      visibleRows.findIndex((object) => object.id === selectedObjectId),
+    );
+    const current = visibleRows[index];
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      const next = visibleRows[Math.min(index + 1, visibleRows.length - 1)];
+      if (next) selectObject(next.id);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      const prev = visibleRows[Math.max(index - 1, 0)];
+      if (prev) selectObject(prev.id);
+      return;
+    }
+    if (event.key === 'ArrowLeft' && current) {
+      event.preventDefault();
+      const kids = childrenByParent.get(current.id) ?? [];
+      if (kids.length && !collapsed.has(current.id) && !filterText) {
+        toggleCollapse(current.id);
+      } else if (current.parentId) {
+        selectObject(current.parentId);
+      }
+      return;
+    }
+    if (event.key === 'ArrowRight' && current) {
+      event.preventDefault();
+      const kids = childrenByParent.get(current.id) ?? [];
+      if (kids.length && collapsed.has(current.id) && !filterText) {
+        toggleCollapse(current.id);
+      } else if (kids.length && !filterText) {
+        selectObject(kids[0].id);
+      }
+      return;
+    }
+    if ((event.key === 'Enter' || event.key.toLowerCase() === 'f') && current) {
+      event.preventDefault();
+      window.dispatchEvent(new CustomEvent('nf:focus-selection'));
+    }
+  };
+
   const renderRows = (parentId: string | undefined, depth: number): React.ReactNode =>
     (childrenByParent.get(parentId) ?? []).map((object) => {
       const kids = childrenByParent.get(object.id) ?? [];
@@ -261,6 +408,12 @@ export function HierarchyPanel() {
             collapsed={isCollapsed}
             onToggleCollapse={toggleCollapse}
             onContextMenu={openRowMenu}
+            renaming={renamingId === object.id}
+            renameDraft={renameDraft}
+            onRenameDraftChange={setRenameDraft}
+            onCommitRename={commitRename}
+            onCancelRename={cancelRename}
+            onStartRename={startRename}
           />
           {kids.length > 0 && !isCollapsed && renderRows(object.id, depth + 1)}
         </div>
@@ -298,7 +451,10 @@ export function HierarchyPanel() {
 
       {/* Dropping a dragged row onto the empty list area detaches it to the scene root. */}
       <div
+        ref={listRef}
         className="hierarchy-list"
+        tabIndex={0}
+        onKeyDown={onListKeyDown}
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes('application/x-nodeforge-object')) {
             event.preventDefault();
@@ -324,6 +480,12 @@ export function HierarchyPanel() {
                 collapsed={false}
                 onToggleCollapse={toggleCollapse}
                 onContextMenu={openRowMenu}
+                renaming={renamingId === object.id}
+                renameDraft={renameDraft}
+                onRenameDraftChange={setRenameDraft}
+                onCommitRename={commitRename}
+                onCancelRename={cancelRename}
+                onStartRename={startRename}
               />
             ))
           ) : (

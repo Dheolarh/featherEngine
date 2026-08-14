@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Command as CommandIcon, CornerDownLeft, Search } from 'lucide-react';
-import { useEditorStore } from '../store/editorStore';
+import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import { useEditorPrefs, type ThemeMode } from '../store/editorPrefsStore';
 import { undo, redo } from '../store/history';
@@ -28,6 +28,13 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const isPlaying = useEditorStore((state) => state.isPlaying);
+  // Rebuild object jump commands when the active scene's object names/ids change.
+  const objectListSig = useEditorStore((state) =>
+    selectActiveObjects(state)
+      .filter((object) => !object.viewModel)
+      .map((object) => `${object.id}:${object.name}:${object.kind}`)
+      .join('|'),
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -75,6 +82,24 @@ export function CommandPalette() {
       cmds.push({ id: `create-${kind}`, label: `Create ${label}`, group: 'Create', keywords: 'add object new', run: () => store().createObject(kind) });
     }
 
+    // Jump-to-object: select + focus Inspector + frame in viewport (cap keeps palette snappy).
+    const sceneObjects = selectActiveObjects(store())
+      .filter((object) => !object.viewModel)
+      .slice(0, 200);
+    for (const object of sceneObjects) {
+      cmds.push({
+        id: `select-${object.id}`,
+        label: `Select: ${object.name}`,
+        group: 'Objects',
+        keywords: `${object.kind} find jump focus frame`,
+        run: () => {
+          store().selectObject(object.id);
+          focusWorkspacePanel('inspector');
+          window.dispatchEvent(new CustomEvent('nf:focus-selection'));
+        },
+      });
+    }
+
     const panels: Array<[string, string]> = [
       ['hierarchy', 'Hierarchy'], ['inspector', 'Inspector'], ['scripting', 'Scripting'], ['project', 'Project'], ['materials', 'Material'], ['animator', 'Animator'], ['ui', 'UI'], ['terrain', 'Terrain'], ['particles', 'Particle System'], ['scene', 'Scene'], ['cinematic', 'Film Mode'],
     ];
@@ -96,7 +121,7 @@ export function CommandPalette() {
 
     cmds.push({ id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Help', keywords: 'keys cheatsheet help', run: () => window.dispatchEvent(new CustomEvent(OPEN_SHORTCUTS_EVENT)) });
     return cmds;
-  }, [isPlaying]);
+  }, [isPlaying, objectListSig]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

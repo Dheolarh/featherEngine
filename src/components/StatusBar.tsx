@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Boxes, Circle, Gauge, MousePointer2, Save } from 'lucide-react';
+import { Boxes, Circle, Clock, Gauge, MousePointer2, Save } from 'lucide-react';
 import { useEditorStore, selectActiveObjects, effectiveSelection } from '../store/editorStore';
 import { getPerfSnapshot } from '../runtime/perfStats';
 
@@ -13,6 +13,12 @@ function fmt(n: number): string {
   return (Math.round(n * 100) / 100).toString();
 }
 
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export function StatusBar() {
   const objectCount = useEditorStore((s) => selectActiveObjects(s).length);
   const selectionCount = useEditorStore((s) => effectiveSelection(s).length);
@@ -22,9 +28,17 @@ export function StatusBar() {
   const isPlaying = useEditorStore((s) => s.isPlaying);
 
   const [fps, setFps] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
-    if (!isPlaying) return;
-    const id = window.setInterval(() => setFps(getPerfSnapshot().fps), 1000);
+    if (!isPlaying) {
+      setElapsed(0);
+      return;
+    }
+    const started = performance.now();
+    const id = window.setInterval(() => {
+      setFps(getPerfSnapshot().fps);
+      setElapsed(Math.floor((performance.now() - started) / 1000));
+    }, 1000);
     return () => window.clearInterval(id);
   }, [isPlaying]);
 
@@ -55,6 +69,12 @@ export function StatusBar() {
           <Boxes size={14} aria-hidden />
           {objectCount}
         </span>
+        {isPlaying && (
+          <span className="status-bar__item status-bar__mono" title="Play session elapsed">
+            <Clock size={14} aria-hidden />
+            {formatElapsed(elapsed)}
+          </span>
+        )}
         {isPlaying && (
           <span className={`status-bar__item status-bar__fps status-bar__fps--${fpsTone}`} title="Frames per second">
             <Gauge size={14} aria-hidden />

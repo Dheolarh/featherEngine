@@ -91,6 +91,8 @@ interface ProjectState {
   newProject: (name: string) => Promise<void>;
   openProject: () => Promise<void>;
   openRecent: (dir: string) => Promise<void>;
+  /** Drop a recent project from the launcher list (does not delete files on disk). */
+  removeRecent: (dir: string) => void;
   save: () => Promise<void>;
   saveAs: (name: string) => Promise<void>;
   exportGame: () => Promise<void>;
@@ -305,6 +307,12 @@ export const useProjectStore = create<ProjectState>()(
           } finally {
             set({ busy: false });
           }
+        },
+
+        removeRecent: (dir) => {
+          set((state) => ({
+            recentProjects: state.recentProjects.filter((item) => item.dir !== dir),
+          }));
         },
 
         save: async () => {
