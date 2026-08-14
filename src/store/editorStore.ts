@@ -370,6 +370,10 @@ interface EditorState {
   /** Editor-only: selected UI element id (shared between the UI panel and viewport overlay). */
   selectedUIElementId: string;
   isPlaying: boolean;
+  /** Editor pause during Play — zeros sim delta (scripts still see input/UI, like runtimeTimeScale 0). */
+  isPlayPaused: boolean;
+  /** While paused, allow this many sim frames through (frame-step). Consumed in tickRuntime. */
+  playStepFrames: number;
   playSnapshot?: {
     sceneId: string;
     /** Deep clone of the scene's objects at play start — restored wholesale on Stop (re-adds destroyed
@@ -1009,6 +1013,10 @@ interface EditorState {
   setAssetSearch: (value: string) => void;
   removeAsset: (id: string) => void;
   setPlaying: (value: boolean) => void;
+  /** Pause/resume the Play simulation without stopping (does not dirty). No-op when not playing. */
+  setPlayPaused: (value: boolean) => void;
+  /** Advance one simulation frame while paused (enters pause if needed). No-op when not playing. */
+  stepPlayFrame: () => void;
   setRuntimeKey: (code: string, pressed: boolean) => void;
   clearRuntimeSounds: () => void;
   clearRuntimeLog: () => void;
@@ -1272,6 +1280,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectedUIElementId: '',
   activeAnimatorControllerId: '',
   isPlaying: false,
+  isPlayPaused: false,
+  playStepFrames: 0,
   runtimeVelocities: {},
   runtimeKeys: {},
   runtimePreviousKeys: {},
@@ -5598,6 +5608,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         resetStreamingCache(); // fresh activation-streaming set for this run
         return {
           isPlaying,
+          isPlayPaused: false,
+          playStepFrames: 0,
           runtimeTime: 0,
           runtimeTimeScale: 1,
           replayPlayback: null,
@@ -5723,6 +5735,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       clearTreeChops(); // felled trees stand back up with the rest of the Play snapshot
       return {
         isPlaying,
+        isPlayPaused: false,
+        playStepFrames: 0,
         runtimeTime: 0,
         runtimeTimeScale: 1,
         replayPlayback: null,
@@ -5809,6 +5823,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         playSnapshot: undefined,
         runtimeSceneSnapshots: undefined,
       };
+    }),
+  setPlayPaused: (value) =>
+    set((state) => {
+      if (!state.isPlaying) return state;
+      if (state.isPlayPaused === value) return state;
+      return { isPlayPaused: value, ...(value ? {} : { playStepFrames: 0 }) };
+    }),
+  stepPlayFrame: () =>
+    set((state) => {
+      if (!state.isPlaying) return state;
+      return { isPlayPaused: true, playStepFrames: (state.playStepFrames ?? 0) + 1 };
     }),
   setRuntimeKey: (code, pressed) =>
     set((state) => {
@@ -5920,6 +5945,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       let hitstopEnded = false;
       if ((state.runtimeHitstop ?? 0) > 0 && nextHitstop <= 0) hitstopEnded = true;
       delta *= state.runtimeTimeScale ?? 1;
+      // Editor Play-pause (toolbar F6): independent of runtimeTimeScale so game scripts can still set slow-mo.
+      let consumedPlayStep = false;
+      if (state.isPlayPaused) {
+        if ((state.playStepFrames ?? 0) > 0) {
+          if (delta <= 0) delta = 1 / 60;
+          consumedPlayStep = true;
+        } else {
+          delta = 0;
+        }
+      }
       beginPerceptionFrame(); // advance the AI perception clock (throttled line-of-sight cache)
       const activeObjects = selectActiveObjects(state);
       const activeObjectById = indexSceneObjectsById(activeObjects);
@@ -11840,6 +11875,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...(pendingTimeScale !== undefined && pendingTimeScale !== state.runtimeTimeScale
           ? { runtimeTimeScale: pendingTimeScale }
           : {}),
+        // Editor frame-step: consume one queued sim frame after this tick advances.
+        ...(consumedPlayStep ? { playStepFrames: Math.max(0, (state.playStepFrames ?? 0) - 1) } : {}),
         // A Start Replay node fired → slice the buffer (incl. this frame, captured above) and play it back
         // from the next tick. Ignored if a replay is already running or too little motion is buffered.
         ...(pendingReplaySeconds !== undefined && !state.replayPlayback

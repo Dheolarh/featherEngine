@@ -6,6 +6,7 @@ import { inputTypeForHandle, outputTypeForHandle, valueTypesCompatible } from '.
 import { undo as undoHistory, redo as redoHistory } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
 import { getPlatform } from '../platform';
+import { captureViewportScreenshot } from '../runtime/viewportCaptureBridge';
 import type {
   ColliderType,
   CinematicAction,
@@ -4866,6 +4867,35 @@ const rawEngineTools = {
       store().setPlaying(playing);
       return playing ? 'Started Play mode.' : 'Stopped Play mode.';
     },
+  }),
+
+  set_play_paused: tool({
+    description:
+      'Pause or resume the Play simulation without stopping (editor pause). Input/UI keep ticking so pause menus still work. Use step_play_frame to advance one frame while paused. No-op when not playing.',
+    inputSchema: z.object({ paused: z.boolean() }),
+    execute: async ({ paused }) => {
+      if (!store().isPlaying) return 'Not in Play mode — call set_playing(true) first.';
+      store().setPlayPaused(paused);
+      return paused ? 'Play paused.' : 'Play resumed.';
+    },
+  }),
+
+  step_play_frame: tool({
+    description:
+      'Advance exactly one simulation frame while Play is active (enters pause if needed). Useful for debugging collisions/scripts frame-by-frame.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      if (!store().isPlaying) return 'Not in Play mode — call set_playing(true) first.';
+      store().stepPlayFrame();
+      return 'Queued one Play frame step.';
+    },
+  }),
+
+  capture_screenshot: tool({
+    description:
+      'Capture the live 3D viewport to a PNG. Saves into the project screenshots/ folder on desktop, or downloads on web. Use when the user asks for a screenshot, still, or to share what the scene looks like.',
+    inputSchema: z.object({}),
+    execute: async () => captureViewportScreenshot(),
   }),
 
   fire_event: tool({

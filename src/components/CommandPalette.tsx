@@ -9,6 +9,7 @@ import { undo, redo } from '../store/history';
 import { applyWorkspaceLayout, type WorkspaceLayoutId } from './Workspace';
 import { focusWorkspacePanel } from './workspacePanels';
 import { OPEN_SHORTCUTS_EVENT } from './ShortcutsOverlay';
+import { captureViewportScreenshot } from '../runtime/viewportCaptureBridge';
 import type { SceneObjectKind } from '../types';
 
 /** Custom event anything (e.g. the View menu) can dispatch to open the palette. */
@@ -68,6 +69,33 @@ export function CommandPalette() {
     const cmds: Command[] = [];
 
     cmds.push({ id: 'play', label: isPlaying ? 'Stop preview' : 'Play preview', group: 'Runtime', keywords: 'run test game', run: () => store().setPlaying(!isPlaying) });
+    cmds.push({
+      id: 'pause',
+      label: store().isPlayPaused ? 'Resume preview' : 'Pause preview',
+      group: 'Runtime',
+      keywords: 'freeze step f6',
+      run: () => {
+        const s = store();
+        if (!s.isPlaying) return;
+        s.setPlayPaused(!s.isPlayPaused);
+      },
+    });
+    cmds.push({
+      id: 'step',
+      label: 'Step frame',
+      group: 'Runtime',
+      keywords: 'frame advance f7',
+      run: () => store().stepPlayFrame(),
+    });
+    cmds.push({
+      id: 'screenshot',
+      label: 'Capture viewport screenshot',
+      group: 'Runtime',
+      keywords: 'png capture f12 photo',
+      run: () => {
+        void captureViewportScreenshot();
+      },
+    });
     cmds.push({ id: 'save', label: 'Save project', group: 'Project', keywords: 'write disk download', run: () => void useProjectStore.getState().save() });
     cmds.push({ id: 'undo', label: 'Undo', group: 'Edit', run: undo });
     cmds.push({ id: 'redo', label: 'Redo', group: 'Edit', run: redo });

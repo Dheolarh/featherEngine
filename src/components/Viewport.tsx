@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { ContactShadows, Edges, PerformanceMonitor, TransformControls } from '@react-three/drei';
-import { ArrowDownToLine, Camera, ChevronDown, Globe, Gauge, Magnet, Maximize2, Minimize2, Move3D, Pause, Play, Rotate3D, Scaling, View } from 'lucide-react';
+import { ArrowDownToLine, Aperture, Camera, ChevronDown, Globe, Gauge, Magnet, Maximize2, Minimize2, Move3D, Play, Rotate3D, Scaling, Square, View } from 'lucide-react';
 import { useViewportPrefs } from '../store/viewportPrefsStore';
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import * as THREE from 'three';
@@ -10,6 +10,8 @@ import { undo, redo } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
 import { recordRender, recordRenderTime } from '../runtime/perfStats';
 import { readTransform } from '../runtime/transformBuffer';
+import { captureViewportScreenshot, setViewportCaptureHandler } from '../runtime/viewportCaptureBridge';
+import { saveViewportScreenshot } from '../runtime/viewportScreenshot';
 import { ModelAsset, useAssetTexture, useModelUrl } from '../three/ModelAsset';
 import { FragmentMesh } from '../three/FragmentMesh';
 import { AudioListenerSync } from '../three/AudioListenerSync';
@@ -1451,8 +1453,10 @@ function DropController({ contextRef }: { contextRef: MutableRefObject<DropConte
   const gl = useThree((state) => state.gl);
   useEffect(() => {
     contextRef.current = { camera, canvas: gl.domElement };
+    setViewportCaptureHandler(async () => saveViewportScreenshot(gl.domElement));
     return () => {
       contextRef.current = null;
+      setViewportCaptureHandler(null);
     };
   }, [camera, gl, contextRef]);
   return null;
@@ -1615,6 +1619,19 @@ export function ViewportPanel() {
   useEffect(() => {
     if (cameraRigTarget) setPreviewCamera(false);
   }, [cameraRigTarget]);
+
+  // F12 screenshot works in Edit and Play (viewport hotkeys below bail out while playing).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'F12') return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      event.preventDefault();
+      void captureViewportScreenshot();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Unreal-style viewport hotkeys: gizmo modes, focus, duplicate, delete, deselect, space toggle.
   useEffect(() => {
@@ -1957,6 +1974,13 @@ export function ViewportPanel() {
           >
             <Magnet size={14} aria-hidden />
           </button>
+          <button
+            title="Capture viewport screenshot (F12)"
+            aria-label="Capture viewport screenshot"
+            onClick={() => void captureViewportScreenshot()}
+          >
+            <Aperture size={14} aria-hidden />
+          </button>
           {transformMode === 'rotate' ? (
             <select
               className="snap-step"
@@ -2023,7 +2047,7 @@ export function ViewportPanel() {
             title={isPlaying ? 'Stop preview — back to Edit Mode' : 'Play preview'}
             onClick={() => setPlaying(!isPlaying)}
           >
-            {isPlaying ? <Pause size={14} aria-hidden /> : <Play size={14} aria-hidden />}
+            {isPlaying ? <Square size={14} aria-hidden /> : <Play size={14} aria-hidden />}
             <span>{isPlaying ? 'Stop' : 'Play'}</span>
           </button>
         </>

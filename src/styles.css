@@ -932,6 +932,12 @@ button {
   transform: none;
 }
 
+.icon-button.active {
+  border-color: rgba(93, 156, 255, 0.55);
+  background: rgba(61, 99, 180, 0.35);
+  color: #dce8ff;
+}
+
 /* Tactile press: the lifted button settles back down on click (snappier than the hover). */
 .icon-button:active,
 .run-button:active,

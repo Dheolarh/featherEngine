@@ -59,9 +59,12 @@ const GROUPS: Group[] = [
   {
     title: 'Panels & editors',
     items: [
+      { keys: ['F6'], label: 'Pause / resume Play' },
+      { keys: ['F7'], label: 'Step one Play frame' },
       { keys: ['F8'], label: 'Performance overlay' },
       { keys: ['F9'], label: 'Variable watch' },
       { keys: ['F10'], label: 'Physics debug wireframe (during Play)' },
+      { keys: ['F12'], label: 'Capture viewport screenshot' },
       { keys: ['Dbl-click'], label: 'Edit object blueprint (Hierarchy)' },
       { keys: ['Right-click'], label: 'Add node / object actions' },
       { keys: [MOD, 'C', '/', 'V'], label: 'Copy / paste nodes (Scripting)' },

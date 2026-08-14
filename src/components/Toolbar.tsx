@@ -21,6 +21,7 @@ import {
   Rocket,
   Save,
   Settings,
+  SkipForward,
   Square,
   Trash2,
   TreePine,
@@ -366,10 +367,13 @@ export function Toolbar() {
   const deleteSelectedObject = useEditorStore((state) => state.deleteSelectedObject);
   const createPrefabFromObject = useEditorStore((state) => state.createPrefabFromObject);
   const isPlaying = useEditorStore((state) => state.isPlaying);
+  const isPlayPaused = useEditorStore((state) => state.isPlayPaused);
   const canUndo = useEditorStore((state) => state.undoDepth > 0);
   const canRedo = useEditorStore((state) => state.redoDepth > 0);
   const editingPrefab = useEditorStore((state) => state.editingPrefabId !== null);
   const setPlaying = useEditorStore((state) => state.setPlaying);
+  const setPlayPaused = useEditorStore((state) => state.setPlayPaused);
+  const stepPlayFrame = useEditorStore((state) => state.stepPlayFrame);
   // Subscribe to the selected object's id+name as primitives, not the object itself: the runtime
   // tick replaces the object array every frame, so subscribing to the object would re-render the
   // whole toolbar 60×/sec during Play even though only these two fields are used.
@@ -381,12 +385,29 @@ export function Toolbar() {
   const busy = useProjectStore((state) => state.busy);
   const [prefsOpen, setPrefsOpen] = useState(false);
 
-  // ⌘S / Ctrl+S to save.
+  // ⌘S / Ctrl+S to save; F6 pause / F7 step during Play.
   useEffect(() => {
+    const isTyping = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null;
+      return Boolean(el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)));
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         void save();
+        return;
+      }
+      if (isTyping(event.target)) return;
+      if (event.key === 'F6') {
+        event.preventDefault();
+        const state = useEditorStore.getState();
+        if (!state.isPlaying) return;
+        state.setPlayPaused(!state.isPlayPaused);
+        return;
+      }
+      if (event.key === 'F7') {
+        event.preventDefault();
+        useEditorStore.getState().stepPlayFrame();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -494,8 +515,24 @@ export function Toolbar() {
           disabled={editingPrefab}
           onClick={() => setPlaying(!isPlaying)}
         >
-          {isPlaying ? <Pause size={16} aria-hidden /> : <Play size={16} aria-hidden />}
-          <span>{isPlaying ? 'Running' : 'Play'}</span>
+          {isPlaying ? <Square size={16} aria-hidden /> : <Play size={16} aria-hidden />}
+          <span>{isPlaying ? 'Stop' : 'Play'}</span>
+        </button>
+        <button
+          className={isPlayPaused ? 'icon-button active' : 'icon-button'}
+          title="Pause preview (F6)"
+          disabled={!isPlaying}
+          onClick={() => setPlayPaused(!isPlayPaused)}
+        >
+          <Pause size={16} aria-hidden />
+        </button>
+        <button
+          className="icon-button"
+          title="Step one frame (F7)"
+          disabled={!isPlaying}
+          onClick={() => stepPlayFrame()}
+        >
+          <SkipForward size={16} aria-hidden />
         </button>
         <RuntimeErrorBadge />
         <ProblemsButton />

@@ -377,6 +377,12 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Deleted UI document';
     case 'set_playing':
       return input.playing ? 'Started Play' : 'Stopped Play';
+    case 'set_play_paused':
+      return input.paused ? 'Paused Play' : 'Resumed Play';
+    case 'step_play_frame':
+      return 'Stepped Play frame';
+    case 'capture_screenshot':
+      return 'Captured screenshot';
     case 'fire_event':
       return `Fired "${String(input.eventName ?? '')}"`;
     case 'export_game':
