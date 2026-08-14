@@ -76,6 +76,7 @@ import {
   type InventoryComponent,
   type RuntimeCinematicCamera,
   type RuntimeCinematicFade,
+  type RuntimeScreenFade,
   type RuntimeCinematicState,
   type RuntimeCinematicText,
   type TerrainComponent,
@@ -98,6 +99,7 @@ import {
   type WaterVolumeComponent,
 } from '../types';
 import { getActivePhysics, startPhysics, stopPhysics, type PhysicsContactEvent, type VehicleWheelState } from '../runtime/physicsWorld';
+import { audioEngine } from '../runtime/audioEngine';
 import { pushExplosion, clearExplosions } from '../runtime/explosionBus';
 import { addDecal, clearDecals, type DecalKind } from '../runtime/decalBus';
 import { cameraPitch as mouseCameraPitch, cameraYaw as mouseCameraYaw } from '../runtime/mouseLook';
@@ -258,6 +260,8 @@ import {
   recordNodeError,
   pendingPartKicks,
   pendingPartRestores,
+  impactAudioCooldown,
+  clearImpactAudioCooldown,
   prevTransformEntryPool,
   reportedScriptErrors,
   resetReportedScriptErrors,
@@ -512,6 +516,14 @@ interface EditorState {
   /** HP lost per object during the previous tick (any source: Apply Damage node, projectile, melee, contact,
    *  explosion); drives event.receiveDamage (one-frame delayed, like collisions) + its Damage value-out. */
   runtimeDamageEvents: Record<string, number>;
+  /** Character landings last tick: objectId → impact speed (u/s). Drives event.land. */
+  runtimeLandEvents: Record<string, number>;
+  /** Screen-edge damage chevrons for the local player (Halo-style); angles are degrees relative to camera yaw. */
+  runtimeDamageIndicators: Array<{ angle: number; at: number }>;
+  /** Effective gravity scale overrides from gravity-zone triggers (`gravityMultiplier` instance var). */
+  runtimeGravityZones: Record<string, number>;
+  /** Gameplay Screen Fade overlay (independent of Film Mode); lerped in real time. */
+  runtimeScreenFade?: RuntimeScreenFade;
   /** Sounds queued this frame (asset id + optional world position for spatial playback); drained + cleared by
    *  the audio runtime. */
   runtimeSoundQueue: RuntimeSoundEvent[];
@@ -1319,6 +1331,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   runtimeTriggers: [],
   runtimeTriggersExit: [],
   runtimeDamageEvents: {},
+  runtimeLandEvents: {},
+  runtimeDamageIndicators: [],
+  runtimeGravityZones: {},
+  runtimeScreenFade: undefined,
   runtimeSoundQueue: [],
   runtimeVehicleSound: null,
   runtimeLog: [],
@@ -5562,6 +5578,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (isPlaying && state.editingPrefabId) return state;
       // Fresh run = fresh error reporting: a script fixed since the last run should report again.
       resetReportedScriptErrors();
+      clearImpactAudioCooldown();
       clearNodeErrors();
       if (isPlaying) {
         const objects = selectActiveObjects(state);
@@ -5637,6 +5654,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           runtimeTriggers: [],
           runtimeTriggersExit: [],
           runtimeDamageEvents: {},
+          runtimeLandEvents: {},
+          runtimeDamageIndicators: [],
+          runtimeGravityZones: {},
+          runtimeScreenFade: undefined,
           runtimeSoundQueue: [],
           runtimeVehicleSound: null,
           runtimeLog: [],
@@ -5758,6 +5779,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeTriggers: [],
         runtimeTriggersExit: [],
         runtimeDamageEvents: {},
+        runtimeLandEvents: {},
+        runtimeDamageIndicators: [],
+        runtimeGravityZones: {},
+        runtimeScreenFade: undefined,
         runtimeSoundQueue: [],
         runtimeVehicleSound: null,
         runtimeLog: [],
@@ -5998,9 +6023,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // like collisions) and its Damage value-out. Damage dealt THIS tick accumulates into `damageThisFrame`
       // (from the Apply Damage node + every combat-pass source) and becomes next tick's runtimeDamageEvents.
       const priorDamage = state.runtimeDamageEvents;
+      const priorLand = state.runtimeLandEvents;
       const damageThisFrame: Record<string, number> = {};
-      const recordDamage = (id: string, amount: number) => {
-        if (amount > 0) damageThisFrame[id] = (damageThisFrame[id] ?? 0) + amount;
+      const landThisFrame: Record<string, number> = {};
+      const damageIndicators: Array<{ angle: number; at: number }> = state.runtimeDamageIndicators.filter(
+        (item) => performance.now() - item.at < 1800,
+      );
+      const gravityZones: Record<string, number> = { ...state.runtimeGravityZones };
+      const recordDamage = (id: string, amount: number, fromPos?: Vector3Tuple) => {
+        if (amount <= 0) return;
+        damageThisFrame[id] = (damageThisFrame[id] ?? 0) + amount;
+        if (id === playerId && fromPos) {
+          const player = activeObjectById.get(playerId);
+          if (player) {
+            const dx = fromPos[0] - player.transform.position[0];
+            const dz = fromPos[2] - player.transform.position[2];
+            const worldYaw = Math.atan2(dx, dz);
+            const camYaw = mouseCameraYaw(player.character?.mouseSensitivity ?? 0.002);
+            const angle = ((worldYaw - camYaw) * 180) / Math.PI;
+            damageIndicators.push({ angle, at: performance.now() });
+            if (damageIndicators.length > 8) damageIndicators.splice(0, damageIndicators.length - 8);
+          }
+        }
       };
       const currentKeys = state.runtimeKeys;
       const previousKeys = state.runtimePreviousKeys;
@@ -6113,6 +6157,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (hitstopEnded) pendingTimeScale = 1; // restore after melee hitstop (a Set Time Scale node later this tick still wins)
       // A Start Replay node fired this frame → begin instant-replay playback at the end of the tick.
       let pendingReplaySeconds: number | undefined;
+      let pendingScreenFade: RuntimeScreenFade | undefined = state.runtimeScreenFade
+        ? { ...state.runtimeScreenFade }
+        : undefined;
       // action.setEnvironment patches accumulated this frame — sky/fog/sun overrides applied to the active
       // scene's environment at the end of the tick. Each successive node overlays on top.
       let pendingEnvironment: Partial<SceneEnvironmentSettings> | undefined;
@@ -6321,6 +6368,36 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // the resume pass below (on the OWNER object, like Delay).
       const nextTweens: EditorState['runtimeTweens'] = {};
       const elapsedTweensByObject = new Map<string, string[]>();
+      const elapsedScreenFadesByObject = new Map<string, string[]>();
+      // Advance gameplay Screen Fade in real time (undo timeScale so it still works in slow-mo / pause).
+      {
+        const fade = pendingScreenFade;
+        if (fade && fade.remaining > 0) {
+          const scale = state.runtimeTimeScale ?? 1;
+          const realDt = scale > 0 ? (delta || 1 / 60) / scale : 1 / 60;
+          const nextRemaining = Math.max(0, fade.remaining - realDt);
+          const progress = fade.duration > 0 ? 1 - nextRemaining / fade.duration : 1;
+          const startOpacity = fade.opacity;
+          // Reconstruct start from target + remaining progress approximation: store start in opacity at begin.
+          // We keep `opacity` as current and lerp toward target.
+          const total = fade.duration || realDt;
+          const step = Math.min(1, realDt / total);
+          const opacity = fade.opacity + (fade.target - fade.opacity) * (fade.remaining <= realDt ? 1 : step);
+          pendingScreenFade = { ...fade, opacity, remaining: nextRemaining };
+          if (nextRemaining <= 0 && fade.doneNodeId && fade.doneObjectId) {
+            const list = elapsedScreenFadesByObject.get(fade.doneObjectId);
+            if (list) list.push(fade.doneNodeId);
+            else elapsedScreenFadesByObject.set(fade.doneObjectId, [fade.doneNodeId]);
+            pendingScreenFade = {
+              opacity: fade.target,
+              target: fade.target,
+              remaining: 0,
+              duration: fade.duration,
+              color: fade.color,
+            };
+          }
+        }
+      }
       for (const [key, tween] of Object.entries(state.runtimeTweens)) {
         const time = tween.time + (delta || 1 / 60);
         const t = Math.min(1, time / Math.max(0.01, tween.duration));
@@ -6532,6 +6609,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             return interactedThisFrame.has(objectId);
           case 'event.receiveDamage':
             return (priorDamage[objectId] ?? 0) > 0;
+          case 'event.land':
+            return (priorLand[objectId] ?? 0) > 0;
           case 'event.timer':
             return firedTimers.has(`${objectId}:${node.id}`);
           default:
@@ -6653,6 +6732,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             // On Receive Damage's value-out = how much HP this object lost on the hit that fired the event.
             case 'event.receiveDamage': return priorDamage[object.id] ?? 0;
 
+            case 'event.land': return priorLand[object.id] ?? 0;
+
             // Collision Enter's value pins: contact DETAIL from the impact that fired the event —
             // Other (the actor reference), Normal (toward this object — bounce direction), Point
             // (world contact position), Speed (pre-solver impact speed for severity checks).
@@ -6662,6 +6743,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               if (sourceHandle === 'point') return contact?.point ? ([...contact.point] as Vector3Tuple) : ([position[0], position[1], position[2]] as Vector3Tuple);
               if (sourceHandle === 'speed') return contact?.speed ?? 0;
               return contact?.otherObjectId; // 'value-out' = Other (actor reference)
+            }
+
+            case 'event.collisionExit': {
+              const contact = firstContactEvent(priorCollisionExitIndex, object.id);
+              if (sourceHandle === 'point') return contact?.point ? ([...contact.point] as Vector3Tuple) : ([position[0], position[1], position[2]] as Vector3Tuple);
+              return contact?.otherObjectId;
+            }
+
+            case 'event.triggerEnter': {
+              const contact = firstContactEvent(priorTriggerIndex, object.id);
+              if (sourceHandle === 'point') return contact?.point ? ([...contact.point] as Vector3Tuple) : ([position[0], position[1], position[2]] as Vector3Tuple);
+              return contact?.otherObjectId;
+            }
+
+            case 'event.triggerExit': {
+              const contact = firstContactEvent(priorTriggerExitIndex, object.id);
+              if (sourceHandle === 'point') return contact?.point ? ([...contact.point] as Vector3Tuple) : ([position[0], position[1], position[2]] as Vector3Tuple);
+              return contact?.otherObjectId;
             }
 
             case 'input.move': {
@@ -7819,7 +7918,42 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             }
 
             if (node.data.nodeKind === 'action.playSound' && node.data.assetId) {
-              pushSound(node.data.assetId, [...object.transform.position] as Vector3Tuple);
+              const volume = Math.max(0, Math.min(1, toNumber(valueInput(node, 'volume', Number(node.data.soundVolume ?? 1)))));
+              let pitch = Math.max(0.1, Math.min(4, toNumber(valueInput(node, 'pitch', Number(node.data.soundPitch ?? 1)))));
+              const jitter = Math.max(0, Math.min(1, Number(node.data.pitchJitter ?? 0)));
+              if (jitter > 0) pitch *= 1 + (Math.random() * 2 - 1) * jitter;
+              sounds.push({
+                assetId: node.data.assetId,
+                position: [...object.transform.position] as Vector3Tuple,
+                volume,
+                playbackRate: pitch,
+              });
+            }
+
+            if (node.data.nodeKind === 'action.screenFade') {
+              const to = Math.max(0, Math.min(1, toNumber(valueInput(node, 'to', Number(node.data.fadeTo ?? 1)))));
+              const duration = Math.max(0, toNumber(valueInput(node, 'duration', Number(node.data.numberValue ?? 0.5))));
+              const from =
+                typeof node.data.fadeFrom === 'number'
+                  ? Math.max(0, Math.min(1, node.data.fadeFrom))
+                  : (pendingScreenFade?.opacity ?? state.runtimeScreenFade?.opacity ?? 0);
+              const color = typeof node.data.fadeColor === 'string' && node.data.fadeColor ? node.data.fadeColor : '#000000';
+              if (duration <= 0) {
+                pendingScreenFade = { opacity: to, target: to, remaining: 0, duration: 0, color };
+                const list = elapsedScreenFadesByObject.get(object.id);
+                if (list) list.push(node.id);
+                else elapsedScreenFadesByObject.set(object.id, [node.id]);
+              } else {
+                pendingScreenFade = {
+                  opacity: from,
+                  target: to,
+                  remaining: duration,
+                  duration,
+                  color,
+                  doneNodeId: node.id,
+                  doneObjectId: object.id,
+                };
+              }
             }
 
             if (node.data.nodeKind === 'action.playCinematic' && node.data.cinematicId) {
@@ -8493,6 +8627,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             if (tweensDoneHere) {
               for (const tweenNodeId of tweensDoneHere) {
                 for (const targetId of execTargetsFromHandle(tweenNodeId, 'exec-done')) executeFrom(targetId, new Set());
+              }
+            }
+            const fadesDoneHere = elapsedScreenFadesByObject.get(object.id);
+            if (fadesDoneHere) {
+              for (const fadeNodeId of fadesDoneHere) {
+                for (const targetId of execTargetsFromHandle(fadeNodeId, 'exec-done')) executeFrom(targetId, new Set());
               }
             }
           } catch (error) {
@@ -9864,8 +10004,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           // APEX (small |vy| while airborne) gravity eases off briefly — a hang that makes the jump feel
           // controllable at its peak without slowing the descent (fallMultiplier still rules the fall).
           const nearApex = !grounded && Math.abs(verticalVelocity) < 1.6;
+          const zoneG = gravityZones[object.id] ?? 1;
           const g =
             cc.gravity *
+            zoneG *
             (nearApex ? cc.apexHang ?? 0.65 : verticalVelocity < 0 ? cc.fallMultiplier ?? 1.9 : 1);
           verticalVelocity -= g * delta;
           position[1] += verticalVelocity * delta;
@@ -10069,6 +10211,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           sceneWind,
           sceneEnv?.windTurbulence ?? 0,
           vehicleInputs,
+          gravityZones,
         );
         if (result.renderTransforms.size) {
           // The buffer's BufferedTransform needs a scale; physics never changes scale, so reuse each
@@ -10090,6 +10233,56 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         triggersExit = result.triggersExit;
         collisionsExit = result.collisionsExit;
         groundedIds = result.grounded;
+
+        // Gravity zones: trigger volumes with instance var `gravityMultiplier` scale gravity for overlaps.
+        const zoneMult = (zoneId: string): number | undefined => {
+          const obj = activeObjectById.get(zoneId);
+          const raw = nextObjectVariables[zoneId]?.gravityMultiplier ?? obj?.variables?.gravityMultiplier;
+          if (typeof raw !== 'number' && typeof raw !== 'string') return undefined;
+          const n = Number(raw);
+          return Number.isFinite(n) ? n : undefined;
+        };
+        const applyZonePair = (a: string, b: string, enter: boolean) => {
+          const ma = zoneMult(a);
+          const mb = zoneMult(b);
+          if (ma !== undefined) {
+            if (enter) gravityZones[b] = ma;
+            else if (gravityZones[b] === ma) delete gravityZones[b];
+          }
+          if (mb !== undefined) {
+            if (enter) gravityZones[a] = mb;
+            else if (gravityZones[a] === mb) delete gravityZones[a];
+          }
+        };
+        for (const contact of triggers) applyZonePair(contact.objectId, contact.otherObjectId, true);
+        for (const contact of triggersExit) applyZonePair(contact.objectId, contact.otherObjectId, false);
+
+        // Physics-material impact thuds (synthesized) — rate-limited per pair.
+        const nowMs = performance.now();
+        for (const contact of collisions) {
+          const speed = contact.speed ?? 0;
+          if (speed < 2.5) continue;
+          const a = activeObjectById.get(contact.objectId);
+          const b = activeObjectById.get(contact.otherObjectId);
+          if (!a || !b) continue;
+          const aDyn = a.physics?.bodyType === 'dynamic';
+          const bDyn = b.physics?.bodyType === 'dynamic';
+          if (!aDyn && !bDyn) continue;
+          const pairKey =
+            contact.objectId < contact.otherObjectId
+              ? `${contact.objectId}|${contact.otherObjectId}`
+              : `${contact.otherObjectId}|${contact.objectId}`;
+          const last = impactAudioCooldown.get(pairKey) ?? 0;
+          if (nowMs - last < 80) continue;
+          impactAudioCooldown.set(pairKey, nowMs);
+          const presetA = a.physics?.materialPreset ?? 'default';
+          const presetB = b.physics?.materialPreset ?? 'default';
+          const material = aDyn && bDyn && presetA !== presetB ? presetA : aDyn ? presetA : presetB;
+          const vol = Math.min(1, speed / 20);
+          const point = contact.point ?? a.transform.position;
+          audioEngine.playMaterialImpactThud(material, vol, point);
+        }
+
         // Publish dynamic bodies' post-step velocity so Get Velocity (and vehicleSpeed) read the real value.
         for (const [id, v] of result.velocities) nextVelocities[id] = v;
         const groundedSet = new Set(groundedIds);
@@ -10696,6 +10889,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         if (impactVy >= -1) continue;
         const landObj = resolvedObjectById.get(id);
         if (!landObj?.character) continue;
+        const impactSpeed = -impactVy;
+        landThisFrame[id] = impactSpeed;
         const landSound = landObj.character.landSoundId;
         if (landSound) pushSound(landSound, [...landObj.transform.position] as Vector3Tuple);
         const recovery = landObj.character.landingRecovery ?? 0.4;
@@ -10766,7 +10961,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           const cur = toNumber(nextObjectVariables[other]?.health ?? target.variables?.health ?? 0);
           const next = Math.max(0, cur - proj.damage);
           mutableObjectVars(other, target.variables).health = next;
-          recordDamage(other, cur - next);
+          recordDamage(other, cur - next, [...obj.transform.position] as Vector3Tuple);
           // Hurt sound: a damaged character grunts (unless this hit kills it — death handles that).
           if (next > 0 && target.character?.hurtSoundId) pushSound(target.character.hurtSoundId, [...target.transform.position] as Vector3Tuple);
           if (next <= 0) {
@@ -11529,6 +11724,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             runtimeTriggers: [],
             runtimeTriggersExit: [],
             runtimeDamageEvents: {},
+            runtimeLandEvents: {},
+            runtimeDamageIndicators: [],
+            runtimeGravityZones: {},
+            runtimeScreenFade: undefined,
             runtimePreviousKeys: {},
             runtimePreviousKeyPresses: { ...currentKeyPresses },
             runtimeEventQueue: [],
@@ -11611,6 +11810,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeTriggers: keepArray(state.runtimeTriggers, triggers),
         runtimeTriggersExit: keepArray(state.runtimeTriggersExit, triggersExit),
         runtimeDamageEvents: keepRecord(state.runtimeDamageEvents, damageThisFrame),
+        runtimeLandEvents: keepRecord(state.runtimeLandEvents, landThisFrame),
+        runtimeDamageIndicators: damageIndicators,
+        runtimeGravityZones: keepRecord(state.runtimeGravityZones, gravityZones),
+        runtimeScreenFade: pendingScreenFade,
         runtimePreviousKeys: keepRecord(state.runtimePreviousKeys, { ...currentKeys }),
         runtimePreviousKeyPresses: keepRecord(state.runtimePreviousKeyPresses, { ...currentKeyPresses }),
         runtimeEventPayloads: keepRecord(state.runtimeEventPayloads ?? {}, eventPayloads),
@@ -11897,6 +12100,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeCollisions: [],
         runtimeCollisionsExit: [],
         runtimeDamageEvents: {},
+        runtimeLandEvents: {},
+        runtimeDamageIndicators: [],
+        runtimeGravityZones: {},
+        runtimeScreenFade: undefined,
         runtimeSoundQueue: [],
         runtimeVehicleSound: null,
         runtimeLog: [],

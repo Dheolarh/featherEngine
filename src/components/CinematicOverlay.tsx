@@ -43,10 +43,16 @@ const wipeClip = (dir: NonNullable<RuntimeCinematicFade['wipe']>, cov: number): 
 export function CinematicOverlay({ look: lookProp, fade: fadeProp, text: textProp }: { look?: CinematicLook; fade?: RuntimeCinematicFade; text?: RuntimeCinematicText[] } = {}) {
   const runtimeLook = useEditorStore((state) => state.runtimeCinematicLook);
   const runtimeFade = useEditorStore((state) => state.runtimeCinematicFade);
+  const runtimeScreenFade = useEditorStore((state) => state.runtimeScreenFade);
   const runtimeText = useEditorStore((state) => state.runtimeCinematicText);
   const previewText = useEditorStore((state) => state.editorCinematicPreviewText);
+  const screenFadeOverlay: RuntimeCinematicFade | undefined =
+    runtimeScreenFade && runtimeScreenFade.opacity > 0.001
+      ? { opacity: runtimeScreenFade.opacity, color: runtimeScreenFade.color }
+      : undefined;
   const look = lookProp ?? runtimeLook;
-  const fade = fadeProp ?? runtimeFade;
+  // Gameplay Screen Fade merges under cinematic fade (cinematic wins when both active).
+  const fade = fadeProp ?? runtimeFade ?? screenFadeOverlay;
   const text = textProp ?? runtimeText ?? previewText;
   const aspect = look?.letterbox ?? 0;
 

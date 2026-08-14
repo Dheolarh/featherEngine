@@ -19,6 +19,7 @@ export const outputTypeOf: Partial<Record<GraphNodeKind, GraphValueType>> = {
   'animator.getParam': 'number',
   'query.vehicleSpeed': 'number',
   'event.receiveDamage': 'number',
+  'event.land': 'number',
   'value.string': 'string',
   'animator.getState': 'string',
   'value.boolean': 'boolean',

@@ -111,7 +111,9 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'event.collisionEnter': Crosshair,
   'event.collisionExit': Crosshair,
   'event.triggerEnter': Crosshair,
+  'event.triggerExit': Crosshair,
   'event.receiveDamage': ShieldAlert,
+  'event.land': Move3d,
   'event.timer': Timer,
   'logic.branch': GitBranch,
   'logic.compare': Equal,
@@ -177,6 +179,7 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'action.spawnObject': Sparkles,
   'action.cameraShake': Vibrate,
   'action.screenFlash': Zap,
+  'action.screenFade': Eye,
   'action.spawnDecal': Crosshair,
   'action.applyDamage': Swords,
   'action.setQuality': Gauge,
@@ -526,6 +529,16 @@ export const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: 
       return [{ id: 'amount', label: 'Amount' }];
     case 'action.screenFlash':
       return [{ id: 'amount', label: 'Amount' }];
+    case 'action.screenFade':
+      return [
+        { id: 'to', label: 'To' },
+        { id: 'duration', label: 'Duration' },
+      ];
+    case 'action.playSound':
+      return [
+        { id: 'volume', label: 'Volume' },
+        { id: 'pitch', label: 'Pitch' },
+      ];
     case 'action.setTimeScale':
       return [{ id: 'scale', label: 'Scale' }];
     case 'action.setTimeOfDay':
@@ -723,7 +736,10 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
     (data.nodeKind === 'query.overlapSphere' ? 3 : 0) +
     (data.nodeKind === 'logic.cast' ? 1 : 0) +
     (data.nodeKind === 'event.receiveDamage' ? 1 : 0) +
-    (data.nodeKind === 'action.tweenProperty' ? 1 : 0) +
+    (data.nodeKind === 'event.land' ? 1 : 0) +
+    (data.nodeKind === 'event.collisionEnter' ? 4 : 0) +
+    (data.nodeKind === 'event.collisionExit' || data.nodeKind === 'event.triggerEnter' || data.nodeKind === 'event.triggerExit' ? 2 : 0) +
+    (data.nodeKind === 'action.tweenProperty' || data.nodeKind === 'action.screenFade' ? 1 : 0) +
     (data.nodeKind === 'logic.forLoop' || data.nodeKind === 'logic.forEachActor' ? 2 : 0) +
     switchCases.length +
     (data.nodeKind === 'logic.sequence' ? 3 : 0) +
@@ -909,6 +925,40 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
           </span>
         ))}
 
+      {/* Trigger Enter/Exit + Collision Exit: Other actor + contact Point. */}
+      {(data.nodeKind === 'event.triggerEnter' ||
+        data.nodeKind === 'event.triggerExit' ||
+        data.nodeKind === 'event.collisionExit') &&
+        (
+          [
+            { id: 'value-out', label: 'Other', type: 'any' as const },
+            { id: 'point', label: 'Point', type: 'vector3' as const },
+          ]
+        ).map((out, index) => (
+          <span key={out.id}>
+            <Handle
+              id={out.id}
+              className={`node-port value-port value-${out.type} source`}
+              type="source"
+              position={Position.Right}
+              style={{ top: pinTop + index * pinStep }}
+            />
+            <span className="nfn-port-label out" style={{ top: pinTop + index * pinStep }}>
+              {out.label}
+            </span>
+          </span>
+        ))}
+
+      {/* On Land: Speed = impact speed (u/s). */}
+      {data.nodeKind === 'event.land' && (
+        <>
+          <span className="nfn-pin-label" style={{ top: pinTop - 4 }}>
+            Speed
+          </span>
+          <Handle id="value-out" className="node-port value-port source" type="source" position={Position.Right} style={{ top: pinTop + 2 }} />
+        </>
+      )}
+
       {/* Overlap Sphere: three stacked outputs — Hit (bool), Actor (nearest reference), Count (number). */}
       {data.nodeKind === 'query.overlapSphere' &&
         (
@@ -1071,6 +1121,22 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
             Done
           </span>
           <Handle id="exec-done" className="node-port exec-port source" type="source" position={Position.Right} style={{ top: pinTop + 2 }} />
+        </>
+      )}
+
+      {/* Screen Fade: Done fires when the fade lerp settles. */}
+      {data.nodeKind === 'action.screenFade' && (
+        <>
+          <span className="nfn-pin-label" style={{ top: pinTop + valueInputs.length * pinStep - 4 }}>
+            Done
+          </span>
+          <Handle
+            id="exec-done"
+            className="node-port exec-port source"
+            type="source"
+            position={Position.Right}
+            style={{ top: pinTop + valueInputs.length * pinStep + 2 }}
+          />
         </>
       )}
 

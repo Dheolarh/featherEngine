@@ -64,7 +64,7 @@ export const nodeGroups: Array<{
   {
     title: 'Events',
     icon: Zap,
-    nodes: ['Start', 'Update', 'Key Down', 'Key Up', 'Custom Event', 'Collision Enter', 'Collision Exit', 'Trigger Enter', 'Trigger Exit', 'Interact', 'On Receive Damage', 'Timer'],
+    nodes: ['Start', 'Update', 'Key Down', 'Key Up', 'Custom Event', 'Collision Enter', 'Collision Exit', 'Trigger Enter', 'Trigger Exit', 'Interact', 'On Receive Damage', 'On Land', 'Timer'],
   },
   {
     title: 'Logic',
@@ -119,7 +119,7 @@ export const nodeGroups: Array<{
   {
     title: 'Runtime',
     icon: Waypoints,
-    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Prefab', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Spawn Decal', 'Explode', 'Set Environment', 'Get Time Of Day', 'Set Time Of Day', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Start Replay', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Has Line Of Sight', 'Face Player', 'Print'],
+    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Prefab', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Screen Fade', 'Spawn Decal', 'Explode', 'Set Environment', 'Get Time Of Day', 'Set Time Of Day', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Start Replay', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Has Line Of Sight', 'Face Player', 'Print'],
   },
   {
     title: 'Physics',
@@ -606,6 +606,7 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
   const updatesLoadScene = node.data.nodeKind === 'action.loadScene';
   const updatesCameraShake = node.data.nodeKind === 'action.cameraShake';
   const updatesScreenFlash = node.data.nodeKind === 'action.screenFlash';
+  const updatesScreenFade = node.data.nodeKind === 'action.screenFade';
   const updatesExplode = node.data.nodeKind === 'action.explode';
   const updatesSpawnDecal = node.data.nodeKind === 'action.spawnDecal';
   const isReceiveDamage = node.data.nodeKind === 'event.receiveDamage';
@@ -986,6 +987,57 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
                 onChange={(event) => updateGraphNodeData(node.id, { flashColor: event.target.value })}
               />
               <small className="node-hint">White = neutral bloom; hot orange for blasts; red for damage.</small>
+            </label>
+          </>
+        )}
+
+        {updatesScreenFade && (
+          <>
+            <label className="node-field">
+              <span>Fade to</span>
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="1"
+                value={node.data.fadeTo ?? 1}
+                onChange={(event) => updateGraphNodeData(node.id, { fadeTo: Math.max(0, Math.min(1, Number(event.target.value))) })}
+              />
+              <small className="node-hint">Target opacity 0 (clear) … 1 (fully covered). Wire To / Duration pins to drive live.</small>
+            </label>
+            <label className="node-field">
+              <span>Duration (s)</span>
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                value={node.data.numberValue ?? 0.5}
+                onChange={(event) => updateGraphNodeData(node.id, { numberValue: Math.max(0, Number(event.target.value)) })}
+              />
+            </label>
+            <label className="node-field">
+              <span>Color</span>
+              <input
+                type="color"
+                value={node.data.fadeColor ?? '#000000'}
+                onChange={(event) => updateGraphNodeData(node.id, { fadeColor: event.target.value })}
+              />
+            </label>
+            <label className="node-field">
+              <span>Fade from (optional)</span>
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="1"
+                value={node.data.fadeFrom ?? ''}
+                placeholder="current"
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  updateGraphNodeData(node.id, { fadeFrom: raw === '' ? undefined : Math.max(0, Math.min(1, Number(raw))) });
+                }}
+              />
+              <small className="node-hint">Leave empty to start from the current fade opacity. Done fires when the lerp settles.</small>
             </label>
           </>
         )}
@@ -1846,20 +1898,56 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
         )}
 
         {updatesSound && (
-          <label className="node-field">
-            <span>Sound</span>
-            <select
-              value={node.data.assetId ?? ''}
-              onChange={(event) => updateGraphNodeData(node.id, { assetId: event.target.value || undefined })}
-            >
-              <option value="">{audioAssets.length ? 'Select audio…' : 'No audio assets imported'}</option>
-              {audioAssets.map((asset) => (
-                <option key={asset.id} value={asset.id}>
-                  {asset.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <>
+            <label className="node-field">
+              <span>Sound</span>
+              <select
+                value={node.data.assetId ?? ''}
+                onChange={(event) => updateGraphNodeData(node.id, { assetId: event.target.value || undefined })}
+              >
+                <option value="">{audioAssets.length ? 'Select audio…' : 'No audio assets imported'}</option>
+                {audioAssets.map((asset) => (
+                  <option key={asset.id} value={asset.id}>
+                    {asset.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="node-field">
+              <span>Volume</span>
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="1"
+                value={node.data.soundVolume ?? 1}
+                onChange={(event) => updateGraphNodeData(node.id, { soundVolume: Math.max(0, Math.min(1, Number(event.target.value))) })}
+              />
+            </label>
+            <label className="node-field">
+              <span>Pitch</span>
+              <input
+                type="number"
+                step="0.05"
+                min="0.1"
+                max="4"
+                value={node.data.soundPitch ?? 1}
+                onChange={(event) => updateGraphNodeData(node.id, { soundPitch: Math.max(0.1, Math.min(4, Number(event.target.value))) })}
+              />
+            </label>
+            <label className="node-field">
+              <span>Pitch jitter</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="1"
+                value={node.data.pitchJitter ?? 0}
+                onChange={(event) => updateGraphNodeData(node.id, { pitchJitter: Math.max(0, Math.min(1, Number(event.target.value))) })}
+              />
+              <small className="node-hint">Randomize pitch ± this fraction each play (0.1–0.2 keeps repeated impacts fresh).</small>
+            </label>
+          </>
         )}
 
         {updatesCinematic && (

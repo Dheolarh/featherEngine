@@ -1380,6 +1380,7 @@ class PhysicsRuntime {
     wind: Vector3Tuple = [0, 0, 0],
     windTurbulence = 0,
     vehicleInputs: Record<string, VehicleInput> = {},
+    gravityZones: Record<string, number> = {},
   ): PhysicsFrameResult {
     // Paused (Set Time Scale 0): skip the step entirely — the dt clamp below would otherwise creep the
     // world forward at 1/240s per frame. The empty result freezes every body exactly where it is; contact
@@ -1448,6 +1449,16 @@ class PhysicsRuntime {
     this.lastSyncById = byId;
     this.lastSyncCount = objects.length;
     this.lastSyncMeshVersion = meshGeometryVersion();
+
+    // Gravity zones: override body gravityScale while overlapping a `gravityMultiplier` trigger.
+    for (const object of objects) {
+      if (!object.physics?.enabled || object.physics.isTrigger || object.physics.bodyType !== 'dynamic') continue;
+      const entry = this.entries.get(object.id);
+      if (!entry) continue;
+      const zone = gravityZones[object.id];
+      const base = object.physics.gravityScale ?? 1;
+      entry.body.setGravityScale(zone !== undefined ? base * zone : base, false);
+    }
 
     const movedFixedBodies = new Set<string>();
     for (const object of objects) {

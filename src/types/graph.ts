@@ -43,6 +43,7 @@ export type GraphNodeKind =
   | 'event.triggerExit'
   | 'event.interact'
   | 'event.receiveDamage'
+  | 'event.land'
   | 'event.timer'
   | 'logic.branch'
   | 'logic.compare'
@@ -192,7 +193,8 @@ export type GraphNodeKind =
   | 'action.setEnvironment'
   | 'action.setTimeOfDay'
   | 'query.getTimeOfDay'
-  | 'action.startReplay';
+  | 'action.startReplay'
+  | 'action.screenFade';
 
 export interface NodeForgeNodeData extends Record<string, unknown> {
   label: string;
@@ -243,6 +245,18 @@ export interface NodeForgeNodeData extends Record<string, unknown> {
   easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
   /** action.playSound: id of the audio asset to play. */
   assetId?: string;
+  /** action.playSound: loudness 0..1 (overridable via Volume value input). */
+  soundVolume?: number;
+  /** action.playSound: playback rate (1 = normal; overridable via Pitch value input). */
+  soundPitch?: number;
+  /** action.playSound: randomize pitch each play by ± this fraction (0 = none, 0.15 = slight variation). */
+  pitchJitter?: number;
+  /** action.screenFade: target overlay opacity 0..1 (1 = fully covered). */
+  fadeTo?: number;
+  /** action.screenFade: starting opacity; undefined = current fade opacity. */
+  fadeFrom?: number;
+  /** action.screenFade: overlay tint (hex). */
+  fadeColor?: string;
   /** action.spawnObject: kind of object to spawn at runtime. */
   spawnKind?: SceneObjectKind;
   /** action.spawnPrefab: id of the prefab (captured object tree) to instantiate at runtime. */

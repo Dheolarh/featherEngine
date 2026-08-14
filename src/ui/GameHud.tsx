@@ -53,6 +53,7 @@ export function GameHud() {
   const hurt = useEditorStore((state) => state.runtimeHurt);
   const flash = useEditorStore((state) => state.runtimeFlash);
   const flashColor = useEditorStore((state) => state.runtimeFlashColor);
+  const damageIndicators = useEditorStore((state) => state.runtimeDamageIndicators);
   const objVars = useEditorStore((state) => state.runtimeObjectVariables);
   const runtimeAnimators = useEditorStore((state) => state.runtimeAnimators);
   const animatorControllers = useEditorStore((state) => state.animatorControllers);
@@ -173,6 +174,42 @@ export function GameHud() {
           }}
         />
       )}
+      {/* Directional damage indicators — edge chevrons toward the attacker (Halo/Apex style). */}
+      {damageIndicators.map((item, index) => {
+        const age = Math.min(1, (performance.now() - item.at) / 1800);
+        const opacity = Math.max(0, 1 - age);
+        if (opacity <= 0.02) return null;
+        return (
+          <div
+            key={`${item.at}-${index}`}
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              width: 0,
+              height: 0,
+              transform: `rotate(${item.angle}deg)`,
+              pointerEvents: 'none',
+              opacity,
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                left: '-14px',
+                top: '-42%',
+                width: 0,
+                height: 0,
+                borderLeft: '14px solid transparent',
+                borderRight: '14px solid transparent',
+                borderBottom: '22px solid rgba(190, 40, 40, 0.85)',
+                filter: 'drop-shadow(0 0 6px rgba(120,0,0,0.55))',
+              }}
+            />
+          </div>
+        );
+      })}
       {showThirdPersonReticle && (
         <div
           aria-hidden

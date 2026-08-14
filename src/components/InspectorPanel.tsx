@@ -2727,7 +2727,14 @@ function PhysicsSection({
         <span>Trigger</span>
         <input type="checkbox" checked={physics.isTrigger ?? false} onChange={(event) => onChange({ isTrigger: event.target.checked })} />
       </label>
-      {physics.isTrigger && <p className="field-hint">Trigger colliders detect overlaps but do not block, push, or get pushed.</p>}
+      {physics.isTrigger && (
+        <>
+          <p className="field-hint">Trigger colliders detect overlaps but do not block, push, or get pushed.</p>
+          <p className="field-hint">
+            Gravity zone: add an instance variable <code>gravityMultiplier</code> (number) — e.g. 0.2 low-g, 0 zero-g, −1 inverted. Overlapping dynamics and characters use that scale until they exit.
+          </p>
+        </>
+      )}
       <label className="field-row">
         <span>Layer</span>
         <select value={physics.collisionLayer ?? 0} onChange={(event) => onChange({ collisionLayer: Number(event.target.value) })}>

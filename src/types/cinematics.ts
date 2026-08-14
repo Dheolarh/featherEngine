@@ -256,6 +256,23 @@ export interface RuntimeCinematicFade {
   wipe?: 'left' | 'right' | 'up' | 'down';
 }
 
+/** Gameplay Screen Fade node state — lerps opacity toward a target over real time (independent of Film Mode). */
+export interface RuntimeScreenFade {
+  /** Current overlay opacity 0..1. */
+  opacity: number;
+  /** Target opacity being lerped toward. */
+  target: number;
+  /** Seconds remaining in the lerp (0 = settled). */
+  remaining: number;
+  /** Total duration of the current lerp (for progress). */
+  duration: number;
+  color: string;
+  /** Blueprint node id waiting on Done (if any). */
+  doneNodeId?: string;
+  /** Owning object id for the Done resume pass. */
+  doneObjectId?: string;
+}
+
 /** A text overlay (title/subtitle/lower-third/credit) currently on screen, with its faded-in opacity. */
 export interface RuntimeCinematicText {
   id: string;

@@ -73,9 +73,11 @@ export const nodeDescriptions: Record<string, string> = {
   'Key Up': 'Fires when a key is released.',
   'Custom Event': 'A reusable entry point that can be fired by name.',
   'Fire Event': 'Triggers a custom event by name.',
-  'Collision Enter': 'Fires when this object starts touching another collider.',
-  'Trigger Enter': 'Fires when this object starts overlapping a trigger collider.',
-  'Trigger Exit': 'Fires when this object stops overlapping a trigger collider.',
+  'Collision Enter': 'Fires when this object starts touching another collider. Value outs: Other, Normal, Point, Speed.',
+  'Collision Exit': 'Fires when this object stops touching a solid collider. Value outs: Other, Point.',
+  'Trigger Enter': 'Fires when this object starts overlapping a trigger collider. Value outs: Other, Point.',
+  'Trigger Exit': 'Fires when this object stops overlapping a trigger collider. Value outs: Other, Point.',
+  'On Land': 'Fires when a character lands after falling. Value out: Speed (impact speed, u/s).',
   Branch: 'Chooses a path from a boolean value.',
   Compare: 'Compares two values.',
   AND: 'Requires both inputs to be true.',
@@ -107,7 +109,8 @@ export const nodeDescriptions: Record<string, string> = {
   'Set Physics': 'Enables, disables, or configures a target physics body at runtime.',
   'Spawn Object': 'Creates an object instance.',
   'Destroy Object': 'Removes an object during Play.',
-  'Play Sound': 'Plays an audio source.',
+  'Play Sound': 'Plays an audio source (optional Volume / Pitch / pitch jitter).',
+  'Screen Fade': 'Fades the viewport to a color over a duration. Done fires when the fade settles.',
   'Play Cinematic': 'Starts a Film Mode cinematic sequence.',
   'Set Material Color': 'Changes the attached object\'s material color at runtime (per-object).',
   'Set Material Property': 'Sets a numeric material property (metalness/roughness/glow) at runtime (per-object).',
@@ -148,6 +151,7 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Trigger Enter': 'event.triggerEnter',
   'Trigger Exit': 'event.triggerExit',
   Interact: 'event.interact',
+  'On Land': 'event.land',
   'On Receive Damage': 'event.receiveDamage',
   Timer: 'event.timer',
   Branch: 'logic.branch',
@@ -291,6 +295,7 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Spawn Particle System': 'action.spawnParticleSystem',
   'Camera Shake': 'action.cameraShake',
   'Screen Flash': 'action.screenFlash',
+  'Screen Fade': 'action.screenFade',
   'Spawn Decal': 'action.spawnDecal',
   Explode: 'action.explode',
   'Move To': 'action.moveTo',
@@ -358,29 +363,29 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
       return {
         label: 'Collision Enter',
         description: data.otherObjectId
-          ? 'Fires when this object starts touching the selected other object.'
-          : 'Fires when this object starts touching any solid collider.',
+          ? 'Fires when this object starts touching the selected other object. Value outs: Other, Normal, Point, Speed.'
+          : 'Fires when this object starts touching any solid collider. Value outs: Other, Normal, Point, Speed.',
       };
     case 'event.collisionExit':
       return {
         label: 'Collision Exit',
         description: data.otherObjectId
-          ? 'Fires when this object stops touching the selected other object.'
-          : 'Fires when this object stops touching a solid collider it was in contact with (e.g. left the ground, slid off a wall).',
+          ? 'Fires when this object stops touching the selected other object. Value outs: Other, Point.'
+          : 'Fires when this object stops touching a solid collider. Value outs: Other, Point.',
       };
     case 'event.triggerEnter':
       return {
         label: 'Trigger Enter',
         description: data.otherObjectId
-          ? 'Fires when this object starts overlapping the selected trigger participant.'
-          : 'Fires when this object starts overlapping any trigger collider.',
+          ? 'Fires when this object starts overlapping the selected trigger participant. Value outs: Other, Point.'
+          : 'Fires when this object starts overlapping any trigger collider. Value outs: Other, Point.',
       };
     case 'event.triggerExit':
       return {
         label: 'Trigger Exit',
         description: data.otherObjectId
-          ? 'Fires when this object stops overlapping the selected trigger participant (e.g. walks away).'
-          : 'Fires when this object stops overlapping a trigger collider.',
+          ? 'Fires when this object stops overlapping the selected trigger participant. Value outs: Other, Point.'
+          : 'Fires when this object stops overlapping a trigger collider. Value outs: Other, Point.',
       };
     case 'event.timer':
       return {
@@ -398,6 +403,12 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
         label: 'On Receive Damage',
         description:
           "Fires on this object when it's hit — by an Apply Damage node, a projectile, a melee swing, enemy contact, or an explosion (the frame after). Just having THIS event makes the object damageable AUTOMATICALLY — no `health` variable required (it fires notify-only and the object never dies). To make it actually have HP and DIE at 0 (ragdoll/shatter/despawn), set this node's Health (HP) field > 0 — no need to add a `health` variable by hand. The Damage value-out carries how much was dealt this hit. Unreal-style \"AnyDamage\".",
+      };
+    case 'event.land':
+      return {
+        label: 'On Land',
+        description:
+          'Fires when a character controller lands after falling (became grounded this frame with downward impact). Speed value-out is the impact speed in u/s — use it to spawn dust, camera shake, or hard-landing damage.',
       };
     case 'action.fireEvent':
       return { label: `Fire: ${eventName}`, description: 'Triggers matching custom event entry nodes.' };
@@ -593,6 +604,12 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
         label: `Screen Flash ${Number(data.flashAmount ?? 0.7)}`,
         description:
           'Pops a full-screen color flash that fades in ~0.3s — muzzle/explosion bloom, an ability blink, a damage blink. Amount = peak opacity 0..1 (wire a number into "amount"); set flashColor (white default, hot orange for blasts, red for damage). Explosions already add a flash automatically, so reserve this for scripted moments.',
+      };
+    case 'action.screenFade':
+      return {
+        label: `Screen Fade → ${Number(data.fadeTo ?? 1)}`,
+        description:
+          'Fades the gameplay viewport toward an opacity (0 clear … 1 covered) over Duration seconds, tinted by Color. Done fires when the fade settles. Great for respawns, teleports, and scene transitions. Independent of Film Mode cinematics.',
       };
     case 'action.spawnDecal':
       return {
@@ -1048,6 +1065,18 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
   if (nodeKind === 'action.screenFlash') {
     if (typeof normalized.flashAmount !== 'number') normalized.flashAmount = 0.7;
     if (typeof normalized.flashColor !== 'string') normalized.flashColor = '#ffffff';
+  }
+
+  if (nodeKind === 'action.screenFade') {
+    if (typeof normalized.fadeTo !== 'number') normalized.fadeTo = 1;
+    if (typeof normalized.numberValue !== 'number') normalized.numberValue = 0.5; // duration seconds
+    if (typeof normalized.fadeColor !== 'string') normalized.fadeColor = '#000000';
+  }
+
+  if (nodeKind === 'action.playSound') {
+    if (typeof normalized.soundVolume !== 'number') normalized.soundVolume = 1;
+    if (typeof normalized.soundPitch !== 'number') normalized.soundPitch = 1;
+    if (typeof normalized.pitchJitter !== 'number') normalized.pitchJitter = 0;
   }
 
   if (nodeKind === 'action.explode') {

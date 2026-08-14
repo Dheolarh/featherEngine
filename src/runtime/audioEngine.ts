@@ -226,7 +226,13 @@ class AudioEngine {
    * Fire a transient sound. With `position` it plays through a PannerNode (spatial); without, it plays at the
    * master gain (2D — UI/menu sounds). Falls back to a plain HTMLAudioElement if the buffer can't be decoded.
    */
-  playOneShot(assetId: string, url: string, position?: Vector3Tuple, volume = 1): void {
+  playOneShot(
+    assetId: string,
+    url: string,
+    position?: Vector3Tuple,
+    volume = 1,
+    playbackRate = 1,
+  ): void {
     const ctx = this.ensureContext();
     if (!ctx) {
       this.playFallback(url, volume);
@@ -239,6 +245,8 @@ class AudioEngine {
       }
       const source = ctx.createBufferSource();
       source.buffer = buffer;
+      const rate = Math.max(0.1, Math.min(4, playbackRate || 1));
+      source.playbackRate.value = rate;
       const gain = ctx.createGain();
       gain.gain.value = volume;
       if (position) {
@@ -253,6 +261,73 @@ class AudioEngine {
       };
       source.start();
     });
+  }
+
+  /**
+   * Synthesized collision thud keyed by physics materialPreset — no assets needed. Volume/pitch scale with
+   * impact speed; metal rings, wood knocks, rubber thuds, ice clinks, etc.
+   */
+  playMaterialImpactThud(
+    material: string,
+    volume = 0.5,
+    position?: Vector3Tuple,
+  ): void {
+    const ctx = this.ensureContext();
+    if (!ctx || ctx.state === 'suspended' || !this.master) return;
+    const t = ctx.currentTime;
+    const vol = Math.max(0.02, Math.min(1, volume));
+    // Preset → [baseHz, noiseMix, decaySec, type]
+    const presets: Record<string, [number, number, number, OscillatorType]> = {
+      metal: [520, 0.35, 0.22, 'square'],
+      stone: [180, 0.55, 0.18, 'triangle'],
+      wood: [240, 0.4, 0.14, 'triangle'],
+      rubber: [90, 0.7, 0.2, 'sine'],
+      slime: [70, 0.85, 0.28, 'sine'],
+      ice: [880, 0.25, 0.12, 'sine'],
+      mud: [60, 0.9, 0.24, 'sine'],
+      default: [140, 0.5, 0.16, 'triangle'],
+    };
+    const [hz, noiseMix, decay, wave] = presets[material] ?? presets.default;
+    const jitter = 0.92 + Math.random() * 0.16;
+
+    const osc = ctx.createOscillator();
+    osc.type = wave;
+    osc.frequency.setValueAtTime(hz * jitter, t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(40, hz * 0.45), t + decay);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(vol * (1 - noiseMix * 0.5), t);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, t + decay);
+
+    if (!this.noiseBuffer) {
+      const len = Math.floor(ctx.sampleRate * 0.25);
+      this.noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = this.noiseBuffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = hz * 1.4 * jitter;
+    band.Q.value = 0.8;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(vol * noiseMix, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + decay * 0.85);
+
+    const dest: AudioNode = this.master;
+    if (position) {
+      const panner = this.makePanner(ctx, position);
+      osc.connect(oscGain).connect(panner);
+      noise.connect(band).connect(noiseGain).connect(panner);
+      panner.connect(dest);
+    } else {
+      osc.connect(oscGain).connect(dest);
+      noise.connect(band).connect(noiseGain).connect(dest);
+    }
+    osc.start(t);
+    osc.stop(t + decay + 0.02);
+    noise.start(t);
+    noise.stop(t + decay);
   }
 
   private playFallback(url: string, volume: number): void {

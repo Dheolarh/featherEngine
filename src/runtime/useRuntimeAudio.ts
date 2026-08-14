@@ -22,7 +22,7 @@ export function useRuntimeAudio() {
     queue.forEach((event) => {
       const url = assets.find((asset) => asset.id === event.assetId)?.url;
       if (!url) return;
-      audioEngine.playOneShot(event.assetId, url, event.position, event.volume ?? 1);
+      audioEngine.playOneShot(event.assetId, url, event.position, event.volume ?? 1, event.playbackRate ?? 1);
     });
     clearRuntimeSounds();
   }, [queue, clearRuntimeSounds]);

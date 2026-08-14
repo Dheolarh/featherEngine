@@ -110,3 +110,7 @@ export const blueprintVarTypeCache = new WeakMap<ScriptBlueprint, Map<string, Gr
 export const detachedParts = new Map<string, { parentId: string; transform: TransformComponent }>();
 export const pendingPartKicks = new Map<string, { vel: Vector3Tuple; spin: Vector3Tuple }>();
 export const pendingPartRestores = new Map<string, { parentId: string; transform: TransformComponent }>();
+
+/** Rate-limit for synthesized material impact thuds (pair key → last play ms). Cleared on Play start. */
+export const impactAudioCooldown = new Map<string, number>();
+export const clearImpactAudioCooldown = () => impactAudioCooldown.clear();
