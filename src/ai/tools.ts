@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { type UITemplateKind, type UIThemeKind } from '../store/editor/ui';
+import { inputTypeForHandle, outputTypeForHandle, valueTypesCompatible } from '../store/editor/wireTypes';
 import { undo as undoHistory, redo as redoHistory } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
 import { getPlatform } from '../platform';
@@ -416,6 +417,7 @@ const NODE_LABELS = [
   'Compare',
   'AND',
   'OR',
+  'Cast',
   'Add',
   'Clamp',
   'Lerp',
@@ -431,6 +433,7 @@ const NODE_LABELS = [
   'Fire Event',
   'Apply Force',
   'Spawn Object',
+  'Spawn Prefab',
   'Destroy Object',
   'Play Sound',
   'Set Material Color',
@@ -458,8 +461,15 @@ const NODE_LABELS = [
   'Set Movement Mode',
   'Set Visible',
   'Set Active',
+  'Burst Particles',
+  'Set Particles Emitting',
+  'Spawn Particle System',
+  'Screen Flash',
+  'Set Environment',
   'Distance To Player',
   'Direction To Player',
+  'Player Location',
+  'Has Line Of Sight',
   'Face Player',
   'Cooldown',
   'For Loop',
@@ -510,6 +520,7 @@ const NODE_LABELS = [
   'Get Rotation',
   'Get Scale',
   'Apply Impulse',
+  'Apply Torque',
   'Set Physics',
   'Set Velocity',
   'Get Velocity',
@@ -517,6 +528,8 @@ const NODE_LABELS = [
   'Find Actor By Tag',
   'Raycast',
   'Overlap Sphere',
+  'Sphere Cast',
+  'Set Joint Motor',
   'Cut Cable',
   'Set Cable Length',
   'Get Cable Tension',
@@ -560,6 +573,7 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   Compare: 'Logic',
   AND: 'Logic',
   OR: 'Logic',
+  Cast: 'Logic',
   Add: 'Math',
   Clamp: 'Math',
   Lerp: 'Math',
@@ -575,6 +589,7 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Fire Event': 'Runtime',
   'Apply Force': 'Physics',
   'Spawn Object': 'Runtime',
+  'Spawn Prefab': 'Runtime',
   'Destroy Object': 'Runtime',
   'Play Sound': 'Audio',
   'Set Material Color': 'Runtime',
@@ -602,8 +617,15 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Set Movement Mode': 'Runtime',
   'Set Visible': 'Runtime',
   'Set Active': 'Runtime',
+  'Burst Particles': 'Runtime',
+  'Set Particles Emitting': 'Runtime',
+  'Spawn Particle System': 'Runtime',
+  'Screen Flash': 'Runtime',
+  'Set Environment': 'Runtime',
   'Distance To Player': 'Runtime',
   'Direction To Player': 'Runtime',
+  'Player Location': 'Runtime',
+  'Has Line Of Sight': 'Runtime',
   'Face Player': 'Runtime',
   Cooldown: 'Logic',
   'For Loop': 'Logic',
@@ -654,6 +676,7 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Get Rotation': 'Runtime',
   'Get Scale': 'Runtime',
   'Apply Impulse': 'Physics',
+  'Apply Torque': 'Physics',
   'Set Physics': 'Physics',
   'Set Velocity': 'Physics',
   'Get Velocity': 'Physics',
@@ -661,6 +684,8 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Find Actor By Tag': 'Runtime',
   Raycast: 'Runtime',
   'Overlap Sphere': 'Physics',
+  'Sphere Cast': 'Physics',
+  'Set Joint Motor': 'Physics',
   'Cut Cable': 'Physics',
   'Set Cable Length': 'Physics',
   'Get Cable Tension': 'Physics',
@@ -4643,7 +4668,7 @@ const rawEngineTools = {
 
   connect_nodes: tool({
     description:
-      'Connect two nodes in a blueprint. Omit handles for execution flow. For typed value flow, use sourceHandle "value-out" and a targetHandle such as value, condition, amount, vector, message, rowKey, a, b, min, max, or t.',
+      'Connect two nodes in a blueprint. Omit handles for execution flow. For typed value flow, use sourceHandle "value-out" and a targetHandle such as value, condition, amount, vector, message, rowKey, a, b, min, max, or t. Value types must match (or be any); number cannot wire into a vector3 pin.',
     inputSchema: z.object({
       blueprintId: z.string(),
       sourceId: z.string(),
@@ -4653,6 +4678,28 @@ const rawEngineTools = {
     }),
     execute: async ({ blueprintId, sourceId, targetId, sourceHandle, targetHandle }) => {
       if (!findBlueprint(blueprintId)) return `No blueprint with id ${blueprintId}.`;
+      const graph = store().graphs.find((g) => g.id === findBlueprint(blueprintId)!.graphId);
+      const sourceNode = graph?.nodes.find((n) => n.id === sourceId);
+      const targetNode = graph?.nodes.find((n) => n.id === targetId);
+      if (!sourceNode || !targetNode) return `Missing source or target node.`;
+      const srcExec = (sourceHandle ?? 'exec-out').startsWith('exec');
+      const tgtExec = (targetHandle ?? 'exec-in').startsWith('exec');
+      if (srcExec !== tgtExec) return `Cannot connect exec to value (or vice versa).`;
+      if (!srcExec) {
+        const sourceType = outputTypeForHandle(
+          sourceNode.data.nodeKind,
+          sourceHandle ?? 'value-out',
+          sourceNode.data.valueType as GraphValueType | undefined,
+        );
+        const targetType = inputTypeForHandle(
+          targetNode.data.nodeKind,
+          targetHandle ?? 'value',
+          targetNode.data.valueType as GraphValueType | undefined,
+        );
+        if (!valueTypesCompatible(sourceType, targetType)) {
+          return `Type mismatch: ${sourceType} cannot connect to ${targetType} (${sourceHandle ?? 'value-out'} → ${targetHandle}).`;
+        }
+      }
       store().connectGraphNodes(blueprintId, sourceId, targetId, sourceHandle, targetHandle);
       return targetHandle
         ? `Connected value ${sourceId}:${sourceHandle ?? 'value-out'} -> ${targetId}:${targetHandle}.`

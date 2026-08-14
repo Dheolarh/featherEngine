@@ -26,13 +26,23 @@ import {
 import { useEditorStore } from '../store/editorStore';
 import { useSceneOptions, useStableActiveObjects, useStableActiveScene } from '../store/stableSelectors';
 import { nodeDescriptions, nodeKindByLabel } from '../store/editor/graph';
-import { NodeForgeGraphNode, outputTypeOf, VALUE_TYPE_COLORS, EXEC_WIRE_COLOR } from './NodeForgeGraphNode';
+import {
+  NodeForgeGraphNode,
+  outputTypeOf,
+  outputTypeForHandle,
+  inputTypeForHandle,
+  valueTypesCompatible,
+  valueProducerKinds,
+  valueInputsFor,
+  VALUE_TYPE_COLORS,
+  EXEC_WIRE_COLOR,
+} from './NodeForgeGraphNode';
 import { NodeSearchMenu, type NodeChoice } from './NodeSearchMenu';
 import { PaletteGroup } from './PaletteGroup';
 import type { GraphNodeCategory, GraphNodeKind, GraphValue, GraphValueType, NodeForgeNode, NodeForgeNodeData, QualityLevel, UIElement, Vector3Tuple } from '../types';
 import { QUALITY_LEVELS } from '../three/quality';
 import { KEY_CODE_OPTIONS, keyLabelByCode } from '../utils/keyboardCodes';
-import { execTrace, setExecTraceEnabled } from '../runtime/execTrace';
+import { execTrace, setExecTraceEnabled, resetExecWindowCounts } from '../runtime/execTrace';
 import { valueTrace, setValueTraceEnabled, formatTraceValue } from '../runtime/valueTrace';
 import { FEATHER_SIDEBAR_API, getFeatherCompletions, type FeatherApiEntry, type FeatherCompletion } from '../scripting/featherApi';
 import { parseFeatherScript } from '../scripting/featherParser';
@@ -109,12 +119,12 @@ export const nodeGroups: Array<{
   {
     title: 'Runtime',
     icon: Waypoints,
-    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Spawn Decal', 'Explode', 'Set Environment', 'Get Time Of Day', 'Set Time Of Day', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Start Replay', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Face Player', 'Print'],
+    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Prefab', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Spawn Decal', 'Explode', 'Set Environment', 'Get Time Of Day', 'Set Time Of Day', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Start Replay', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Has Line Of Sight', 'Face Player', 'Print'],
   },
   {
     title: 'Physics',
     icon: Boxes,
-    nodes: ['Apply Force', 'Apply Impulse', 'Apply Torque', 'Set Physics', 'Set Velocity', 'Get Velocity', 'Overlap Sphere', 'Cut Cable', 'Set Cable Length', 'Get Cable Tension', 'Fracture'],
+    nodes: ['Apply Force', 'Apply Impulse', 'Apply Torque', 'Set Physics', 'Set Velocity', 'Get Velocity', 'Overlap Sphere', 'Sphere Cast', 'Set Joint Motor', 'Cut Cable', 'Set Cable Length', 'Get Cable Tension', 'Fracture'],
   },
   {
     title: 'Persistence',
@@ -2484,12 +2494,15 @@ export function VisualScriptingPanel() {
   const [hotNodes, setHotNodes] = useState<Set<string>>(() => new Set());
   // Live value readouts (formatted) per node, polled from the value trace at the same cadence.
   const [liveValues, setLiveValues] = useState<Record<string, string>>({});
+  // Executions per node within the last poll window (only entries > 1 are kept for badges).
+  const [hitCounts, setHitCounts] = useState<Record<string, number>>({});
   useEffect(() => {
     setExecTraceEnabled(isPlaying);
     setValueTraceEnabled(isPlaying);
     if (!isPlaying) {
       setHotNodes((prev) => (prev.size ? new Set<string>() : prev));
       setLiveValues((prev) => (Object.keys(prev).length ? {} : prev));
+      setHitCounts((prev) => (Object.keys(prev).length ? {} : prev));
       return () => {
         setExecTraceEnabled(false);
         setValueTraceEnabled(false);
@@ -2502,6 +2515,16 @@ export function VisualScriptingPanel() {
       setHotNodes((prev) => {
         if (prev.size === next.size && [...next].every((id) => prev.has(id))) return prev;
         return next;
+      });
+      const counts: Record<string, number> = {};
+      for (const [nodeId, count] of execTrace.counts) {
+        if (count > 1 && next.has(nodeId)) counts[nodeId] = count;
+      }
+      resetExecWindowCounts();
+      setHitCounts((prev) => {
+        const keys = Object.keys(counts);
+        if (keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === counts[k])) return prev;
+        return counts;
       });
       // Snapshot current value readouts; bail out of the state update when nothing changed.
       const values: Record<string, string> = {};
@@ -2520,23 +2543,33 @@ export function VisualScriptingPanel() {
   }, [isPlaying]);
 
   // Nodes fed to React Flow, tagged with the exec-hot pulse class while executing and carrying a
-  // transient `liveValue` (read by NodeForgeGraphNode) so value nodes show their current output.
+  // transient `liveValue` / `execHitCount` (read by NodeForgeGraphNode).
   const flowNodes = useMemo<NodeForgeNode[]>(() => {
     const nodes = graph?.nodes;
     if (!nodes) return [];
     const hasValues = Object.keys(liveValues).length > 0;
-    if (!hotNodes.size && !hasValues) return nodes;
+    const hasHits = Object.keys(hitCounts).length > 0;
+    if (!hotNodes.size && !hasValues && !hasHits) return nodes;
     return nodes.map((node) => {
       const live = liveValues[node.id];
+      const hits = hitCounts[node.id];
       const hot = hotNodes.has(node.id);
-      if (!live && !hot) return node;
+      if (!live && !hot && !hits) return node;
       return {
         ...node,
         ...(hot ? { className: 'exec-hot' } : {}),
-        ...(live ? { data: { ...node.data, liveValue: live } } : {}),
+        ...((live || hits)
+          ? {
+              data: {
+                ...node.data,
+                ...(live ? { liveValue: live } : {}),
+                ...(hits ? { execHitCount: hits } : {}),
+              },
+            }
+          : {}),
       };
     });
-  }, [graph, hotNodes, liveValues]);
+  }, [graph, hotNodes, liveValues, hitCounts]);
 
   const nodeChoices = useMemo<NodeChoice[]>(
     () => [
@@ -2564,6 +2597,82 @@ export function VisualScriptingPanel() {
     ],
     [variables],
   );
+
+  // When the menu was opened by dragging a pin into empty space, narrow choices to nodes that can
+  // actually accept (or provide) that wire — Unreal-style context add.
+  const searchMenuChoices = useMemo(() => {
+    const pending = searchMenu?.pending;
+    if (!pending || !graph) return nodeChoices;
+    const origin = graph.nodes.find((node) => node.id === pending.nodeId);
+    if (!origin) return nodeChoices;
+    const exec = (pending.handleId ?? '').startsWith('exec');
+    if (pending.handleType === 'source') {
+      if (exec) {
+        // Dragging from an exec-out → need nodes with an exec-in (actions / gates, not pure values).
+        return nodeChoices.filter(
+          (choice) =>
+            choice.action === 'create-variable' ||
+            choice.label === 'New Variable' ||
+            (choice.nodeKind ? !valueProducerKinds.has(choice.nodeKind) : choice.valueType === 'exec'),
+        );
+      }
+      const sourceType = outputTypeForHandle(
+        origin.data.nodeKind,
+        pending.handleId,
+        origin.data.valueType as GraphValueType | undefined,
+      );
+      return nodeChoices.filter((choice) => {
+        if (choice.action === 'create-variable' || choice.label === 'New Variable') return true;
+        if (!choice.nodeKind) return false;
+        const pins = valueInputsFor(choice.nodeKind);
+        if (pins.length === 0) return false;
+        return pins.some((pin) =>
+          valueTypesCompatible(
+            sourceType,
+            inputTypeForHandle(choice.nodeKind!, pin.id, choice.data?.valueType as GraphValueType | undefined),
+          ),
+        );
+      });
+    }
+    // Dragging from a target pin → need a provider (exec-out or value-out).
+    if (exec) {
+      return nodeChoices.filter(
+        (choice) =>
+          choice.action === 'create-variable' ||
+          choice.label === 'New Variable' ||
+          (choice.nodeKind ? !valueProducerKinds.has(choice.nodeKind) : choice.valueType === 'exec'),
+      );
+    }
+    const targetType = inputTypeForHandle(
+      origin.data.nodeKind,
+      pending.handleId,
+      origin.data.valueType as GraphValueType | undefined,
+    );
+    return nodeChoices.filter((choice) => {
+      if (choice.action === 'create-variable' || choice.label === 'New Variable') return targetType === 'number' || targetType === 'any';
+      if (!choice.nodeKind) return false;
+      if (!valueProducerKinds.has(choice.nodeKind) && choice.nodeKind !== 'logic.cast' && choice.nodeKind !== 'action.spawnPrefab') {
+        return false;
+      }
+      const out = choice.valueType && choice.valueType !== 'exec' ? choice.valueType : outputTypeOf[choice.nodeKind] ?? 'any';
+      return valueTypesCompatible(out, targetType);
+    });
+  }, [graph, nodeChoices, searchMenu]);
+
+  const searchFilterHint = useMemo(() => {
+    const pending = searchMenu?.pending;
+    if (!pending || !graph) return null;
+    const origin = graph.nodes.find((node) => node.id === pending.nodeId);
+    if (!origin) return null;
+    const exec = (pending.handleId ?? '').startsWith('exec');
+    if (exec) return 'exec nodes';
+    if (pending.handleType === 'source') {
+      const t = outputTypeForHandle(origin.data.nodeKind, pending.handleId, origin.data.valueType as GraphValueType | undefined);
+      return t === 'any' ? 'value consumers' : `${t} consumers`;
+    }
+    const t = inputTypeForHandle(origin.data.nodeKind, pending.handleId, origin.data.valueType as GraphValueType | undefined);
+    return t === 'any' ? 'value nodes' : `${t} nodes`;
+  }, [graph, searchMenu]);
 
   const createVariableNode = (position?: { x: number; y: number }) => {
     const variableId = createVariable(undefined, 'number', true);
@@ -2698,11 +2807,30 @@ export function VisualScriptingPanel() {
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
   }, [activeBlueprintId, clipboard, deleteGraphNodes, graph, pasteGraphNodes, selectGraphNode, selectedGraphNode]);
 
-  // Reject wires that cross categories (exec↔value) or loop a node back to itself.
+  // Reject self-wires, exec↔value crosses, and typed value mismatches (number↛vector3, etc.).
+  // `any` is a wild card so references / untyped Get Variable still connect freely.
   const isExecHandle = (handleId?: string | null) => (handleId ?? '').startsWith('exec');
   const isValidConnection = (connection: Connection | Edge) => {
     if (connection.source === connection.target) return false;
-    return isExecHandle(connection.sourceHandle) === isExecHandle(connection.targetHandle);
+    const sourceExec = isExecHandle(connection.sourceHandle);
+    const targetExec = isExecHandle(connection.targetHandle);
+    if (sourceExec !== targetExec) return false;
+    if (sourceExec) return true;
+    if (!graph) return true;
+    const sourceNode = graph.nodes.find((node) => node.id === connection.source);
+    const targetNode = graph.nodes.find((node) => node.id === connection.target);
+    if (!sourceNode || !targetNode) return false;
+    const sourceType = outputTypeForHandle(
+      sourceNode.data.nodeKind,
+      connection.sourceHandle,
+      sourceNode.data.valueType as GraphValueType | undefined,
+    );
+    const targetType = inputTypeForHandle(
+      targetNode.data.nodeKind,
+      connection.targetHandle,
+      targetNode.data.valueType as GraphValueType | undefined,
+    );
+    return valueTypesCompatible(sourceType, targetType);
   };
 
   // Drag-to-create: remember the socket a wire drag started from; clear it the moment a real connection
@@ -3100,7 +3228,8 @@ export function VisualScriptingPanel() {
         <NodeSearchMenu
           x={searchMenu.x}
           y={searchMenu.y}
-          choices={nodeChoices}
+          choices={searchMenuChoices}
+          filterHint={searchFilterHint}
           onPick={(choice) => addNodeAt(choice, searchMenu)}
           onClose={() => setSearchMenu(null)}
         />

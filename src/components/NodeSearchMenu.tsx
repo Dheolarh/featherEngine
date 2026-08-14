@@ -29,12 +29,15 @@ export function NodeSearchMenu({
   choices,
   onPick,
   onClose,
+  filterHint,
 }: {
   x: number;
   y: number;
   choices: NodeChoice[];
   onPick: (choice: NodeChoice) => void;
   onClose: () => void;
+  /** When opened from a pin drag, explain which sockets are being filtered. */
+  filterHint?: string | null;
 }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -77,7 +80,7 @@ export function NodeSearchMenu({
         <input
           autoFocus
           value={query}
-          placeholder="Search nodes…"
+          placeholder={filterHint ? `Search ${filterHint}…` : 'Search nodes…'}
           onChange={(event) => {
             setQuery(event.target.value);
             setActive(0);
@@ -96,6 +99,7 @@ export function NodeSearchMenu({
           }}
         />
       </label>
+      {filterHint && <div className="node-search-filter-hint">Showing {filterHint}</div>}
       <div className="node-search-list">
         {grouped.map((group) => (
           <section className="node-search-group" key={group.category}>
