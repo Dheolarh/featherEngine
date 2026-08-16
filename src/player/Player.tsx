@@ -83,8 +83,10 @@ export function Player() {
 
   const start = (raw: unknown) => {
     try {
-      const { project } = readGameBundle(raw);
-      loadProject(project);
+      const { project, startSceneId } = readGameBundle(raw);
+      // A bundle's launch scene is an export setting and may intentionally differ from the scene that
+      // happened to be active when the project snapshot was saved.
+      loadProject(project.activeSceneId === startSceneId ? project : { ...project, activeSceneId: startSceneId });
       setPlaying(true);
       setStatus('ready');
     } catch (err) {
@@ -95,8 +97,8 @@ export function Player() {
 
   // On launch, resolve the game bundle in priority order:
   //   1. a baked-in global (window.__NODEFORGE_GAME__) written by `game-bundle.js` —
-  //      this is what a production export injects, so the player runs from file:// and
-  //      inside the native (Tauri) shell with no fetch.
+  //      this is what a production export injects, so hosted web builds and the native
+  //      Tauri shell start without fetching a separate game.json.
   //   2. a sibling ./game.json (served builds / dropping a bundle next to the player).
   //   3. a manual file picker (opened directly during testing).
   useEffect(() => {

@@ -5,7 +5,7 @@
 // Production button) into shippable artifacts:
 //
 //   - a PORTABLE WEB FOLDER: copy of the player build with the game baked in;
-//     runs by opening index.html in any browser.
+//     serve the folder from any static web host (browsers restrict file:// module apps).
 //   - a NATIVE APP (--native): wraps that folder in the Tauri player target,
 //     producing a real .app/.dmg (mac), .msi/.exe (windows), or
 //     .AppImage/.deb (linux) for the current operating system.
@@ -169,6 +169,37 @@ const bundlePath = resolve(root, opts.bundle || 'exports/staging/game.json');
 const outRoot = resolve(root, opts.out || 'exports');
 const distPlayer = resolve(root, 'dist-player');
 
+/**
+ * Run the exact TypeScript/Zod loader and bundle auditor used by the editor/player. Vite is already
+ * a direct build dependency and its SSR loader lets this plain Node CLI reuse that source of truth
+ * instead of maintaining a weaker second "looks roughly valid" schema in this script.
+ */
+async function validateAndAuditBundle(raw) {
+  const { createServer } = await import('vite');
+  const vite = await createServer({
+    root,
+    configFile: false,
+    appType: 'custom',
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  });
+  try {
+    const [bundleModule, auditModule] = await Promise.all([
+      vite.ssrLoadModule('/src/project/exportGame.ts'),
+      vite.ssrLoadModule('/src/project/verifyBundle.ts'),
+    ]);
+    const loaded = bundleModule.readGameBundle(raw);
+    const canonicalBundle = {
+      bundleVersion: bundleModule.GAME_BUNDLE_VERSION,
+      startSceneId: loaded.startSceneId,
+      project: loaded.project,
+    };
+    return { loaded, report: auditModule.verifyGameBundle(canonicalBundle) };
+  } finally {
+    await vite.close();
+  }
+}
+
 if (!existsSync(bundlePath)) {
   console.error(
     `\nERROR: No game bundle found at ${bundlePath}\n` +
@@ -186,25 +217,40 @@ try {
   process.exit(1);
 }
 
-const gameName = opts.name || bundle?.project?.name || 'Game';
+let preflight;
+try {
+  preflight = await validateAndAuditBundle(bundle);
+} catch (err) {
+  console.error(
+    `\nERROR: ${bundlePath} cannot be loaded by this Feather Engine player:\n` +
+      `  ${err instanceof Error ? err.message : String(err)}\n` +
+      '  Open and re-export the project with this engine version, then try again.\n',
+  );
+  process.exit(1);
+}
+
+const gameName = opts.name || preflight.loaded.project.name || 'Game';
 const slug = slugify(gameName);
 
 {
-  const p = bundle.project ?? {};
+  const p = preflight.loaded.project;
   const objectCount = (p.scenes ?? []).reduce((n, scene) => n + (scene.objects?.length ?? 0), 0);
   const assets = p.assets ?? [];
-  const notEmbedded = assets.filter((asset) => !asset.data || asset.unresolved);
   console.log(
     `\nContents: ${(p.scenes ?? []).length} scenes / ${objectCount} objects | ` +
       `${(p.blueprints ?? []).length} blueprints | ${(p.materials ?? []).length} materials | ` +
       `${(p.particleSystems ?? []).length} particles | ${(p.prefabs ?? []).length} prefabs | ` +
       `${assets.length} resources`,
   );
-  if (notEmbedded.length) {
-    console.warn(`WARNING: ${notEmbedded.length} resource(s) NOT embedded:`);
-    for (const asset of notEmbedded) console.warn(`   - ${asset.name ?? asset.id} (${asset.path ?? asset.id})`);
-  } else if (assets.length) {
-    console.log('OK: All resources embedded.');
+  for (const warning of preflight.report.warnings) console.warn(`WARNING: ${warning}`);
+  if (preflight.report.errors.length) {
+    console.error(`\nERROR: Production preflight found ${preflight.report.errors.length} blocking issue(s):`);
+    for (const error of preflight.report.errors) console.error(`   - ${error}`);
+    console.error('\nFix these resources in the editor and export a new game.json. No player files were written.\n');
+    process.exit(1);
+  }
+  if (assets.length && !preflight.report.warnings.length) {
+    console.log('OK: All shipped resources are embedded and production-safe.');
   }
 }
 
@@ -228,11 +274,12 @@ writeFileSync(webIndex, injectBundleScript(readFileSync(webIndex, 'utf8'), gameN
 writeFileSync(
   resolve(webOut, 'README.txt'),
   `${gameName}\n${'='.repeat(gameName.length)}\n\n` +
-    'Portable web build. Open index.html in a browser to play - no install required.\n' +
-    'To host it, serve this folder from any static web server.\n\n' +
+    'Web build: upload/serve this entire folder from any static web server.\n' +
+    'Do not open index.html with file://; browsers block module/resource loading there.\n' +
+    'For a standalone installable application, build the Tauri native target.\n\n' +
     'Built with Feather Engine. Re-export from the editor to update.\n',
 );
-console.log(`\nOK: Portable web build -> ${webOut}`);
+console.log(`\nOK: Hosted web build -> ${webOut}`);
 
 /** Bake the game bundle into dist-player, run `fn`, then restore dist-player so repeated
  *  exports never leave game-specific files in the reusable player build. */

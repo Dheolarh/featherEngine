@@ -1,0 +1,553 @@
+{
+  "bundleVersion": "1.0.0",
+  "startSceneId": "scene-smoke",
+  "project": {
+    "version": "0.7.0",
+    "name": "Portable Export Smoke",
+    "activeSceneId": "scene-decoy",
+    "scenes": [
+      {
+        "id": "scene-smoke",
+        "name": "Production Smoke",
+        "objects": [
+          {
+            "id": "obj-falling-probe",
+            "name": "Falling Physics Probe",
+            "kind": "cube",
+            "transform": {
+              "position": [0, 4, 0],
+              "rotation": [0, 0, 0],
+              "scale": [1, 1, 1]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#5B8CFF",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "box",
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0,
+              "linearDamping": 0,
+              "angularDamping": 0.05
+            },
+            "script": {
+              "blueprintId": "blueprint-smoke-runtime",
+              "graphId": "graph-smoke-runtime",
+              "enabled": true
+            }
+          },
+          {
+            "id": "obj-ground",
+            "name": "Ground",
+            "kind": "cube",
+            "transform": {
+              "position": [0, -0.5, 0],
+              "rotation": [0, 0, 0],
+              "scale": [10, 1, 10]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#2B3345",
+              "metalness": 0.05,
+              "roughness": 0.8
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "box",
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.8,
+              "restitution": 0,
+              "linearDamping": 0,
+              "angularDamping": 0.05
+            }
+          },
+          {
+            "id": "obj-cloth",
+            "name": "Production Cloth",
+            "kind": "plane",
+            "transform": {
+              "position": [-2.5, 3, 0],
+              "rotation": [0, 0, 0],
+              "scale": [1, 1, 1]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "plane",
+              "color": "#F7B955",
+              "metalness": 0,
+              "roughness": 0.75
+            },
+            "cloth": {
+              "enabled": true,
+              "sourceMode": "grid",
+              "resolution": 8,
+              "width": 2,
+              "height": 2,
+              "stiffness": 4,
+              "damping": 0.02,
+              "gravityScale": 1,
+              "wind": [0.4, 0, 0],
+              "turbulence": 0.1,
+              "pinMode": "top-edge",
+              "collideFloor": true,
+              "floorY": 0,
+              "collideBodies": false,
+              "tearFactor": 0
+            }
+          },
+          {
+            "id": "obj-cable",
+            "name": "Production Cable",
+            "kind": "empty",
+            "transform": {
+              "position": [2.5, 3, 0],
+              "rotation": [0, 0, 0],
+              "scale": [1, 1, 1]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "capsule",
+              "color": "#E6E9F0",
+              "metalness": 0.35,
+              "roughness": 0.55
+            },
+            "cable": {
+              "enabled": true,
+              "segments": 8,
+              "length": 2.5,
+              "radius": 0.06,
+              "stiffness": 6,
+              "damping": 0.04,
+              "gravityScale": 1,
+              "wind": [0, 0, 0],
+              "turbulence": 0,
+              "endOffset": [0, 0, 0],
+              "startOffset": [0, 0, 0],
+              "physics": false,
+              "followJoint": false,
+              "physicsMode": "rope",
+              "springStiffness": 40,
+              "springDamping": 4,
+              "style": "cable",
+              "tensionColor": false,
+              "collideFloor": false,
+              "floorY": 0,
+              "collideBodies": false,
+              "tearFactor": 0
+            }
+          },
+          {
+            "id": "obj-water",
+            "name": "Production Water",
+            "kind": "cube",
+            "transform": {
+              "position": [0, 0.05, 0],
+              "rotation": [0, 0, 0],
+              "scale": [4, 0.25, 4]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#4FD2E8",
+              "metalness": 0,
+              "roughness": 0.2
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "box",
+              "isTrigger": true,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0,
+              "restitution": 0,
+              "linearDamping": 0,
+              "angularDamping": 0
+            },
+            "water": {
+              "enabled": true,
+              "buoyancy": 1.25,
+              "drag": 1.8,
+              "angularDrag": 0.65,
+              "surfaceBounce": 0.55,
+              "waveAmplitude": 0.08,
+              "waveFrequency": 0.55,
+              "waveSpeed": 1.4,
+              "style": "ocean",
+              "shallowColor": "#4FD2E8",
+              "deepColor": "#0A3A66",
+              "opacity": 0.5,
+              "reflectivity": 0.3,
+              "foam": 0.2,
+              "foamColor": "#EAF6FF",
+              "sparkle": 0.2,
+              "emissiveIntensity": 0,
+              "caustics": 0.1,
+              "underwaterFog": true,
+              "flowAngle": 0,
+              "flowStrength": 0,
+              "rainStrength": 0
+            }
+          },
+          {
+            "id": "obj-light",
+            "name": "Directional Light",
+            "kind": "light",
+            "transform": {
+              "position": [4, 7, 5],
+              "rotation": [0, 0, 0],
+              "scale": [1, 1, 1]
+            }
+          }
+        ],
+        "cinematics": [
+          {
+            "id": "cinematic-production-overlay",
+            "name": "Production Overlay Probe",
+            "duration": 30,
+            "autoplay": true,
+            "skippable": false,
+            "look": {
+              "letterbox": 2.35,
+              "grain": 0.08,
+              "vignette": 0.12,
+              "lightLeak": 0.05
+            },
+            "actions": [
+              {
+                "id": "cinematic-production-text",
+                "type": "text",
+                "time": 0,
+                "duration": 30,
+                "text": "CINEMATIC_OVERLAY_OK",
+                "textStyle": "subtitle",
+                "textColor": "#ffffff"
+              }
+            ],
+            "createdAt": 0
+          }
+        ]
+      },
+      {
+        "id": "scene-decoy",
+        "name": "Must Not Launch",
+        "objects": []
+      }
+    ],
+    "assets": [
+      {
+        "id": "asset-smoke-badge",
+        "name": "smoke-badge.svg",
+        "type": "image",
+        "size": 131,
+        "path": "assets/smoke-badge.svg",
+        "data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzVCOENGRiIvPjwvc3ZnPg==",
+        "createdAt": 0
+      }
+    ],
+    "folders": [],
+    "variables": [
+      {
+        "id": "var-script-status",
+        "name": "ScriptStatus",
+        "type": "string",
+        "defaultValue": "WAITING",
+        "persistent": false,
+        "createdAt": 0
+      },
+      {
+        "id": "var-body-position",
+        "name": "BodyPosition",
+        "type": "vector3",
+        "defaultValue": [0, 4, 0],
+        "persistent": false,
+        "createdAt": 0
+      }
+    ],
+    "dataAssets": [],
+    "materials": [],
+    "particleSystems": [],
+    "skeletons": [],
+    "skeletalMeshes": [],
+    "animations": [],
+    "animatorControllers": [],
+    "uiDocuments": [
+      {
+        "id": "ui-smoke-hud",
+        "name": "Production Smoke HUD",
+        "surface": "screen",
+        "renderMode": "dom",
+        "visibleOnStart": true,
+        "createdAt": 0,
+        "root": {
+          "id": "ui-root",
+          "kind": "panel",
+          "name": "Root",
+          "className": "smoke-hud",
+          "style": {
+            "display": "flex",
+            "flexDirection": "column",
+            "alignItems": "flex-start",
+            "gap": "8px",
+            "padding": "24px",
+            "color": "#ffffff"
+          },
+          "bindings": [],
+          "children": [
+            {
+              "id": "ui-heading",
+              "kind": "text",
+              "name": "Heading",
+              "className": "smoke-heading",
+              "text": "FEATHER_PRODUCTION_SMOKE",
+              "style": {
+                "fontSize": "18px",
+                "fontWeight": "700",
+                "background": "rgba(15, 17, 23, 0.85)",
+                "padding": "6px 10px",
+                "borderRadius": "6px"
+              },
+              "bindings": [],
+              "children": []
+            },
+            {
+              "id": "ui-script-status",
+              "kind": "text",
+              "name": "Script Status",
+              "className": "smoke-script-status",
+              "text": "WAITING",
+              "style": {
+                "background": "rgba(15, 17, 23, 0.85)",
+                "padding": "4px 8px"
+              },
+              "bindings": [
+                {
+                  "target": "text",
+                  "expression": "vars.ScriptStatus"
+                }
+              ],
+              "children": []
+            },
+            {
+              "id": "ui-physics-position",
+              "kind": "text",
+              "name": "Physics Position",
+              "className": "smoke-physics-position",
+              "text": "0, 4, 0",
+              "style": {
+                "background": "rgba(15, 17, 23, 0.85)",
+                "padding": "4px 8px"
+              },
+              "bindings": [
+                {
+                  "target": "text",
+                  "expression": "vars.BodyPosition"
+                }
+              ],
+              "children": []
+            },
+            {
+              "id": "ui-asset-image",
+              "kind": "image",
+              "name": "Embedded Asset",
+              "className": "smoke-embedded-asset",
+              "assetId": "asset-smoke-badge",
+              "imageFit": "contain",
+              "style": {
+                "width": "32px",
+                "height": "32px"
+              },
+              "bindings": [],
+              "children": []
+            },
+            {
+              "id": "ui-smoke-button",
+              "kind": "button",
+              "name": "Runtime Button",
+              "className": "smoke-runtime-button",
+              "text": "RUN_BUTTON_EVENT",
+              "onClickEvent": "productionSmokeButton",
+              "style": {
+                "padding": "8px 12px",
+                "background": "#5B8CFF",
+                "color": "#ffffff",
+                "borderRadius": "6px",
+                "fontWeight": "700"
+              },
+              "bindings": [],
+              "children": []
+            }
+          ]
+        }
+      }
+    ],
+    "blueprints": [
+      {
+        "id": "blueprint-smoke-runtime",
+        "name": "Production Smoke Runtime",
+        "description": "Exercises production Start, Update, custom-event, HUD, and physics paths.",
+        "graphId": "graph-smoke-runtime",
+        "color": "#5B8CFF",
+        "createdAt": 0
+      }
+    ],
+    "graphs": [
+      {
+        "id": "graph-smoke-runtime",
+        "name": "Production Smoke Runtime",
+        "nodes": [
+          {
+            "id": "node-start",
+            "type": "nodeforge",
+            "position": { "x": 0, "y": 0 },
+            "data": {
+              "label": "Start",
+              "nodeKind": "event.start",
+              "category": "Events",
+              "description": "Production start probe.",
+              "tone": "event",
+              "hasInput": false,
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-set-started",
+            "type": "nodeforge",
+            "position": { "x": 240, "y": 0 },
+            "data": {
+              "label": "Set ScriptStatus",
+              "nodeKind": "variable.set",
+              "category": "Variables",
+              "description": "Confirms the Start event executed.",
+              "tone": "variable",
+              "variableId": "var-script-status",
+              "valueType": "string",
+              "stringValue": "SCRIPT_OK",
+              "hasInput": true,
+              "hasOutput": false
+            }
+          },
+          {
+            "id": "node-update",
+            "type": "nodeforge",
+            "position": { "x": 0, "y": 160 },
+            "data": {
+              "label": "Update",
+              "nodeKind": "event.update",
+              "category": "Events",
+              "description": "Production frame-loop probe.",
+              "tone": "event",
+              "hasInput": false,
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-get-position",
+            "type": "nodeforge",
+            "position": { "x": 240, "y": 260 },
+            "data": {
+              "label": "Get Position",
+              "nodeKind": "action.getPosition",
+              "category": "Runtime",
+              "description": "Reads the physics probe position.",
+              "tone": "runtime",
+              "hasInput": false,
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-set-position",
+            "type": "nodeforge",
+            "position": { "x": 480, "y": 160 },
+            "data": {
+              "label": "Set BodyPosition",
+              "nodeKind": "variable.set",
+              "category": "Variables",
+              "description": "Publishes the simulated transform to the HUD.",
+              "tone": "variable",
+              "variableId": "var-body-position",
+              "valueType": "vector3",
+              "vectorValue": [0, 4, 0],
+              "hasInput": true,
+              "hasOutput": false
+            }
+          },
+          {
+            "id": "node-button-event",
+            "type": "nodeforge",
+            "position": { "x": 0, "y": 400 },
+            "data": {
+              "label": "Production Smoke Button",
+              "nodeKind": "event.custom",
+              "category": "Events",
+              "description": "Production HUD event probe.",
+              "tone": "event",
+              "eventName": "productionSmokeButton",
+              "hasInput": false,
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-set-button",
+            "type": "nodeforge",
+            "position": { "x": 300, "y": 400 },
+            "data": {
+              "label": "Set Button Status",
+              "nodeKind": "variable.set",
+              "category": "Variables",
+              "description": "Confirms the HUD custom event reached the graph.",
+              "tone": "variable",
+              "variableId": "var-script-status",
+              "valueType": "string",
+              "stringValue": "BUTTON_OK",
+              "hasInput": true,
+              "hasOutput": false
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "edge-start-status",
+            "source": "node-start",
+            "target": "node-set-started",
+            "sourceHandle": "exec-out",
+            "targetHandle": "exec-in"
+          },
+          {
+            "id": "edge-update-position",
+            "source": "node-update",
+            "target": "node-set-position",
+            "sourceHandle": "exec-out",
+            "targetHandle": "exec-in"
+          },
+          {
+            "id": "edge-position-value",
+            "source": "node-get-position",
+            "target": "node-set-position",
+            "sourceHandle": "value-out",
+            "targetHandle": "value"
+          },
+          {
+            "id": "edge-button-status",
+            "source": "node-button-event",
+            "target": "node-set-button",
+            "sourceHandle": "exec-out",
+            "targetHandle": "exec-in"
+          }
+        ]
+      }
+    ],
+    "prefabs": [],
+    "treeSpecs": []
+  }
+}

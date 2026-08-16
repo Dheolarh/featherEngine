@@ -4,7 +4,7 @@ Feather Engine can ship a finished game to **six platforms**:
 
 | Platform | Output | How |
 | --- | --- | --- |
-| Web | portable folder + zip (`<game>-web/`) | always built, everywhere |
+| Web | hosted folder + zip (`<game>-web/`) | always built, everywhere; serve from a static host |
 | Windows | `.msi` / `.exe` (`<game>-native/`) | build on Windows, or CI |
 | macOS | `.app` / `.dmg` (`<game>-native/`) | build on macOS, or CI |
 | Linux | `.AppImage` / `.deb` (`<game>-native/`) | build on Linux, or CI |
@@ -69,7 +69,7 @@ node scripts/export-production.mjs --bundle "path/to/game.json" --name "My Game"
 ## How It Works
 
 1. The editor creates a self-contained `game.json` bundle with embedded resources.
-2. `scripts/export-production.mjs` checks the bundle inventory and warns about missing resources.
+2. `scripts/export-production.mjs` runs the same versioned Zod loader used by the player, then blocks malformed bundles, referenced missing resources, and non-portable external glTF dependencies.
 3. The script builds or reuses `dist-player/`.
 4. It copies the player into `<out>/<game>-web`, writes `game-bundle.js`, and injects it into `index.html`.
 5. With `--native`, it temporarily bakes the bundle into `dist-player/`, runs `tauri build --config src-tauri/tauri.player.conf.json`, copies installers into `<out>/<game>-native`, then restores `dist-player/`.
@@ -78,10 +78,14 @@ The restore step keeps repeated native exports from leaving game-specific genera
 
 ## Output
 
-- Portable web build: `exports/<game>-web/` unless `--out <dir>` is passed.
+- Hosted web build: `exports/<game>-web/` unless `--out <dir>` is passed. Serve the whole folder over HTTP(S); browsers do not reliably run module-based games by double-clicking `index.html` (`file://`).
 - Zip, when requested: `exports/<game>-web.zip`.
 - Native installers copied for sharing: `exports/<game>-native/`.
 - Raw Tauri bundle output: `src-tauri/target/release/bundle/`.
+
+The web zip is a deployment artifact, not a standalone executable. Upload/extract it on any static
+host (or test locally with a small HTTP server). Tauri desktop/mobile outputs are the standalone
+application targets and do not require the player to start a separate web server.
 
 ## Cross-Platform Desktop Builds (CI)
 
@@ -95,7 +99,7 @@ targets from one project, use the bundled GitHub Actions workflow
    staged bundle with `git add -f exports/staging/game.json` and leave the input empty.
 3. Download the `game-windows`, `game-macos`, `game-linux`, and `game-web` artifacts.
 
-The portable web build runs everywhere.
+The hosted web build runs in modern browsers; the native artifacts are standalone applications.
 
 ## Mobile Builds
 

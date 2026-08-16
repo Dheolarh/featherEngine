@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web, tests, and portable export
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check and build editor
+        run: npm run build
+
+      - name: Verify editor starter assets
+        run: test -f dist/templates/UAL1.glb
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build standalone player
+        run: npm run build:player:fast
+
+      - name: Smoke-test portable export
+        run: npm run test:production
+
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux webview dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      # Existing Tauri sources use a two-space house style. Keep reporting the rustfmt delta until
+      # those files can be normalized in a dedicated change, without weakening compile/lint gates.
+      - name: Check Rust formatting (advisory)
+        continue-on-error: true
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Check Rust compilation
+        run: cargo check --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Run Clippy
+        # One cfg-specific needless-return warning predates this workflow; all other warnings fail.
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings -A clippy::needless-return

@@ -1,28 +1,34 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { existsSync, renameSync } from 'node:fs';
+import { existsSync, renameSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // `BUILD_TARGET=player vite build` produces the standalone game player into dist-player/.
 const isPlayer = process.env.BUILD_TARGET === 'player';
 
-/** Emit the player entry as index.html so an exported game opens by default. */
-function renamePlayerEntry(): Plugin {
+/** Finalize the standalone player without shipping editor-only starter content. */
+function finalizePlayerBuild(): Plugin {
   return {
-    name: 'rename-player-entry',
+    name: 'finalize-player-build',
     closeBundle() {
       const from = resolve(__dirname, 'dist-player/player.html');
       const to = resolve(__dirname, 'dist-player/index.html');
       if (existsSync(from)) renameSync(from, to);
+
+      // Vite copies all of public/ by default. Starter projects need public/templates while using
+      // the editor, but exported games embed their own referenced assets in game-bundle.js. Keeping
+      // every starter asset here made even an empty player roughly 150 MB.
+      rmSync(resolve(__dirname, 'dist-player/templates'), { recursive: true, force: true });
     },
   };
 }
 
 // Tauri expects a fixed dev server port (see src-tauri/tauri.conf.json devUrl).
 export default defineConfig({
-  plugins: [react(), ...(isPlayer ? [renamePlayerEntry()] : [])],
+  plugins: [react(), ...(isPlayer ? [finalizePlayerBuild()] : [])],
   clearScreen: false,
-  // Relative base so the exported player runs from any folder (or file://).
+  // Relative base so a hosted export can live under any URL path and Tauri can use the same build.
+  // Browsers block module applications launched directly through file://; see PRODUCTION_EXPORT.md.
   ...(isPlayer ? { base: './' } : {}),
   // ktx2-encoder's Basis wasm loader (dist/basis/basis_encoder.js) contains a top-level `await`
   // inside a NODE-only guard (`if (ENVIRONMENT_IS_NODE) { await import('module') }`). esbuild's

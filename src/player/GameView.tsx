@@ -1,11 +1,11 @@
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import {
   ContactShadows,
   OrbitControls,
   PerformanceMonitor,
   PerspectiveCamera,
 } from '@react-three/drei';
-import { memo, Suspense, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { ModelAsset, useAssetTexture, useModelUrl } from '../three/ModelAsset';
@@ -20,7 +20,7 @@ import { autoQualityStep } from '../runtime/autoQuality';
 import { CinematicCamera } from '../three/CinematicCamera';
 import { BoneAttachment } from '../three/BoneAttachment';
 import { ReflectionProbeApply, ReflectionProbeCapture } from '../three/ReflectionProbes';
-import { useResolvedMaterial, hasPhysicalLayers } from '../three/resolveMaterial';
+import { useResolvedMaterial, useResolvedMaterialSlots, hasPhysicalLayers } from '../three/resolveMaterial';
 import { useToonMaterial } from '../three/toonMaterial';
 import { WorldUIAnchor } from '../ui/WorldUIAnchor';
 import { WebGLScreenUILayer } from '../ui/WebGLScreenUILayer';
@@ -47,9 +47,14 @@ import { qualityProfile } from '../three/quality';
 import { SceneEnvironment } from '../three/SceneEnvironment';
 import { Terrain } from '../three/Terrain';
 import { TreeMesh } from '../three/TreeMesh';
+import { ClothSim } from '../three/ClothSim';
+import { CableSim } from '../three/CableSim';
+import { WaterSurface } from '../three/WaterSurface';
+import { WaterEnvCapture } from '../three/WaterEnvCapture';
+import { UnderwaterOverlay } from '../three/UnderwaterOverlay';
 import { FragmentMesh } from '../three/FragmentMesh';
 import { readTransform } from '../runtime/transformBuffer';
-import type { SceneObject, Vector3Tuple } from '../types';
+import type { SceneObject } from '../types';
 
 const hideInRuntime = (object: SceneObject) => object.renderer?.hideInPlay ?? Boolean(object.physics?.isTrigger);
 
@@ -61,7 +66,7 @@ const SHARED_GEO = {
 };
 
 function gameSceneSignature(state: ReturnType<typeof useEditorStore.getState>) {
-  return selectActiveObjects(state)
+  const objects = selectActiveObjects(state)
     .map((object) => {
       const renderer = object.renderer;
       return [
@@ -76,8 +81,12 @@ function gameSceneSignature(state: ReturnType<typeof useEditorStore.getState>) {
         object.physics?.isTrigger ? 't' : '',
         object.character?.enabled ? 'c' : '',
         object.vehicle?.enabled ? 'v' : '',
+        object.vehicle?.deformable ? 'deform' : '',
         object.terrain?.enabled ? 'terrain' : '',
         object.tree?.enabled ? `tree:${object.tree.spec.archetype}:${object.tree.seed}` : '',
+        object.cloth?.enabled ? `cloth:${JSON.stringify(object.cloth)}` : '',
+        object.cable?.enabled ? `cable:${JSON.stringify(object.cable)}` : '',
+        object.water?.enabled ? `water:${JSON.stringify(object.water)}` : '',
         object.effect?.kind ?? '',
         object.projectile ? 'projectile' : '',
         renderer?.enabled === false ? 'off' : '',
@@ -85,6 +94,7 @@ function gameSceneSignature(state: ReturnType<typeof useEditorStore.getState>) {
         renderer?.mesh ?? '',
         renderer?.modelAssetId ?? '',
         renderer?.materialId ?? '',
+        renderer?.materialSlots?.join(',') ?? '',
         renderer?.textureAssetId ?? '',
         renderer?.fragmentKey ?? '',
         renderer?.overrideMaterial ? 'override' : '',
@@ -96,6 +106,8 @@ function gameSceneSignature(state: ReturnType<typeof useEditorStore.getState>) {
       ].join(':');
     })
     .join('|');
+  // Scene ids make otherwise structurally-identical scene transitions invalidate the memo too.
+  return `${state.activeSceneId}|${objects}`;
 }
 
 /** Built-in mesh rendering — mirrors the editor's primitives, minus selection/gizmo chrome. */
@@ -108,13 +120,79 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
   if (object.projectile) return <ProjectileVisual object={object} />;
   if (object.terrain?.enabled) return <Terrain object={object} />;
   if (object.tree?.enabled) return <TreeMesh object={object} />;
+  // Soft-body visuals replace the object's regular mesh, matching editor Play. Keep these before
+  // hooks so enabling either component never changes this component's hook count.
+  if (object.cloth?.enabled) return <ClothSim object={object} selected={false} />;
+  if (object.cable?.enabled) return <CableSim object={object} selected={false} />;
   const renderer = object.renderer;
   const baseResolved = useResolvedMaterial(renderer);
-  // Interaction focus highlight: warm emissive rim so the player sees what they can use (Unreal-style).
-  // Combat damage reads via the floating damage number only — no emissive tint on the struck object.
-  const resolved = focused
-    ? { ...baseResolved, emissiveColor: '#ffcf66', emissiveIntensity: 0.7, overrideModel: true }
-    : baseResolved;
+  // Combat hit-flash: mirror editor Play's brief white-hot blink on the object that took damage.
+  // Each mesh subscribes only to its own event, so unrelated objects stay quiet.
+  const damageTick = useEditorStore((state) => (state.isPlaying ? state.runtimeDamageEvents[object.id] : undefined));
+  const [hitFlash, setHitFlash] = useState(false);
+  const hitFlashTimeout = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (damageTick === undefined) return;
+    setHitFlash(true);
+    if (hitFlashTimeout.current) clearTimeout(hitFlashTimeout.current);
+    hitFlashTimeout.current = setTimeout(() => {
+      hitFlashTimeout.current = undefined;
+      setHitFlash(false);
+    }, 150);
+  }, [damageTick]);
+  useEffect(
+    () => () => {
+      if (hitFlashTimeout.current) clearTimeout(hitFlashTimeout.current);
+    },
+    [],
+  );
+  const resolved = hitFlash
+    ? { ...baseResolved, emissiveColor: '#ffffff', emissiveIntensity: 1.5, overrideModel: true }
+    : focused
+      ? { ...baseResolved, emissiveColor: '#ffcf66', emissiveIntensity: 0.7, overrideModel: true }
+      : baseResolved;
+  // Imported-model material slots use the same resolution path as editor Play. Fold transient
+  // focus/damage emissive into each slot so slot-bound models still provide gameplay feedback.
+  const slotResolved = useResolvedMaterialSlots(renderer);
+  const slotMaterials = useMemo(
+    () =>
+      slotResolved?.map((slot) =>
+        slot
+          ? {
+              color: slot.color,
+              metalness: slot.metalness,
+              roughness: slot.roughness,
+              emissiveColor: hitFlash ? '#ffffff' : focused ? '#ffcf66' : slot.emissiveColor,
+              emissiveIntensity: hitFlash ? 1.5 : focused ? 0.7 : slot.emissiveIntensity,
+              override: hitFlash || focused ? true : slot.overrideModel,
+              baseColorUrl: slot.baseColorUrl,
+              normalUrl: slot.normalUrl,
+            }
+          : undefined,
+      ),
+    [slotResolved, focused, hitFlash],
+  );
+  const modelMaterial = useMemo(
+    () => ({
+      color: resolved.color,
+      metalness: resolved.metalness,
+      roughness: resolved.roughness,
+      emissiveColor: resolved.emissiveColor,
+      emissiveIntensity: resolved.emissiveIntensity,
+      override: resolved.overrideModel,
+      baseColorUrl: resolved.baseColorUrl,
+      normalUrl: resolved.normalUrl,
+      clearcoat: resolved.clearcoat,
+      clearcoatRoughness: resolved.clearcoatRoughness,
+      sheen: resolved.sheen,
+      sheenColor: resolved.sheenColor,
+      transmission: resolved.transmission,
+      ior: resolved.ior,
+      thickness: resolved.thickness,
+      iridescence: resolved.iridescence,
+    }),
+    [resolved],
+  );
   const modelUrl = useModelUrl(renderer?.modelAssetId);
   const usingModel = Boolean(renderer?.modelAssetId && modelUrl);
   const instanced = useIsInstanced(object.id);
@@ -182,24 +260,9 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
         <ModelAsset
           url={modelUrl as string}
           geometryKey={renderer?.modelAssetId}
-          material={{
-            color: resolved.color,
-            metalness: resolved.metalness,
-            roughness: resolved.roughness,
-            emissiveColor: resolved.emissiveColor,
-            emissiveIntensity: resolved.emissiveIntensity,
-            override: resolved.overrideModel,
-            baseColorUrl: resolved.baseColorUrl,
-            normalUrl: resolved.normalUrl,
-            clearcoat: resolved.clearcoat,
-            clearcoatRoughness: resolved.clearcoatRoughness,
-            sheen: resolved.sheen,
-            sheenColor: resolved.sheenColor,
-            transmission: resolved.transmission,
-            ior: resolved.ior,
-            thickness: resolved.thickness,
-            iridescence: resolved.iridescence,
-          }}
+          material={modelMaterial}
+          slotMaterials={slotMaterials}
+          deformObjectId={object.vehicle?.deformable ? object.id : undefined}
         />
       </Suspense>
     );
@@ -280,13 +343,26 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
   );
 }
 
-/** Aims the active camera at the scene origin once it is mounted. */
-function CameraTarget({ target }: { target: Vector3Tuple }) {
-  const camera = useThree((state) => state.camera);
-  useLayoutEffect(() => {
-    camera.lookAt(target[0], target[1], target[2]);
-  }, [camera, target]);
-  return null;
+/** Runtime camera driven by an authored camera object's position and Euler rotation. */
+function AuthoredCamera({ object }: { object: SceneObject }) {
+  const cameraRef = useRef<THREE.PerspectiveCamera>(null);
+  useFrame(() => {
+    const camera = cameraRef.current;
+    if (!camera) return;
+    const transform = readTransform(object.id) ?? object.transform;
+    camera.position.set(transform.position[0], transform.position[1], transform.position[2]);
+    camera.rotation.set(transform.rotation[0], transform.rotation[1], transform.rotation[2]);
+  });
+  return (
+    <PerspectiveCamera
+      ref={cameraRef}
+      makeDefault
+      fov={50}
+      near={0.02}
+      position={object.transform.position}
+      rotation={object.transform.rotation}
+    />
+  );
 }
 
 function applyRuntimeTransform(group: THREE.Group, object: SceneObject) {
@@ -310,6 +386,11 @@ function sameRenderObject(prev: SceneObject, next: SceneObject) {
     prev.projectile === next.projectile &&
     prev.particles === next.particles &&
     prev.animator === next.animator &&
+    prev.vehicle === next.vehicle &&
+    prev.tree === next.tree &&
+    prev.cloth === next.cloth &&
+    prev.cable === next.cable &&
+    prev.water === next.water &&
     prev.attachment === next.attachment &&
     prev.reflectionProbe === next.reflectionProbe &&
     prev.ui === next.ui &&
@@ -398,6 +479,23 @@ function renderGameTree(objects: SceneObject[], focusId: string | null): ReactNo
   return roots.map(renderNode);
 }
 
+/**
+ * World UI and water need the live object transforms, unlike regular meshes (which read the mutable
+ * transform buffer). Isolate their per-tick subscription here so moving anchors stay in parity with
+ * editor Play without making the whole player scene reconcile every frame.
+ */
+function RuntimeAnchoredLayers() {
+  const objects = useEditorStore(selectActiveObjects);
+  return (
+    <>
+      {objects.map((object) => (object.ui ? <WorldUIAnchor key={`ui-${object.id}`} object={object} /> : null))}
+      {objects.map((object) =>
+        object.water?.enabled ? <WaterSurface key={`water-${object.id}`} object={object} /> : null,
+      )}
+    </>
+  );
+}
+
 function GameScene() {
   const sceneSignature = useEditorStore(gameSceneSignature);
   const allObjects = useMemo(() => selectActiveObjects(useEditorStore.getState()), [sceneSignature]);
@@ -415,7 +513,12 @@ function GameScene() {
   // Models with custom-textured imported materials can't share the baked-material instanced draw.
   const allMaterials = useEditorStore((state) => state.materials);
   const customizedModels = useMemo(() => customizedModelIds(allMaterials), [allMaterials]);
-  const rawInstanceBatches = instancingOn ? computeInstanceBatches(objects, customizedModels) : EMPTY_INSTANCE_BATCHES;
+  // Cloth/cable can source an imported mesh but must stay on their deforming renderer, never the static
+  // imported-model instancing path.
+  const instanceCandidates = objects.filter((object) => !object.cloth?.enabled && !object.cable?.enabled);
+  const rawInstanceBatches = instancingOn
+    ? computeInstanceBatches(instanceCandidates, customizedModels)
+    : EMPTY_INSTANCE_BATCHES;
   const instanceSig = batchSignature(rawInstanceBatches);
   const instanceBatchesRef = useRef<Map<string, SceneObject[]>>(EMPTY_INSTANCE_BATCHES);
   const instanceSigRef = useRef('');
@@ -433,7 +536,6 @@ function GameScene() {
   // Camera priority: a character's follow camera, then an authored camera object, then free-orbit.
   const followTarget = useFollowTarget();
   const cameraObject = useMemo(() => objects.find((object) => object.kind === 'camera'), [objects]);
-  const cameraPosition = cameraObject?.transform.position ?? ([6, 4.2, 7] as Vector3Tuple);
 
   return (
     <>
@@ -446,10 +548,7 @@ function GameScene() {
       ) : followTarget ? (
         <FollowCamera />
       ) : cameraObject ? (
-        <>
-          <PerspectiveCamera makeDefault fov={50} position={cameraPosition} />
-          <CameraTarget target={[0, 0, 0]} />
-        </>
+        <AuthoredCamera object={cameraObject} />
       ) : (
         <OrbitControls makeDefault enableDamping dampingFactor={0.07} minDistance={2.5} maxDistance={24} />
       )}
@@ -460,11 +559,16 @@ function GameScene() {
         <group>{renderGameTree(objects, focusId)}</group>
       </InstancedIdsContext.Provider>
 
-      {/* World-space UI widgets (health bars, nameplates) anchored at each object's position. */}
-      {objects.map((object) => (object.ui ? <WorldUIAnchor key={`ui-${object.id}`} object={object} /> : null))}
+      {/* World UI and water use the unfiltered live list: invisible/empty UI anchors remain valid, and
+          trigger-backed water keeps its visible surface while following runtime transforms. */}
+      <RuntimeAnchoredLayers />
+      <WaterEnvCapture />
 
       {/* Local reflection probes → nearby reflective materials' envMap (no-op when the scene has no probes). */}
       <ReflectionProbeApply />
+
+      {/* Camera-submersion tint/murk for water volumes. */}
+      <UnderwaterOverlay />
 
       {/* WebGL HUD (uikit) for renderMode:'webgl' screen docs — caught by PostFx bloom. */}
       <WebGLScreenUILayer />

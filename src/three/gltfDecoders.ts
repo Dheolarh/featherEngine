@@ -11,9 +11,18 @@ import { KTX2Loader } from 'three-stdlib';
  * `compressTextures.ts`) and the large ecosystem of already-compressed asset packs.
  */
 
+/**
+ * Vite replaces BASE_URL for each target: `/` in the editor and `./` in the portable player.
+ * Keeping decoder URLs relative to that configured base makes them work from a hosted subpath and
+ * the Tauri custom protocol; root-absolute `/decoders/...` URLs incorrectly escaped both bases.
+ */
+const assetBase = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+
 /** drei sets the Draco decoder path when `useDraco` is a string — point it at our local copy. */
-export const DRACO_DECODER_PATH = '/decoders/draco/';
-const BASIS_TRANSCODER_PATH = '/decoders/basis/';
+export const DRACO_DECODER_PATH = `${assetBase}decoders/draco/`;
+const BASIS_TRANSCODER_PATH = `${assetBase}decoders/basis/`;
 
 /**
  * One shared KTX2 transcoder for the whole app. Each KTX2Loader spins up a worker pool around the

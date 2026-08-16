@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import type { CinematicLook, CinematicTextStyle, RuntimeCinematicFade, RuntimeCinematicText } from '../types';
 
 /** Layout + typography for each on-screen text style. `position` anchors the block within the frame. */
-const textStyleLayout: Record<CinematicTextStyle, { position: React.CSSProperties; text: React.CSSProperties }> = {
+const textStyleLayout: Record<CinematicTextStyle, { position: CSSProperties; text: CSSProperties }> = {
   subtitle: {
     position: { left: 0, right: 0, bottom: '9%', alignItems: 'center', textAlign: 'center' },
     text: { fontSize: 'clamp(14px, 2.6vw, 30px)', fontWeight: 500, textShadow: '0 2px 8px rgba(0,0,0,0.85)', padding: '0 8%' },
@@ -21,6 +21,61 @@ const textStyleLayout: Record<CinematicTextStyle, { position: React.CSSPropertie
     text: { fontSize: 'clamp(13px, 2.2vw, 26px)', fontWeight: 400, letterSpacing: '0.08em', textShadow: '0 2px 8px rgba(0,0,0,0.8)' },
   },
 };
+
+// This overlay is shared by editor Play and the standalone player. The player deliberately does not
+// import the editor's multi-thousand-line stylesheet, so every essential visual rule lives here.
+const overlayStyle: CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  zIndex: 25,
+  pointerEvents: 'none',
+  overflow: 'hidden',
+};
+const fillStyle: CSSProperties = { position: 'absolute', inset: 0, pointerEvents: 'none' };
+const fadeStyle: CSSProperties = { ...fillStyle, zIndex: 6 };
+const barStyle: CSSProperties = { position: 'absolute', background: '#000', zIndex: 5 };
+const vignetteStyle: CSSProperties = {
+  ...fillStyle,
+  zIndex: 2,
+  background: 'radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.9) 130%)',
+};
+const grainStyle: CSSProperties = {
+  position: 'absolute',
+  inset: '-50%',
+  zIndex: 3,
+  pointerEvents: 'none',
+  mixBlendMode: 'overlay',
+  backgroundImage:
+    `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
+  backgroundSize: '180px 180px',
+  animation: 'nodeforge-cinematic-grain-shift 0.5s steps(3) infinite',
+};
+const lightLeakStyle: CSSProperties = {
+  position: 'absolute',
+  inset: '-30%',
+  zIndex: 3,
+  pointerEvents: 'none',
+  mixBlendMode: 'screen',
+  background:
+    'radial-gradient(40% 70% at 12% 30%, rgba(255, 138, 76, 0.55), transparent 60%), radial-gradient(50% 60% at 90% 75%, rgba(255, 96, 140, 0.4), transparent 65%), linear-gradient(115deg, transparent 40%, rgba(255, 196, 120, 0.28) 50%, transparent 60%)',
+  backgroundRepeat: 'no-repeat',
+  animation: 'nodeforge-cinematic-leak-drift 13s ease-in-out infinite alternate',
+};
+const selfContainedAnimationCss = `
+@keyframes nodeforge-cinematic-grain-shift {
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(-6%, 4%); }
+  66% { transform: translate(4%, -5%); }
+  100% { transform: translate(-3%, 2%); }
+}
+@keyframes nodeforge-cinematic-leak-drift {
+  0% { transform: translate(0, 0) scale(1); opacity: 0.85; }
+  50% { transform: translate(4%, -3%) scale(1.08); opacity: 1; }
+  100% { transform: translate(-3%, 4%) scale(1.02); opacity: 0.7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cinematic-grain, .cinematic-light-leak { animation: none !important; }
+}`;
 
 /** clip-path for a wipe that covers `cov` (0–1) of the frame, entering from the given direction. */
 const wipeClip = (dir: NonNullable<RuntimeCinematicFade['wipe']>, cov: number): string => {
@@ -86,20 +141,27 @@ export function CinematicOverlay({ look: lookProp, fade: fadeProp, text: textPro
   if (!hasLook && !hasFade && !hasText) return null;
 
   return (
-    <div ref={ref} className="cinematic-overlay">
-      {look?.lightLeak ? <div className="cinematic-light-leak" style={{ opacity: Math.min(0.9, look.lightLeak) }} /> : null}
-      {look?.vignette ? <div className="cinematic-look-vignette" style={{ opacity: Math.min(1, look.vignette) }} /> : null}
-      {look?.grain ? <div className="cinematic-grain" style={{ opacity: Math.min(0.85, look.grain) }} /> : null}
+    <div ref={ref} className="cinematic-overlay" style={overlayStyle}>
+      <style>{selfContainedAnimationCss}</style>
+      {look?.lightLeak ? (
+        <div className="cinematic-light-leak" style={{ ...lightLeakStyle, opacity: Math.min(0.9, look.lightLeak) }} />
+      ) : null}
+      {look?.vignette ? (
+        <div className="cinematic-look-vignette" style={{ ...vignetteStyle, opacity: Math.min(1, look.vignette) }} />
+      ) : null}
+      {look?.grain ? (
+        <div className="cinematic-grain" style={{ ...grainStyle, opacity: Math.min(0.85, look.grain) }} />
+      ) : null}
       {bars.y > 0 && (
         <>
-          <div className="cinematic-bar" style={{ top: 0, left: 0, right: 0, height: bars.y }} />
-          <div className="cinematic-bar" style={{ bottom: 0, left: 0, right: 0, height: bars.y }} />
+          <div className="cinematic-bar" style={{ ...barStyle, top: 0, left: 0, right: 0, height: bars.y }} />
+          <div className="cinematic-bar" style={{ ...barStyle, bottom: 0, left: 0, right: 0, height: bars.y }} />
         </>
       )}
       {bars.x > 0 && (
         <>
-          <div className="cinematic-bar" style={{ top: 0, bottom: 0, left: 0, width: bars.x }} />
-          <div className="cinematic-bar" style={{ top: 0, bottom: 0, right: 0, width: bars.x }} />
+          <div className="cinematic-bar" style={{ ...barStyle, top: 0, bottom: 0, left: 0, width: bars.x }} />
+          <div className="cinematic-bar" style={{ ...barStyle, top: 0, bottom: 0, right: 0, width: bars.x }} />
         </>
       )}
       {hasText &&
@@ -115,6 +177,7 @@ export function CinematicOverlay({ look: lookProp, fade: fadeProp, text: textPro
                 flexDirection: 'column',
                 opacity: entry.opacity,
                 color: entry.color,
+                zIndex: 4,
                 pointerEvents: 'none',
                 ...layout.position,
               }}
@@ -129,8 +192,8 @@ export function CinematicOverlay({ look: lookProp, fade: fadeProp, text: textPro
           style={
             fade!.wipe
               ? // Directional wipe: a solid colour edge sweeps in; `opacity` is the coverage fraction.
-                { background: fade!.color, opacity: 1, clipPath: wipeClip(fade!.wipe, Math.min(1, Math.max(0, fade!.opacity))) }
-              : { background: fade!.color, opacity: Math.min(1, Math.max(0, fade!.opacity)) }
+                { ...fadeStyle, background: fade!.color, opacity: 1, clipPath: wipeClip(fade!.wipe, Math.min(1, Math.max(0, fade!.opacity))) }
+              : { ...fadeStyle, background: fade!.color, opacity: Math.min(1, Math.max(0, fade!.opacity)) }
           }
         />
       )}

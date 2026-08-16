@@ -157,11 +157,13 @@ and an `assets/` directory; imported assets are copied into `assets/` and loaded
 ### Ship a playable game
 
 Use the **Production** button in the desktop editor for the easiest path. It stages the current
-game, builds a portable web player, and can wrap it as a native Tauri app for your current OS.
+game, builds a web player for static hosting, and can wrap it as a standalone native Tauri app for
+your current OS. Browsers do not run the web build by double-clicking `index.html`; serve or upload
+the complete folder.
 
 ```bash
-npm run ship          # portable web folder + zip
-npm run ship:native   # portable web folder + zip + native app for this OS
+npm run ship          # hosted web folder + zip
+npm run ship:native   # hosted web folder + zip + standalone native app for this OS
 npm run ship:fast     # faster rebuild while iterating
 npm run ship:reuse    # fastest content-only re-export; reuses dist-player/
 ```

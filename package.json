@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:production": "node scripts/export-smoke-test.mjs --browser",
     "build:player": "node scripts/build-player.mjs",
     "build:player:fast": "node scripts/build-player.mjs --skip-typecheck",
     "export:web": "node scripts/export-production.mjs",
