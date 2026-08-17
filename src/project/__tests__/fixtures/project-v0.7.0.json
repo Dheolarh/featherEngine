@@ -1,0 +1,38 @@
+{
+  "version": "0.7.0",
+  "name": "Project v0.7.0 Fixture",
+  "activeSceneId": "scene-main",
+  "scenes": [
+    {
+      "id": "scene-main",
+      "name": "Main",
+      "objects": [
+        {
+          "id": "object-probe",
+          "name": "Verification Probe",
+          "kind": "cube",
+          "transform": {
+            "position": [0, 1, 0],
+            "rotation": [0, 0, 0],
+            "scale": [1, 1, 1]
+          }
+        }
+      ]
+    }
+  ],
+  "assets": [],
+  "folders": [],
+  "variables": [],
+  "dataAssets": [],
+  "materials": [],
+  "particleSystems": [],
+  "skeletons": [],
+  "skeletalMeshes": [],
+  "animations": [],
+  "animatorControllers": [],
+  "blueprints": [],
+  "graphs": [],
+  "uiDocuments": [],
+  "treeSpecs": [],
+  "prefabs": []
+}
