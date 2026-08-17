@@ -39,7 +39,8 @@ import { applyCustomLayout, applyWorkspaceLayout, resetWorkspaceLayout, WORKSPAC
 import { PreferencesModal } from './PreferencesModal';
 import { BuildReportDialog } from './BuildReportDialog';
 import type { SceneObjectKind, TreeArchetype } from '../types';
-import { focusWorkspacePanel } from './workspacePanels';
+import { focusWorkspacePanel, openWorkspacePanel } from './workspacePanels';
+import { useExtensionSnapshot } from '../extensions/react';
 
 /** Parametric trees aren't a SceneObjectKind (they're a component), so they get their own Add entries. */
 const treeTools: Array<{ archetype: TreeArchetype; label: string }> = [
@@ -207,6 +208,7 @@ function ViewMenu({ onOpenPrefs }: { onOpenPrefs: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const customLayouts = useEditorPrefs((s) => s.customLayouts);
+  const extensionPanels = useExtensionSnapshot().panels;
   const customList = useMemo(
     () => Object.values(customLayouts).sort((a, b) => b.savedAt - a.savedAt),
     [customLayouts],
@@ -249,6 +251,17 @@ function ViewMenu({ onOpenPrefs }: { onOpenPrefs: () => void }) {
                   title={`Apply "${layout.name}"`}
                 >
                   {layout.name}
+                </button>
+              ))}
+            </>
+          )}
+          {extensionPanels.length > 0 && (
+            <>
+              <hr />
+              <div className="file-menu-section">Extensions</div>
+              {extensionPanels.map((panel) => (
+                <button key={panel.id} onClick={run(() => openWorkspacePanel(panel))}>
+                  {panel.title}
                 </button>
               ))}
             </>

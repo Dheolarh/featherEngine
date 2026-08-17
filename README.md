@@ -1,216 +1,348 @@
-<div align="center">
+<p align="center">
+  <img src="public/favicon.svg" width="92" height="92" alt="Feather Engine logo" />
+</p>
 
-# 🪶 Feather Engine
+<h1 align="center">Feather Engine</h1>
 
-**A browser-based 3D game engine editor with node-based visual scripting.**
+<p align="center">
+  <strong>A visual-first 3D game engine for building, playing, and shipping interactive worlds.</strong>
+</p>
 
-Build scenes, attach physics, wire up gameplay logic with a blueprint-style graph, and preview it
-all live — no compilation, no plugins, just the web.
+<p align="center">
+  Create gameplay with node-based Blueprints or FeatherScript, simulate it with Rapier,
+  polish it with cinematic and world-building tools, then export to web, desktop, and mobile.
+</p>
 
-![Status](https://img.shields.io/badge/status-experimental-orange) ![React](https://img.shields.io/badge/React-18-61dafb) ![Three.js](https://img.shields.io/badge/Three.js-r171-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178c6) ![License](https://img.shields.io/badge/license-MIT-green)
+<p align="center">
+  <a href="#project-status"><img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-F59E0B?style=flat-square" /></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-34D399?style=flat-square" /></a>
+  <img alt="React 18" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&amp;logo=react&amp;logoColor=white" />
+  <img alt="Three.js r171" src="https://img.shields.io/badge/Three.js-r171-111111?style=flat-square&amp;logo=threedotjs" />
+  <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8DB?style=flat-square&amp;logo=tauri&amp;logoColor=white" />
+</p>
 
-</div>
+<p align="center">
+  <a href="https://youtu.be/bG56Lbc-PN4"><strong>Watch the demo</strong></a>
+  ·
+  <a href="#get-started"><strong>Get started</strong></a>
+  ·
+  <a href="#feature-map"><strong>Explore features</strong></a>
+  ·
+  <a href="#ship-your-game"><strong>Ship a game</strong></a>
+  ·
+  <a href="#documentation"><strong>Read the docs</strong></a>
+</p>
 
----
+<p align="center">
+  <a href="https://youtu.be/bG56Lbc-PN4">
+    <img src="docs/images/editor-third-person.png" alt="Feather Engine editor showing a third-person game scene" />
+  </a>
+  <br />
+  <sub>Click the editor to watch Feather Engine in action.</sub>
+</p>
 
-## 🎬 Watch the demo
+> [!IMPORTANT]
+> Feather Engine is experimental software under active development. The editor is functional and
+> extensively tested, but APIs and the project format may change before a stable release.
 
-<div align="center">
+## Why Feather?
 
-[![Feather Engine — watch the demo](https://img.youtube.com/vi/bG56Lbc-PN4/maxresdefault.jpg)](https://youtu.be/bG56Lbc-PN4)
+Feather keeps the complete game-making loop in one live workspace:
 
-▶️ **[Watch on YouTube](https://youtu.be/bG56Lbc-PN4)**
+| | |
+| --- | --- |
+| **Author visually** | Build scenes, materials, terrain, vegetation, VFX, animation, UI, and cinematics in dockable editor panels. |
+| **Choose how you script** | Connect typed Blueprint nodes, write FeatherScript, or move between the two representations. |
+| **Iterate in place** | Press Play without leaving the editor; inspect execution flow, values, logs, physics, and frame timing live. |
+| **Ship the same project** | Produce a portable web build or package it for Windows, macOS, Linux, Android, and iOS. |
+| **Work with an AI co-editor** | Let the built-in assistant create and modify the scene through the same tools used by the editor. |
 
-</div>
+There is no separate runtime authoring toolchain to learn: the web editor, Tauri desktop app, and
+exported player share the same React, Three.js, and Rapier foundation.
 
----
-
-## 📸 Screenshots
-
-### The editor
-
-A dockable workspace — Hierarchy, 3D Viewport, Inspector, Asset Browser, and editor panels you can
-float, tab, or pop out into their own window.
-
-![Feather Engine editor](docs/images/editor-third-person.png)
-
-### Visual scripting
-
-Wire gameplay logic in a blueprint-style node graph: events flow through exec wires, values flow
-through typed pins. No code required.
-
-![Visual scripting graph](docs/images/visual-scripting.png)
+## See it in action
 
 <table>
   <tr>
     <td width="50%">
-      <strong>🚗 Driving template</strong><br/>
-      Vehicle physics, drive input, and chase cameras out of the box.
-      <img src="docs/images/editor-driving.png" alt="Driving template" />
+      <strong>Blueprint-style visual scripting</strong><br />
+      Typed value pins, execution wires, reusable functions, variables, events, and live tracing.
+      <br /><br />
+      <img src="docs/images/visual-scripting.png" alt="Feather Engine visual scripting graph" />
     </td>
     <td width="50%">
-      <strong>🎥 Cinematic / Film Mode</strong><br/>
-      A sequencer for camera paths, shots, and storyboarded cutscenes.
-      <img src="docs/images/editor-cinematic.png" alt="Cinematic film mode" />
+      <strong>Cinematics and Film Mode</strong><br />
+      Build camera shots, timed actions, transitions, markers, and exportable sequences.
+      <br /><br />
+      <img src="docs/images/editor-cinematic.png" alt="Feather Engine Film Mode timeline" />
     </td>
   </tr>
 </table>
 
-### Start from a template
+<p align="center">
+  <img src="docs/images/editor-driving.png" alt="Feather Engine driving template" />
+  <br />
+  <sub>A playable driving project running inside the editor.</sub>
+</p>
 
-Spin up a playable scene instantly — third-person, FPS, driving, or the *Monolith Awakening*
-cinematic.
+## What you can build
 
-<div align="center">
-  <img src="docs/images/editor-full.png" alt="Project launcher with templates" width="60%" />
-</div>
+Start with a blank project or launch one of seven playable templates:
 
----
+| Template | Focus |
+| --- | --- |
+| **Third-person** | Character movement, a follow camera, combat, and an explorable tutorial world. |
+| **Meadows** | A stylized outdoor scene with interactive grass and nature rendering. |
+| **Cube Realm** | An action slice with combos, a day cycle, and a shrine encounter. |
+| **First-person shooter** | A neon FPS sandbox with multiple weapons, grenades, targets, and HUD logic. |
+| **Driving** | An arcade-style neon cruise with vehicle controls, chase cameras, and a garage. |
+| **Sim racing** | Tuned vehicle physics, laps, rivals, traffic, and race presentation. |
+| **Cinematic** | “The Summit,” a timeline-driven flythrough with cameras, wind, cloth, music, and VFX. |
 
-## ✨ Features
+Templates are editable projects, not videos or hard-coded demos. Open their scenes, inspect their
+Blueprints, replace assets, and reuse the systems in your own game.
 
-- **3D Viewport** — Real-time scene rendering powered by [Three.js](https://threejs.org/) via
-  [@react-three/fiber](https://github.com/pmndrs/react-three-fiber), with editor camera, gizmos, and post-processing.
-- **Physics** — Rigid bodies, colliders, trigger volumes, collision layers, gravity, damping, vehicles,
-  and ragdolls through a headless [Rapier](https://rapier.rs/) world during Play.
-- **Visual Scripting** — A node graph editor (built on [@xyflow/react](https://reactflow.dev/)) for
-  events, branching, math, variables, runtime actions, physics forces, animation, UI, and audio.
-- **Scene Hierarchy & Inspector** — Manage objects (cubes, spheres, capsules, planes, lights, cameras,
-  meshes) with editable transform, mesh renderer, material, and physics components.
-- **Authoring panels** — Material editor, Particle System editor, Animator, Terrain editor, UI editor,
-  and Scene settings — each a dockable, floatable, pop-out panel.
-- **Cinematics / Film Mode** — A sequencer for camera paths, shots, and storyboarded cutscenes, with MP4/WebM export.
-- **Asset Browser** — Import and organize models, images, and audio into folders.
-- **Live Runtime Preview** — Hit Play to run your graph in real time with keyboard input, per-frame
-  ticks, collisions, and event dispatch.
-- **Save / Load persistence** — In-game save points via graph nodes, plus project save/load.
-- **AI Assistant** — An agentic chat assistant that drives the editor through tools — ask it to build,
-  edit, and wire up your scene.
-- **Templates** — Third-person, FPS, Driving, and a *Monolith Awakening* cinematic, ready to play.
-- **Desktop App (Tauri)** — Runs as a native macOS / Windows / Linux app with real project folders on disk.
-- **Multiple Scenes** — Unity-style scenes per project; switch the active scene, add / duplicate / rename.
+## Feature map
 
-## 🧩 Visual scripting nodes
+| System | Highlights |
+| --- | --- |
+| **Editor workflow** | Dockable and pop-out panels, hierarchy, inspector, transform gizmos, command palette, multiple scenes, undo/redo, autosave recovery, and project folders. |
+| **Rendering and worlds** | Three.js renderer, procedural or image skies, day/night cycles, aerial and volumetric fog, water, terrain, procedural trees, reflection probes, shadows, bloom, color grading, and scalable quality presets. |
+| **Gameplay and physics** | Rapier rigid bodies, colliders, triggers, collision layers, joints, raycasts, vehicles, characters, ragdolls, cloth, cables, projectiles, damage, explosions, decals, and fracture effects. |
+| **Scripting** | Reusable Blueprint graphs, typed execution/value wires, functions, global and per-instance variables, data tables, save slots, runtime events, and FeatherScript source. |
+| **Assets and animation** | GLB, glTF, FBX, PNG, JPEG, WebP, MP3, and WAV import; skeleton inspection, sockets, bone attachments, animation state machines, reusable prefabs, LOD, instancing, and optional KTX2 texture compression. |
+| **UI and input** | Screen-space and world-space UI, interactive controls, HUD bindings, minimap, keyboard, mouse, gamepad focus, and automatic touch controls in exported games. |
+| **Cinematics** | Shot sequencing, camera paths, cuts and blends, timed object/audio/event actions, overlays, frame-locked WebM capture, and MP4 export through ffmpeg.wasm. |
+| **Runtime diagnostics** | On-screen console, live variable watch, execution and value tracing, problem reporting, performance profiler, render/physics statistics, and replay capture. |
+| **AI authoring** | Bring-your-own-key support for OpenAI, Anthropic, and Google models, tool-driven scene editing, smart routing, and a localhost-only MCP bridge for external agents. |
+| **Production export** | Self-contained game bundles, a portable web player, native desktop installers, mobile shells, build verification, and a platform-readiness doctor. |
 
-The graph supports a deep palette across several categories:
-
-| Category | Sample nodes |
-|----------|--------------|
-| **Events** | Start, Update, Key Down/Up, Custom Event, Collision Enter/Exit, Trigger Enter/Exit, Interact, On Receive Damage, Timer |
-| **Logic** | Branch, Compare, AND, OR, NOT, Cast, Cooldown, Do Once, Delay, For Loop, For Each Actor |
-| **Math** | Add, Subtract, Multiply, Divide, Modulo, Clamp, Lerp, Distance, vector ops, Make Vector3 |
-| **Values** | Number, Random, String, Boolean, Vector3 |
-| **Variables** | New / Get / Set Variable, Get / Set Object Var |
-| **Runtime** | Translate, Rotate, Move, Jump, Drive, Enter/Exit Vehicle, Raycast, Look At, Spawn, Destroy, Set Camera, Camera Shake, Play Sound, Play Cinematic, Load Scene, Find Actor, animation & material setters, Print |
-| **Physics** | Apply Force / Impulse / Torque, Set Physics, Set / Get Velocity, Fracture |
-| **Persistence** | Save Game, Load Game, Clear Save |
-| **UI** | Show UI, Hide UI, Set UI Text |
-
-## 🛠️ Tech stack
-
-- **[React 18](https://react.dev/)** + **[TypeScript](https://www.typescriptlang.org/)**
-- **[Vite](https://vitejs.dev/)** — dev server and build tooling
-- **[Three.js](https://threejs.org/)** / **[@react-three/fiber](https://github.com/pmndrs/react-three-fiber)** / **[@react-three/drei](https://github.com/pmndrs/drei)** — 3D rendering
-- **[@react-three/rapier](https://github.com/pmndrs/react-three-rapier)** + **[@dimforge/rapier3d](https://rapier.rs/)** — physics
-- **[@xyflow/react](https://reactflow.dev/)** — node graph editor
-- **[Zustand](https://github.com/pmndrs/zustand)** — state management
-- **[dockview](https://dockview.dev/)** — dockable panel workspace
-- **[Tailwind CSS](https://tailwindcss.com/)** + **[Framer Motion](https://www.framer.com/motion/)** — styling & animation
-- **[Tauri](https://tauri.app/)** — native desktop shell
-
-## 🚀 Getting started
+## Get started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+ and npm
+- [Node.js](https://nodejs.org/) 20 or newer
+- npm (included with Node.js)
+- A modern browser with WebGL 2 support
 
-### Installation
+For the native desktop editor, also install the
+[Rust toolchain](https://rustup.rs/) and the platform prerequisites required by Tauri.
+
+### Run the web editor
 
 ```bash
 git clone https://github.com/mariojgt/NodeForgeEngine.git
 cd NodeForgeEngine
-npm install
-```
-
-### Development
-
-```bash
+npm ci
 npm run dev
 ```
 
-Then open the URL printed in the terminal (default [http://localhost:17420](http://localhost:17420)).
-From the launcher, start a template or open the demo scene.
+Open [http://localhost:17420](http://localhost:17420), create a project, choose a template, and
+press **Play**. Vite uses this fixed port because the desktop shell connects to the same development
+server.
 
-### Desktop app (Tauri)
+### Your first five minutes
 
-Requires the [Rust toolchain](https://rustup.rs/) and platform build tools (Xcode Command Line Tools on macOS).
+1. Choose **Third-person** or **First-person shooter** in the launcher.
+2. Select an object in the **Hierarchy** and edit its components in the **Inspector**.
+3. Open **Scripting**, add an event and an action, then connect their execution pins.
+4. Press **Play** to test the result in the same viewport.
+5. Save the project, then use **Export → Production** when it is ready to share.
 
-```bash
-npm run tauri:dev    # run the native desktop app with live reload
-npm run tauri:build  # package a .app/.dmg (macOS)
-```
-
-In the desktop app, **New Project** scaffolds a folder with `project.json`, a `scenes/` directory,
-and an `assets/` directory; imported assets are copied into `assets/` and loaded via Tauri's
-`asset://` protocol. The web build still exports a portable `.nforge` file.
-
-### Ship a playable game
-
-Use the **Production** button in the desktop editor for the easiest path. It stages the current
-game, builds a web player for static hosting, and can wrap it as a standalone native Tauri app for
-your current OS. Browsers do not run the web build by double-clicking `index.html`; serve or upload
-the complete folder.
+### Run the desktop editor
 
 ```bash
-npm run ship          # hosted web folder + zip
-npm run ship:native   # hosted web folder + zip + standalone native app for this OS
-npm run ship:fast     # faster rebuild while iterating
-npm run ship:reuse    # fastest content-only re-export; reuses dist-player/
+npm run tauri:dev
 ```
 
-See [Production Export](docs/PRODUCTION_EXPORT.md) for the full build flow and troubleshooting notes.
+The two editor modes use the same engine but store projects differently:
 
-### Build (web)
+| Web preview | Tauri desktop |
+| --- | --- |
+| Fastest way to explore the editor | Best choice for sustained project work |
+| Saves a portable `.nforge` download | Uses a real project folder on disk |
+| Browser file picker for imports | Native dialogs, recent projects, and reveal-in-folder actions |
+| Downloads game bundles for the source-tree CLI | Runs local production builds and native platform tooling |
+
+A desktop project is deliberately readable:
+
+```text
+My Game/
+├── project.json
+├── scenes/
+│   └── <scene-id>.scene.json
+└── assets/
+```
+
+## Ship your game
+
+The recommended path is **Export → Production** in the desktop editor. Feather stages a
+self-contained game bundle, validates its resources, builds a web player for static hosting, and can
+package it as a standalone native Tauri app for the current machine. Browsers do not run the web
+build by double-clicking `index.html`; serve or upload the complete folder.
+
+Run the platform doctor before shipping:
 
 ```bash
-npm run build    # type-check + production build into dist/
-npm run preview  # preview the production build locally
+npm run doctor
 ```
 
-## 📁 Project structure
+The CLI commands below read `exports/staging/game.json` by default. The desktop Production flow
+handles staging for you; for a bundle exported elsewhere, pass `--bundle "path/to/game.json"` to
+`scripts/export-production.mjs` or place the file in that staging location.
 
+| Target | Output | Command | Build host |
+| --- | --- | --- | --- |
+| **Web** | Hosted static folder and `.zip` | `npm run ship` | Any supported OS |
+| **Windows** | `.msi` / `.exe` | `npm run ship:native` | Windows or the included CI workflow |
+| **macOS** | `.app` / `.dmg` | `npm run ship:native` | macOS or the included CI workflow |
+| **Linux** | `.AppImage` / `.deb` | `npm run ship:native` | Linux or the included CI workflow |
+| **Android** | `.apk` / `.aab` | `npm run export:android` | Android SDK/NDK and Rust mobile targets required |
+| **iOS** | Xcode project / `.ipa` | `npm run export:ios` | macOS, Xcode, CocoaPods, and signing required |
+
+For faster iteration, `npm run ship:fast` rebuilds with reduced checks and `npm run ship:reuse`
+reuses the existing `dist-player/` for content-only re-exports.
+
+Desktop installers are native builds, so Tauri does not cross-compile them from one operating
+system. Use [the included GitHub Actions matrix](.github/workflows/export-desktop.yml) to build all
+three desktop targets. See the [Production Export guide](docs/PRODUCTION_EXPORT.md) for staging,
+fast/reuse builds, mobile setup, output locations, and troubleshooting.
+
+## Scripting
+
+Every reusable gameplay Blueprint can be authored as a node graph or as FeatherScript. The graph
+gives designers an immediate visual model; the source view is faster for larger edits and works with
+the same runtime representation.
+
+The node palette covers:
+
+| Category | Examples |
+| --- | --- |
+| **Events** | Start, Update, input, collisions, triggers, interaction, damage, landing, timers |
+| **Logic** | Branch, switch, sequence, loops, delay, cooldown, cast, functions, comments |
+| **Math and data** | Scalars, vectors, interpolation, range mapping, strings, variables, table lookup |
+| **Runtime** | Movement, cameras, spawning, animation, audio, scenes, materials, environment, AI queries |
+| **Physics** | Forces, impulses, velocity, ray/shape queries, joints, cables, ragdolls, fracture |
+| **State and presentation** | Save/load, UI visibility and text, particles, decals, screen effects, replay |
+
+Execution wires describe *when* work happens; colored value wires carry typed data. During Play,
+active execution paths and live values can be traced directly in the graph.
+
+## AI-assisted authoring
+
+The built-in assistant is an editor operator, not just a chat panel. It can inspect the active
+project and call typed tools to create objects, configure components, build Blueprints, tune the
+environment, assemble UI, and author cinematics. Provider requests go directly from the app to the
+selected provider using your API key.
+
+The same tool surface is available to local MCP clients:
+
+```bash
+npm run mcp  # starts the relay at http://127.0.0.1:5151/mcp
+npm run dev  # open an editor; it attaches to the relay automatically
 ```
-src/
-├── App.tsx                          # Editor shell + runtime preview loop
-├── main.tsx                         # React entry point
-├── types.ts                         # Core scene, component & graph types
-├── store/
-│   └── editorStore.ts               # Zustand store: scene, runtime & graph state
-├── runtime/
-│   └── physicsWorld.ts              # Headless Rapier world (authority during Play)
-├── ai/                              # Agentic AI chat assistant (tools + system prompt)
-└── components/
-    ├── Workspace.tsx                # Dockable panel layout (dockview)
-    ├── HierarchyPanel.tsx           # Scene object tree
-    ├── Viewport.tsx                 # 3D viewport (fiber + rapier)
-    ├── InspectorPanel.tsx           # Component editor for selected object
-    ├── AssetBrowser.tsx             # Imported assets
-    ├── VisualScriptingPanel.tsx     # Node graph editor
-    └── CinematicPanel.tsx           # Film Mode sequencer
+
+The relay binds to localhost because connected clients can modify the open project. Do not expose it
+to a LAN or public network. Setup details and the feature-sync checklist live in
+[AI Assistant documentation](docs/AI_ASSISTANT.md).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Editor UI] --> B[Project and runtime store]
+    C[Visual Blueprints] --> B
+    D[FeatherScript] <--> C
+    B --> E[Three.js renderer]
+    B --> F[Rapier physics]
+    B --> G[Animation, audio, and UI]
+    B --> H[Portable player]
+    H --> I[Web, desktop, and mobile exports]
 ```
 
-## 🤖 Contributing
+### Core stack
 
-This project ships an **agentic AI chat assistant** that drives the editor through tools.
-Whenever you add a user-facing capability, you must also teach the assistant about it — see
-[docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md) for the checklist. A feature isn't done until the
-AI chat can use it.
+| Layer | Technology |
+| --- | --- |
+| **Editor** | React 18, TypeScript, Vite, Zustand, Dockview, Tailwind CSS, Framer Motion |
+| **3D** | Three.js, React Three Fiber, Drei, and postprocessing |
+| **Physics** | Rapier 3D and React Three Rapier |
+| **Visual graphs** | XYFlow |
+| **Desktop and mobile** | Tauri 2 and Rust |
+| **AI integration** | Vercel AI SDK, OpenAI, Anthropic, Google, and Model Context Protocol |
 
-## 📌 Status
+### Source map
 
-Feather Engine is an **experimental** project under active development. APIs, the project file
-format, and the node palette may change.
+| Path | Responsibility |
+| --- | --- |
+| [`src/components/`](src/components/) | Editor workspace, panels, tools, dialogs, and diagnostics |
+| [`src/store/`](src/store/) | Project state, editor actions, graph runtime, history, and persistence |
+| [`src/runtime/`](src/runtime/) | Physics, gameplay services, input, audio, replay, and profiling |
+| [`src/three/`](src/three/) | Rendering, environment, models, animation helpers, terrain, and VFX |
+| [`src/scripting/`](src/scripting/) | FeatherScript parser, compiler, source conversion, and API metadata |
+| [`src/ui/`](src/ui/) | Runtime screen/world UI, HUDs, minimap, touch controls, and focus navigation |
+| [`src/project/`](src/project/) | Templates, serialization, packages, game bundles, and export validation |
+| [`src/extensions/`](src/extensions/) | Typed Plugin SDK, lifecycle host, commands, panels, events, and bundled plugins |
+| [`src/player/`](src/player/) | Standalone exported-game player |
+| [`src/platform/`](src/platform/) | Web and Tauri filesystem/platform abstraction |
+| [`scripts/`](scripts/) | Player builds, production exports, platform doctor, and MCP relay |
+| [`src-tauri/`](src-tauri/) | Native editor and exported-player shells |
 
-## 📄 License
+## Development
 
-Released under the MIT License. See [LICENSE](LICENSE) for details.
+```bash
+npm run test        # run the Vitest suite once
+npm run test:watch  # run tests while developing
+npm run build       # TypeScript project build + production Vite build
+npm run preview     # serve the production editor build locally
+npm run build:player
+```
+
+For native-shell changes:
+
+```bash
+cd src-tauri
+cargo check
+```
+
+Changes to user-facing capabilities must keep the AI assistant in sync: add or reuse an explicit
+store action, expose the tool, provide its activity label, update the assistant guide/snapshot, and
+verify the workflow end to end. The complete checklist is in
+[`docs/AI_ASSISTANT.md`](docs/AI_ASSISTANT.md).
+
+## Documentation
+
+- [Plugin SDK](docs/PLUGIN_SDK.md) — commands, dockable panels, safe project APIs, and plugin lifecycle
+- [Production Export](docs/PRODUCTION_EXPORT.md) — web, desktop, Android, and iOS packaging
+- [AI Assistant](docs/AI_ASSISTANT.md) — tool architecture, MCP, and the contributor checklist
+- [Physics Worker](docs/PHYSICS_WORKER.md) — off-main-thread physics design and rollout status
+- [Sample game bundle](examples/sample-game.json) — a small serialized project example
+
+## Project status
+
+Feather Engine is currently at **v0.1.0** and should be treated as an experimental engine:
+
+- Core editing, Play mode, project persistence, tests, and web builds are working.
+- Desktop and mobile packaging depend on the native toolchain for each target.
+- The file format, scripting APIs, and node palette can evolve between commits.
+- Off-thread physics is staged behind a disabled-by-default flag while its remaining rollout is
+  completed and validated in live browser scenes.
+
+If you are evaluating Feather for a serious project, prototype your riskiest scene and export path
+early, and keep source-controlled project backups while the format is evolving.
+
+## Contributing
+
+Issues and focused pull requests are welcome. Before submitting a change:
+
+1. Keep the change scoped and explain the user-facing outcome.
+2. Add or update tests where the behavior is testable.
+3. Run `npm run test` and `npm run build`.
+4. Update relevant docs and, for editor features, the AI assistant integration.
+
+Use [GitHub Issues](https://github.com/mariojgt/NodeForgeEngine/issues) for bug reports, proposals,
+and reproducible examples.
+
+## License
+
+Feather Engine is released under the [MIT License](LICENSE).

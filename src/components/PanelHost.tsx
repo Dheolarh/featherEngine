@@ -12,6 +12,8 @@ import { TreeBuilderPanel } from './TreeBuilderPanel';
 import { SceneSettingsPanel } from './SceneSettingsPanel';
 import { CinematicPanel } from './CinematicPanel';
 import { broadcastPanelClosed, initStoreSync } from '../sync/storeSync';
+import { useExtensionSnapshot } from '../extensions/react';
+import { ExtensionPanelBoundary } from '../extensions/ExtensionPanelBoundary';
 
 const PANELS: Record<string, () => JSX.Element> = {
   hierarchy: HierarchyPanel,
@@ -34,6 +36,7 @@ const PANELS: Record<string, () => JSX.Element> = {
  * main window when it closes so the dock can restore the panel.
  */
 export function PanelHost({ kind }: { kind: string }) {
+  const extensionPanel = useExtensionSnapshot().panels.find((panel) => panel.id === kind);
   useEffect(() => {
     initStoreSync({ requestSnapshot: true });
     const onUnload = () => broadcastPanelClosed(kind);
@@ -42,13 +45,22 @@ export function PanelHost({ kind }: { kind: string }) {
   }, [kind]);
 
   const Panel = PANELS[kind];
-  if (!Panel) {
+  if (!Panel && !extensionPanel) {
     return <div className="panel-window panel-window-empty">Unknown panel: {kind}</div>;
   }
 
   return (
     <div className="panel-window">
-      <Panel />
+      {Panel ? (
+        <Panel />
+      ) : extensionPanel ? (
+        <ExtensionPanelBoundary
+          pluginId={extensionPanel.pluginId}
+          panelId={extensionPanel.id}
+          title={extensionPanel.title}
+          render={extensionPanel.render}
+        />
+      ) : null}
     </div>
   );
 }

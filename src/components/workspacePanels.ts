@@ -1,5 +1,14 @@
 import type { DockviewApi } from 'dockview-react';
 
+export interface WorkspacePanelDefinition {
+  id: string;
+  title: string;
+  placement?: {
+    referencePanel?: string;
+    direction?: 'left' | 'right' | 'above' | 'below' | 'within';
+  };
+}
+
 // Shared handle to the live Dockview api so non-workspace components (e.g. the
 // Hierarchy) can reveal a panel without importing Workspace and creating a cycle.
 let apiSingleton: DockviewApi | null = null;
@@ -18,6 +27,34 @@ export function getWorkspaceApi(): DockviewApi | null {
 /** Bring a panel (by id, e.g. 'scripting') to the front and focus its group. */
 export function focusWorkspacePanel(id: string) {
   apiSingleton?.getPanel(id)?.api.setActive();
+}
+
+/** Open an extension panel, adding it to Dockview the first time and focusing it thereafter. */
+export function openWorkspacePanel(definition: WorkspacePanelDefinition): boolean {
+  const api = apiSingleton;
+  if (!api) return false;
+  const existing = api.getPanel(definition.id);
+  if (existing) {
+    existing.api.setActive();
+    return true;
+  }
+
+  const referencePanel = definition.placement?.referencePanel ?? 'viewport';
+  const direction = definition.placement?.direction ?? 'right';
+  const position = api.getPanel(referencePanel) ? { referencePanel, direction } : undefined;
+  api.addPanel({
+    id: definition.id,
+    component: definition.id,
+    title: definition.title,
+    position,
+  });
+  api.getPanel(definition.id)?.api.setActive();
+  return true;
+}
+
+/** Remove a dynamically registered panel if it is currently open. */
+export function closeWorkspacePanel(id: string): void {
+  apiSingleton?.getPanel(id)?.api.close();
 }
 
 /** Collapse the dock to just the viewport (immersive Play / modeling). */

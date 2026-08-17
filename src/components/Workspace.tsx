@@ -28,6 +28,9 @@ import { CinematicPanel } from './CinematicPanel';
 import { getWorkspaceApi, setWorkspaceApi } from './workspacePanels';
 import { onPanelClosed } from '../sync/storeSync';
 import { POPPABLE_PANELS, openPanelWindow } from '../sync/popoutWindow';
+import { extensionRegistry } from '../extensions/host';
+import { useExtensionSnapshot } from '../extensions/react';
+import { ExtensionPanelBoundary } from '../extensions/ExtensionPanelBoundary';
 
 const LAYOUT_KEY = 'nodeforge.layout';
 const LAYOUT_VERSION = 11;
@@ -63,7 +66,7 @@ const profiled = (id: string, node: ReactNode) => (
 );
 
 // Each Dockview panel just renders the existing panel component (they read stores directly).
-const components = {
+const builtInComponents = {
   hierarchy: () => profiled('hierarchy', <HierarchyPanel />),
   viewport: () => profiled('viewport', <ViewportPanel />),
   inspector: () => profiled('inspector', <InspectorPanel />),
@@ -82,7 +85,15 @@ const components = {
 /** Re-add a panel to the dock (after its popped-out window closes), avoiding duplicates. */
 function restoreDockPanel(api: DockviewApi, id: string) {
   if (api.getPanel(id)) return;
-  const def = PANEL_DEFS[id];
+  const extensionPanel = extensionRegistry.getPanel(id);
+  const def = PANEL_DEFS[id] ?? (extensionPanel
+    ? {
+        component: extensionPanel.id,
+        title: extensionPanel.title,
+        ref: extensionPanel.placement?.referencePanel,
+        direction: extensionPanel.placement?.direction,
+      }
+    : undefined);
   if (!def) return;
   // Position relative to its usual neighbour, but fall back to a plain add if that's gone.
   const position = def.ref && def.direction && api.getPanel(def.ref) ? { referencePanel: def.ref, direction: def.direction } : undefined;
@@ -244,6 +255,28 @@ export function snapshotWorkspaceLayout(): unknown | null {
 }
 
 export function Workspace() {
+  const extensionSnapshot = useExtensionSnapshot();
+  const dockComponents = useMemo(
+    () => ({
+      ...builtInComponents,
+      ...Object.fromEntries(
+        extensionSnapshot.panels.map((panel) => [
+          panel.id,
+          () => profiled(
+            `extension:${panel.id}`,
+            <ExtensionPanelBoundary
+              pluginId={panel.pluginId}
+              panelId={panel.id}
+              title={panel.title}
+              render={panel.render}
+            />,
+          ),
+        ]),
+      ),
+    }),
+    [extensionSnapshot],
+  );
+
   const onReady = useCallback((event: DockviewReadyEvent) => {
     setWorkspaceApi(event.api);
 
@@ -288,7 +321,7 @@ export function Workspace() {
     <div className="nf-dockview-host">
       <DockviewReact
         theme={dockTheme}
-        components={components}
+        components={dockComponents}
         rightHeaderActionsComponent={HeaderActions}
         onReady={onReady}
       />

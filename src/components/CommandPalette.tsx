@@ -11,11 +11,12 @@ import { focusWorkspacePanel } from './workspacePanels';
 import { OPEN_SHORTCUTS_EVENT } from './ShortcutsOverlay';
 import { captureViewportScreenshot } from '../runtime/viewportCaptureBridge';
 import type { SceneObjectKind } from '../types';
+import { useExtensionSnapshot } from '../extensions/react';
 
 /** Custom event anything (e.g. the View menu) can dispatch to open the palette. */
 export const OPEN_COMMANDS_EVENT = 'nf:open-command-palette';
 
-type Command = { id: string; label: string; group: string; keywords?: string; run: () => void };
+type Command = { id: string; label: string; group: string; keywords?: string; run: () => void | Promise<void> };
 
 function isTypingTarget(target: EventTarget | null) {
   const el = target as HTMLElement | null;
@@ -29,6 +30,7 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const isPlaying = useEditorStore((state) => state.isPlaying);
+  const extensionSnapshot = useExtensionSnapshot();
   // Rebuild object jump commands when the active scene's object names/ids change.
   const objectListSig = useEditorStore((state) =>
     selectActiveObjects(state)
@@ -147,9 +149,26 @@ export function CommandPalette() {
       cmds.push({ id: `theme-${id}`, label: `Theme: ${label}`, group: 'Appearance', keywords: 'color skin appearance', run: () => useEditorPrefs.getState().setThemeMode(id) });
     }
 
-    cmds.push({ id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Help', keywords: 'keys cheatsheet help', run: () => window.dispatchEvent(new CustomEvent(OPEN_SHORTCUTS_EVENT)) });
+    cmds.push({
+      id: 'shortcuts',
+      label: 'Keyboard shortcuts',
+      group: 'Help',
+      keywords: 'keys cheatsheet help',
+      run: () => {
+        window.dispatchEvent(new CustomEvent(OPEN_SHORTCUTS_EVENT));
+      },
+    });
+    for (const command of extensionSnapshot.commands) {
+      cmds.push({
+        id: `extension:${command.id}`,
+        label: command.title,
+        group: command.group ?? 'Extensions',
+        keywords: command.keywords,
+        run: command.run,
+      });
+    }
     return cmds;
-  }, [isPlaying, objectListSig]);
+  }, [isPlaying, objectListSig, extensionSnapshot]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -166,7 +185,15 @@ export function CommandPalette() {
 
   const runCommand = (command: Command) => {
     setOpen(false);
-    command.run();
+    try {
+      void Promise.resolve(command.run()).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        useProjectStore.setState({ toast: { kind: 'error', message: `Command failed: ${message}` } });
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      useProjectStore.setState({ toast: { kind: 'error', message: `Command failed: ${message}` } });
+    }
   };
 
   const onInputKeyDown = (event: React.KeyboardEvent) => {
