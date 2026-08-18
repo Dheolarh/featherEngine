@@ -287,6 +287,7 @@ flowchart LR
 | [`src/platform/`](src/platform/) | Web and Tauri filesystem/platform abstraction |
 | [`scripts/`](scripts/) | Player builds, production exports, platform doctor, and MCP relay |
 | [`src-tauri/`](src-tauri/) | Native editor and exported-player shells |
+| [`site/`](site/) | Standalone public product website, content, and responsive styling |
 
 ## Development
 
@@ -296,6 +297,15 @@ npm run test:watch  # run tests while developing
 npm run build       # TypeScript project build + production Vite build
 npm run preview     # serve the production editor build locally
 npm run build:player
+```
+
+The public website is a separate, lightweight Vite target so it does not load the editor runtime or
+copy the large starter-asset library:
+
+```bash
+npm run dev:site      # http://localhost:17421
+npm run build:site    # production output in dist-site/
+npm run preview:site  # preview the production website build
 ```
 
 For native-shell changes:
