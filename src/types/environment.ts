@@ -226,6 +226,13 @@ export interface SceneEnvironmentSettings {
   /** Random gust turbulence layered on the global wind, 0–1. */
   windTurbulence?: number;
   /**
+   * World gravity as an acceleration vector (units/s²) for the whole scene. Undefined = Earth,
+   * `[0, -9.81, 0]`. Drop the magnitude for Moon/low-g levels, zero it for space, or point it
+   * sideways/up for a gimmick level — every dynamic body scales it by its own `gravityScale`,
+   * and `gravityMultiplier` trigger volumes still layer on top per-body.
+   */
+  gravity?: Vector3Tuple;
+  /**
    * Camera/film tonemapping operator applied to the HDR scene on its way to the screen — the single
    * biggest lever on the overall "look". `aces` (default) is the punchy filmic curve three.js has
    * always used here; `agx` is the modern, highlight-preserving curve (Blender 4's default) that

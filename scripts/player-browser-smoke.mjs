@@ -227,6 +227,16 @@ async function evaluate(cdp, expression) {
   return result.result?.value;
 }
 
+/**
+ * Runtime probes need simulated time, not just wall-clock: under SwiftShader with the water/cloth/
+ * cable parity probes mounted, the player renders around one frame per second, so the fixed-timestep
+ * sim advances at roughly 1% of realtime. The half-unit fall this asserts takes ~0.32s of sim time,
+ * which measured ~27s of wall-clock on a developer machine and is slower again on a shared CI runner
+ * — the default 20s made this leg flake. The generous ceiling only changes how long a genuinely
+ * broken build takes to report; it cannot turn a failure into a pass.
+ */
+const RUNTIME_WAIT_TIMEOUT_MS = 120_000;
+
 async function waitFor(cdp, label, expression, predicate = Boolean, timeout = 20_000) {
   const deadline = Date.now() + timeout;
   let lastValue;
@@ -307,6 +317,7 @@ async function checkPlayer(cdp, url, heading, { exerciseRuntime }) {
     // SwiftShader is intentionally slow once the water/cloth/cable parity probes are mounted; a clear
     // half-unit fall is enough to prove that Rapier and the Update -> HUD data path are both advancing.
     (value) => Number.isFinite(value?.y) && value.y < 3.5,
+    RUNTIME_WAIT_TIMEOUT_MS,
   );
   assert.ok(physics.y < 3.5, `Physics probe did not fall from y=4: ${physics.text}`);
 
@@ -320,6 +331,7 @@ async function checkPlayer(cdp, url, heading, { exerciseRuntime }) {
     'HUD custom event to reach the production Blueprint runtime',
     `document.querySelector('.smoke-script-status')?.textContent?.trim() || ''`,
     (value) => value === 'BUTTON_OK',
+    RUNTIME_WAIT_TIMEOUT_MS,
   );
 }
 

@@ -110,8 +110,10 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'event.custom': Radio,
   'event.collisionEnter': Crosshair,
   'event.collisionExit': Crosshair,
+  'event.collisionStay': Crosshair,
   'event.triggerEnter': Crosshair,
   'event.triggerExit': Crosshair,
+  'event.triggerStay': Crosshair,
   'event.receiveDamage': ShieldAlert,
   'event.land': Move3d,
   'event.timer': Timer,
@@ -173,8 +175,11 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'action.applyTorque': RotateCw,
   'action.setPhysics': Box,
   'action.setVelocity': Gauge,
+  'action.setAngularVelocity': RotateCw,
+  'action.setGravity': Wind,
   'action.setEnvironment': Palette,
   'query.velocity': Gauge,
+  'query.angularVelocity': RotateCw,
   'action.fireEvent': Send,
   'action.spawnObject': Sparkles,
   'action.cameraShake': Vibrate,
@@ -273,6 +278,7 @@ export const valueProducerKinds = new Set<GraphNodeKind>([
   'query.findActorByTag',
   'query.raycast',
   'query.velocity',
+  'query.angularVelocity',
   'value.number',
   'value.random',
   'value.string',
@@ -479,6 +485,16 @@ export const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: 
       return [{ id: 'vector', label: 'Velocity' }];
     case 'query.velocity':
       return [{ id: 'target', label: 'Target' }];
+    case 'action.setAngularVelocity':
+      return [
+        { id: 'target', label: 'Target' },
+        { id: 'vector', label: 'Velocity' },
+        { id: 'amount', label: 'Amount' },
+      ];
+    case 'query.angularVelocity':
+      return [{ id: 'target', label: 'Target' }];
+    case 'action.setGravity':
+      return [{ id: 'vector', label: 'Gravity' }];
     case 'action.print':
       return [{ id: 'message', label: 'Message' }];
     case 'action.fireEvent':
@@ -740,6 +756,7 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
     (data.nodeKind === 'event.land' ? 1 : 0) +
     (data.nodeKind === 'event.collisionEnter' ? 4 : 0) +
     (data.nodeKind === 'event.collisionExit' || data.nodeKind === 'event.triggerEnter' || data.nodeKind === 'event.triggerExit' ? 2 : 0) +
+    (data.nodeKind === 'event.collisionStay' || data.nodeKind === 'event.triggerStay' ? 1 : 0) +
     (data.nodeKind === 'action.tweenProperty' || data.nodeKind === 'action.screenFade' ? 1 : 0) +
     (data.nodeKind === 'logic.forLoop' || data.nodeKind === 'logic.forEachActor' ? 2 : 0) +
     switchCases.length +
@@ -923,6 +940,23 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
             </span>
           </span>
         ))}
+
+      {/* Collision/Trigger Stay: Other actor only — a resting contact is replayed from the tracked pair
+          list rather than a fresh manifold, so there is no normal/point/speed for it. */}
+      {(data.nodeKind === 'event.collisionStay' || data.nodeKind === 'event.triggerStay') && (
+        <span>
+          <Handle
+            id="value-out"
+            className="node-port value-port value-any source"
+            type="source"
+            position={Position.Right}
+            style={{ top: pinTop }}
+          />
+          <span className="nfn-port-label out" style={{ top: pinTop }}>
+            Other
+          </span>
+        </span>
+      )}
 
       {/* Trigger Enter/Exit + Collision Exit: Other actor + contact Point. */}
       {(data.nodeKind === 'event.triggerEnter' ||
