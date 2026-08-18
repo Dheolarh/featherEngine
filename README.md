@@ -299,14 +299,8 @@ npm run preview     # serve the production editor build locally
 npm run build:player
 ```
 
-The public website is a separate, lightweight Vite target so it does not load the editor runtime or
-copy the large starter-asset library:
-
-```bash
-npm run dev:site      # http://localhost:17421
-npm run build:site    # production output in dist-site/
-npm run preview:site  # preview the production website build
-```
+The public website lives in its own repository (`FeatherEngineWebsite`, an Astro project) and is
+built and deployed from there.
 
 For native-shell changes:
 
