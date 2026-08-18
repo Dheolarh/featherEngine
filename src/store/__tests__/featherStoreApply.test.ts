@@ -45,6 +45,125 @@ describe('applyBlueprintFeatherSource — store + runtime', () => {
     expect(useEditorStore.getState().runtimeObjectVariables[objectId]?.hits).toBe(1);
   });
 
+  it('invalidates stored code after a visual graph edit so stale text cannot overwrite it later', () => {
+    const { blueprintId } = useEditorStore.getState().createBlueprintNamed('Safe Handoff');
+    const source = ['blueprint Safe_Handoff', '', 'on start:', '    print("from code")'].join('\n');
+    const synced = useEditorStore.getState().syncBlueprintFeatherSource(blueprintId, source);
+    expect(synced.ok).toBe(true);
+    expect(useEditorStore.getState().blueprints.find((item) => item.id === blueprintId)?.featherSource).toBe(source);
+
+    const nodeId = useEditorStore.getState().addGraphNodeToBlueprint(
+      blueprintId,
+      'Rotate',
+      'Runtime',
+      { axis: 'y', amount: 90 },
+    );
+    const state = useEditorStore.getState();
+    const blueprint = state.blueprints.find((item) => item.id === blueprintId)!;
+    const graph = state.graphs.find((item) => item.id === blueprint.graphId)!;
+    expect(blueprint.featherSource).toBeUndefined();
+    expect(graph.nodes.find((node) => node.id === nodeId)?.data.nodeKind).toBe('action.rotate');
+
+    useEditorStore.getState().syncBlueprintFeatherSource(blueprintId, source);
+    useEditorStore.getState().addBlueprintVariable(blueprintId, { name: 'speed', defaultValue: 2 });
+    expect(useEditorStore.getState().blueprints.find((item) => item.id === blueprintId)?.featherSource).toBeUndefined();
+
+    useEditorStore.getState().syncBlueprintFeatherSource(blueprintId, source);
+    const invalidDraft = `${source}\n    definitely_not_supported(`;
+    useEditorStore.getState().updateBlueprintFeatherSource(blueprintId, invalidDraft);
+    useEditorStore.getState().addGraphNodeToBlueprint(blueprintId, 'Print', 'Runtime', { message: 'visual edit' });
+    expect(useEditorStore.getState().blueprints.find((item) => item.id === blueprintId)?.featherSource).toBe(invalidDraft);
+  });
+
+  it('invalidates synchronized code when React Flow removes a graph node', () => {
+    const { blueprintId } = useEditorStore.getState().createBlueprintNamed('Delete Handoff');
+    const source = ['blueprint Delete_Handoff', '', 'on start:', '    print("remove me")'].join('\n');
+    expect(useEditorStore.getState().syncBlueprintFeatherSource(blueprintId, source).ok).toBe(true);
+    useEditorStore.getState().updateBlueprintFeatherExternalLink(blueprintId, {
+      path: 'scripts/delete-handoff.feather',
+      lastSyncedHash: 'disk-checkpoint',
+      lastSyncedVisualHash: 'visual-checkpoint',
+    });
+    useEditorStore.getState().setActiveBlueprint(blueprintId);
+    const before = useEditorStore.getState();
+    const blueprint = before.blueprints.find((item) => item.id === blueprintId)!;
+    const graph = before.graphs.find((item) => item.id === blueprint.graphId)!;
+    const printNode = graph.nodes.find((node) => node.data.nodeKind === 'action.print')!;
+
+    useEditorStore.getState().onNodesChange([{ id: printNode.id, type: 'remove' }]);
+
+    const after = useEditorStore.getState();
+    const updatedBlueprint = after.blueprints.find((item) => item.id === blueprintId)!;
+    expect(after.graphs.find((item) => item.id === graph.id)?.nodes).not.toContainEqual(printNode);
+    expect(updatedBlueprint.featherSource).toBeUndefined();
+    expect(updatedBlueprint.featherSourceLastSynced).toBeUndefined();
+    expect(updatedBlueprint.featherSourcePath).toBe('scripts/delete-handoff.feather');
+    expect(updatedBlueprint.featherSourceLastSyncedHash).toBe('disk-checkpoint');
+    expect(updatedBlueprint.featherSourceLastSyncedVisualHash).toBe('visual-checkpoint');
+  });
+
+  it('invalidates synchronized code when names used by the script change', () => {
+    const scoreId = useEditorStore.getState().createVariable('Score', 'number');
+    const { blueprintId } = useEditorStore.getState().createBlueprintNamed('Rename Handoff');
+    const source = ['blueprint Rename_Handoff', '', 'on start:', '    Game.Score = 1'].join('\n');
+    expect(useEditorStore.getState().syncBlueprintFeatherSource(blueprintId, source).ok).toBe(true);
+
+    useEditorStore.getState().renameBlueprint(blueprintId, 'Renamed Handoff');
+    expect(useEditorStore.getState().blueprints.find((item) => item.id === blueprintId)?.featherSource).toBeUndefined();
+
+    const stateAfterRename = useEditorStore.getState();
+    const renamedBlueprint = stateAfterRename.blueprints.find((item) => item.id === blueprintId)!;
+    const renamedGraph = stateAfterRename.graphs.find((item) => item.id === renamedBlueprint.graphId)!;
+    const renamedSource = graphToFeatherScript({
+      blueprint: renamedBlueprint,
+      graph: renamedGraph,
+      variables: stateAfterRename.variables,
+      blueprints: stateAfterRename.blueprints,
+    });
+    expect(useEditorStore.getState().syncBlueprintFeatherSource(blueprintId, renamedSource).ok).toBe(true);
+
+    useEditorStore.getState().updateVariable(scoreId, { name: 'Points' });
+    expect(useEditorStore.getState().blueprints.find((item) => item.id === blueprintId)?.featherSource).toBeUndefined();
+
+    const stateAfterVariableRename = useEditorStore.getState();
+    const updatedBlueprint = stateAfterVariableRename.blueprints.find((item) => item.id === blueprintId)!;
+    const updatedGraph = stateAfterVariableRename.graphs.find((item) => item.id === updatedBlueprint.graphId)!;
+    expect(
+      graphToFeatherScript({
+        blueprint: updatedBlueprint,
+        graph: updatedGraph,
+        variables: stateAfterVariableRename.variables,
+        blueprints: stateAfterVariableRename.blueprints,
+      }),
+    ).toContain('Game.Points = 1');
+  });
+
+  it('invalidates a synchronized dependent script when its referenced Blueprint is deleted', () => {
+    const { blueprintId: targetId } = useEditorStore.getState().createBlueprintNamed('Cast Target');
+    const { blueprintId: dependentId } = useEditorStore.getState().createBlueprintNamed('Cast Dependent');
+    useEditorStore.getState().addGraphNodeToBlueprint(
+      dependentId,
+      'Cast',
+      'Logic',
+      { castBlueprintId: targetId },
+    );
+    const state = useEditorStore.getState();
+    const dependent = state.blueprints.find((item) => item.id === dependentId)!;
+    const graph = state.graphs.find((item) => item.id === dependent.graphId)!;
+    const source = graphToFeatherScript({
+      blueprint: dependent,
+      graph,
+      variables: state.variables,
+      blueprints: state.blueprints,
+    });
+    expect(useEditorStore.getState().syncBlueprintFeatherSource(dependentId, source).ok).toBe(true);
+    expect(useEditorStore.getState().blueprints.find((item) => item.id === dependentId)?.featherSource).toBe(source);
+
+    useEditorStore.getState().deleteBlueprint(targetId);
+
+    expect(useEditorStore.getState().blueprints.find((item) => item.id === dependentId)?.featherSource).toBeUndefined();
+  });
+
   it('executes else branches and for loops during Play', () => {
     const store = useEditorStore.getState();
     const { blueprintId } = store.createBlueprintNamed('Flow Probe');

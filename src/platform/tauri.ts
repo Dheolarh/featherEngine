@@ -2,12 +2,101 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { join } from '@tauri-apps/api/path';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { exists, mkdir, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import {
+  exists,
+  lstat,
+  mkdir,
+  readTextFile,
+  watch,
+  writeFile,
+  writeTextFile,
+} from '@tauri-apps/plugin-fs';
 import type { NodeForgeProject, ProjectManifest, Scene } from '../types';
 import { ASSETS_DIR, SCENES_DIR, blankProject, joinProject, splitProject } from '../project/serialize';
-import type { OpenedProject, Platform } from './types';
+import type { OpenedProject, Platform, ProjectTextWriteResult } from './types';
 
 const MANIFEST = 'project.json';
+const MAX_PROJECT_TEXT_BYTES = 4 * 1024 * 1024;
+const MAX_PROJECT_RELATIVE_PATH_LENGTH = 1024;
+const MAX_WATCH_ROOTS = 128;
+const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+
+/** Keep project-linked files inside the selected project, on every supported desktop OS. */
+function safeProjectRelativePath(relativePath: string): string {
+  const portable = relativePath.replace(/\\/g, '/');
+  const parts = portable.split('/');
+  const isAbsolute = portable.startsWith('/') || /^[A-Za-z]:/.test(portable);
+  const hasUnsafeSegment = parts.some(
+    (part) =>
+      part === '' ||
+      part === '.' ||
+      part === '..' ||
+      new TextEncoder().encode(part).byteLength > 240 ||
+      /[\u0000-\u001f<>:"|?*]/.test(part) ||
+      /[. ]$/.test(part) ||
+      WINDOWS_RESERVED_NAME.test(part),
+  );
+  if (
+    isAbsolute ||
+    hasUnsafeSegment ||
+    portable.length > MAX_PROJECT_RELATIVE_PATH_LENGTH
+  ) {
+    throw new Error(`Unsafe project-relative path: ${relativePath}`);
+  }
+  return parts.join('/');
+}
+
+async function absoluteProjectPath(projectDir: string, relativePath: string): Promise<string> {
+  const safePath = safeProjectRelativePath(relativePath);
+  return join(projectDir, ...safePath.split('/'));
+}
+
+/** Reject a static symlink/junction component before project-linked I/O follows it. */
+async function assertNoProjectPathSymlinks(projectDir: string, relativePath: string): Promise<void> {
+  const safePath = safeProjectRelativePath(relativePath);
+  let current = projectDir;
+  for (const part of safePath.split('/')) {
+    current = await join(current, part);
+    if (!(await exists(current))) continue;
+    if ((await lstat(current)).isSymlink) {
+      throw new Error(`Linked project path cannot contain a symbolic link: ${relativePath}`);
+    }
+  }
+}
+
+function assertProjectTextSize(contents: string): void {
+  if (new TextEncoder().encode(contents).byteLength > MAX_PROJECT_TEXT_BYTES) {
+    throw new Error('Linked project text files are limited to 4 MiB.');
+  }
+}
+
+const windowsLikePath = (path: string): boolean => {
+  const portable = path.replace(/\\/g, '/');
+  return /^[A-Za-z]:\//.test(portable) || portable.startsWith('//');
+};
+
+function trimTrailingSeparators(path: string): string {
+  const portable = path.replace(/\\/g, '/');
+  if (portable === '/' || /^[A-Za-z]:\/$/.test(portable)) return portable;
+  return portable.replace(/\/+$/, '');
+}
+
+function pathWithinProject(projectDir: string, absolutePath: string): string | null {
+  const project = trimTrailingSeparators(projectDir);
+  const changed = trimTrailingSeparators(absolutePath);
+  const prefix = project.endsWith('/') ? project : `${project}/`;
+  const caseInsensitive = windowsLikePath(project);
+  const comparableChanged = caseInsensitive ? changed.toLowerCase() : changed;
+  const comparablePrefix = caseInsensitive ? prefix.toLowerCase() : prefix;
+  if (!comparableChanged.startsWith(comparablePrefix)) return null;
+
+  const relativePath = changed.slice(prefix.length);
+  try {
+    return safeProjectRelativePath(relativePath);
+  } catch {
+    return null;
+  }
+}
 
 async function writeProjectFiles(dir: string, project: NodeForgeProject) {
   const { manifest, sceneFiles } = splitProject(project);
@@ -84,6 +173,87 @@ export const tauriPlatform: Platform = {
   resolveAssetUrl(_dir, path) {
     // Assets are resolved to absolute urls at load time (readProjectDir); this is a fallback.
     return convertFileSrc(path);
+  },
+
+  async readProjectText(projectDir, relativePath) {
+    const safePath = safeProjectRelativePath(relativePath);
+    await assertNoProjectPathSymlinks(projectDir, safePath);
+    return invoke<string | null>('read_project_text', {
+      projectDir,
+      relativePath: safePath,
+    });
+  },
+
+  async writeProjectText(projectDir, relativePath, contents, options) {
+    const safePath = safeProjectRelativePath(relativePath);
+    assertProjectTextSize(contents);
+    if (options?.expectedContents !== null && options?.expectedContents !== undefined) {
+      assertProjectTextSize(options.expectedContents);
+    }
+    return invoke<ProjectTextWriteResult>('write_project_text_atomic', {
+      projectDir,
+      relativePath: safePath,
+      contents,
+      checkExpected: options !== undefined,
+      expectedContents: options?.expectedContents ?? null,
+    });
+  },
+
+  async watchProjectPaths(projectDir, relativePaths, onChange, options) {
+    if (relativePaths.length === 0) {
+      throw new Error('At least one project-relative path is required to start a watcher.');
+    }
+    if (relativePaths.length > MAX_WATCH_ROOTS) {
+      throw new Error(`No more than ${MAX_WATCH_ROOTS} project paths can be watched at once.`);
+    }
+
+    const watchedRelativePaths = [...new Set(relativePaths.map(safeProjectRelativePath))];
+    await Promise.all(
+      watchedRelativePaths.map((relativePath) =>
+        assertNoProjectPathSymlinks(projectDir, relativePath),
+      ),
+    );
+    const watchedAbsolutePaths = await Promise.all(
+      watchedRelativePaths.map((relativePath) => absoluteProjectPath(projectDir, relativePath)),
+    );
+    const requestedDelay = options?.debounceMs ?? 250;
+    const delayMs = Number.isFinite(requestedDelay)
+      ? Math.round(Math.min(60_000, Math.max(50, requestedDelay)))
+      : 250;
+    const caseInsensitive = windowsLikePath(projectDir);
+
+    return watch(
+      watchedAbsolutePaths,
+      (event) => {
+        const changedRelativePaths = [
+          ...new Set(
+            event.paths
+              .map((path) => pathWithinProject(projectDir, path))
+              .filter((path): path is string => path !== null)
+              .filter((path) => {
+                const comparablePath = caseInsensitive ? path.toLowerCase() : path;
+                return watchedRelativePaths.some((watchedPath) => {
+                  const comparableWatched = caseInsensitive
+                    ? watchedPath.toLowerCase()
+                    : watchedPath;
+                  return (
+                    comparablePath === comparableWatched ||
+                    comparablePath.startsWith(`${comparableWatched}/`)
+                  );
+                });
+              }),
+          ),
+        ];
+        if (changedRelativePaths.length > 0) onChange(changedRelativePaths);
+      },
+      { delayMs, recursive: false },
+    );
+  },
+
+  async revealProjectFile(projectDir, relativePath) {
+    await assertNoProjectPathSymlinks(projectDir, relativePath);
+    const target = await absoluteProjectPath(projectDir, relativePath);
+    await invoke('reveal_in_explorer', { path: target });
   },
 
   async exportGame(_name, bundle) {

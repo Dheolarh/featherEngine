@@ -1,0 +1,83 @@
+{
+  "name": "featherscript-vscode",
+  "displayName": "FeatherScript",
+  "description": "Language support for NodeForge FeatherScript files.",
+  "version": "0.1.0",
+  "publisher": "nodeforge",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "featherscript",
+    "nodeforge",
+    "game scripting"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:featherscript"
+  ],
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/extension.js --external:vscode --sourcemap",
+    "check": "tsc --noEmit",
+    "watch": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/extension.js --external:vscode --sourcemap --watch",
+    "vscode:prepublish": "npm run check && npm run build"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "featherscript",
+        "aliases": [
+          "FeatherScript",
+          "featherscript"
+        ],
+        "extensions": [
+          ".feather"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "featherscript",
+        "scopeName": "source.featherscript",
+        "path": "./syntaxes/featherscript.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "featherscript",
+        "path": "./snippets/featherscript.json"
+      }
+    ],
+    "configuration": {
+      "title": "FeatherScript",
+      "properties": {
+        "featherscript.completions.maxItems": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum number of FeatherScript API suggestions shown at once."
+        },
+        "featherscript.diagnostics.debounceMilliseconds": {
+          "type": "number",
+          "default": 150,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Delay before validating a changed FeatherScript document."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.12",
+    "typescript": "~5.6.3"
+  }
+}

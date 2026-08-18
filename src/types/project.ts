@@ -145,6 +145,14 @@ export interface ScriptBlueprint {
   variables?: BlueprintVariable[];
   /** Editable FeatherScript source. Undefined means the Script tab mirrors the visual graph. */
   featherSource?: string;
+  /** Last source successfully compiled into the graph. Used to preserve newer invalid drafts safely. */
+  featherSourceLastSynced?: string;
+  /** Project-relative path to a linked external FeatherScript file. */
+  featherSourcePath?: string;
+  /** Fingerprint of the normalized external source at the last confirmed two-way sync. */
+  featherSourceLastSyncedHash?: string;
+  /** Fingerprint of graph-to-script output at that checkpoint, so invalid drafts do not look like graph edits. */
+  featherSourceLastSyncedVisualHash?: string;
   createdAt: number;
 }
 

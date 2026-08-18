@@ -695,6 +695,7 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
             style={{ color: accent }}
             value={data.message ?? ''}
             placeholder="Comment…"
+            aria-label="Comment text"
             spellCheck={false}
             onChange={(event) => useEditorStore.getState().updateGraphNodeData(id, { message: event.target.value })}
           />
@@ -753,8 +754,6 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
     <div
       className={`nodeforge-node ${data.tone} ${isEvent ? 'is-event' : ''} ${isValueProducer ? 'is-pure' : ''} ${valueInputs.length ? 'has-value-inputs' : ''} ${isSelected ? 'selected' : ''} ${runtimeError ? 'has-error' : ''}`}
       style={pinBottom ? { minHeight: pinBottom } : undefined}
-      aria-selected={isSelected}
-      aria-invalid={runtimeError ? true : undefined}
       title={runtimeError ? `Runtime error: ${runtimeError}` : `${data.label} · ${data.category}`}
       // Select directly so the inspector always opens, independent of ReactFlow's
       // pointer-based selection (which can be unreliable inside a docked panel).

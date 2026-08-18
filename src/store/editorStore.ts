@@ -887,6 +887,10 @@ interface EditorState {
   moveToFolder: (kind: 'asset' | 'blueprint' | 'dataAsset' | 'material' | 'particleSystem' | 'uiDocument' | 'prefab', id: string, folderId?: string) => void;
   renameBlueprint: (id: string, name: string) => void;
   updateBlueprintFeatherSource: (id: string, source?: string) => void;
+  updateBlueprintFeatherExternalLink: (
+    id: string,
+    link?: { path: string; lastSyncedHash?: string; lastSyncedVisualHash?: string },
+  ) => void;
   syncBlueprintFeatherSource: (id: string, source: string) => FeatherCompileResult;
   applyBlueprintFeatherSource: (id: string, source: string) => FeatherCompileResult;
   deleteBlueprint: (id: string) => void;
@@ -1151,6 +1155,26 @@ const effectLife = new Map<string, number>();
 /** Stable selector for the active scene's objects. Use this in components, not an inline arrow. */
 export const selectActiveObjects = (state: EditorState): SceneObject[] =>
   state.scenes.find((scene) => scene.id === state.activeSceneId)?.objects ?? [];
+
+/**
+ * Visual graph edits make a previously hand-authored FeatherScript draft stale. Clearing the stored
+ * draft makes the next Code view regenerate from the graph, so an old text snapshot can never compile
+ * later and silently replace newer visual work.
+ */
+const invalidateFeatherSourceForGraphs = (
+  blueprints: ScriptBlueprint[],
+  graphIds: ReadonlySet<string>,
+): ScriptBlueprint[] =>
+  blueprints.map((blueprint) => {
+    if (!graphIds.has(blueprint.graphId) || blueprint.featherSource === undefined) return blueprint;
+    // A draft newer than the last successful compile may contain errors. Preserve it rather than
+    // silently replacing the user's text when an AI/tool/store mutation touches the visual graph.
+    if (blueprint.featherSource !== blueprint.featherSourceLastSynced) return blueprint;
+    return { ...blueprint, featherSource: undefined, featherSourceLastSynced: undefined };
+  });
+
+const invalidateFeatherSourceForGraph = (blueprints: ScriptBlueprint[], graphId: string): ScriptBlueprint[] =>
+  invalidateFeatherSourceForGraphs(blueprints, new Set([graphId]));
 
 /** One Call Function activation: the evaluated A/B/C arguments + the value a Return node set. */
 interface FunctionFrame {
@@ -4270,7 +4294,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       defaultValue: opts.defaultValue !== undefined ? coerceGraphValue(opts.defaultValue, type) : defaultValueForType(type),
     };
     set((state) => ({
-      blueprints: state.blueprints.map((b) => (b.id === blueprintId ? { ...b, variables: [...existing, variable] } : b)),
+      blueprints: invalidateFeatherSourceForGraph(
+        state.blueprints.map((b) => (b.id === blueprintId ? { ...b, variables: [...existing, variable] } : b)),
+        blueprint.graphId,
+      ),
       // Seed the new variable's default onto every object already running this blueprint (don't clobber values).
       ...mapActiveSceneObjects(state, (objects) =>
         objects.map((object) =>
@@ -4294,10 +4321,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         patch.defaultValue !== undefined ? coerceGraphValue(patch.defaultValue, type) : coerceGraphValue(current.defaultValue, type);
       const renamed = nextName !== current.name;
       return {
-        blueprints: state.blueprints.map((b) =>
-          b.id === blueprintId
-            ? { ...b, variables: (b.variables ?? []).map((v) => (v.id === variableId ? { ...v, name: nextName, type, defaultValue } : v)) }
-            : b,
+        blueprints: invalidateFeatherSourceForGraph(
+          state.blueprints.map((b) =>
+            b.id === blueprintId
+              ? {
+                  ...b,
+                  variables: (b.variables ?? []).map((v) =>
+                    v.id === variableId ? { ...v, name: nextName, type, defaultValue } : v,
+                  ),
+                }
+              : b,
+          ),
+          blueprint.graphId,
         ),
         // Carry a rename across to instances that hold the old key (preserve their per-instance value).
         ...(renamed
@@ -4318,8 +4353,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const removed = blueprint?.variables?.find((v) => v.id === variableId);
       if (!blueprint || !removed) return state;
       return {
-        blueprints: state.blueprints.map((b) =>
-          b.id === blueprintId ? { ...b, variables: (b.variables ?? []).filter((v) => v.id !== variableId) } : b,
+        blueprints: invalidateFeatherSourceForGraph(
+          state.blueprints.map((b) =>
+            b.id === blueprintId ? { ...b, variables: (b.variables ?? []).filter((v) => v.id !== variableId) } : b,
+          ),
+          blueprint.graphId,
         ),
         isDirty: true,
       };
@@ -4508,15 +4546,47 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   renameBlueprint: (id, name) =>
     set((state) => {
       const blueprint = state.blueprints.find((item) => item.id === id);
+      if (!blueprint) return state;
+      const affectedGraphIds = new Set([
+        blueprint.graphId,
+        ...state.graphs
+          .filter((graph) => graph.nodes.some((node) => node.data.castBlueprintId === id))
+          .map((graph) => graph.id),
+      ]);
       return {
-        blueprints: state.blueprints.map((item) => (item.id === id ? { ...item, name } : item)),
-        graphs: state.graphs.map((graph) => (graph.id === blueprint?.graphId ? { ...graph, name } : graph)),
+        blueprints: invalidateFeatherSourceForGraphs(
+          state.blueprints.map((item) => (item.id === id ? { ...item, name } : item)),
+          affectedGraphIds,
+        ),
+        graphs: state.graphs.map((graph) => (graph.id === blueprint.graphId ? { ...graph, name } : graph)),
         isDirty: true,
       };
     }),
   updateBlueprintFeatherSource: (id, source) =>
     set((state) => ({
-      blueprints: state.blueprints.map((item) => (item.id === id ? { ...item, featherSource: source } : item)),
+      blueprints: state.blueprints.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              featherSource: source,
+              ...(source === undefined ? { featherSourceLastSynced: undefined } : {}),
+            }
+          : item,
+      ),
+      isDirty: true,
+    })),
+  updateBlueprintFeatherExternalLink: (id, link) =>
+    set((state) => ({
+      blueprints: state.blueprints.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              featherSourcePath: link?.path,
+              featherSourceLastSyncedHash: link?.lastSyncedHash,
+              featherSourceLastSyncedVisualHash: link?.lastSyncedVisualHash,
+            }
+          : item,
+      ),
       isDirty: true,
     })),
   syncBlueprintFeatherSource: (id, source) => {
@@ -4531,12 +4601,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
     const result = compileFeatherScriptToGraph({ source, blueprint, graph, variables: state.variables, blueprints: state.blueprints, preserveSource: true });
     if (!result.ok || !result.graph || !result.blueprint) return result;
-    set((current) => ({
-      blueprints: current.blueprints.map((item) => (item.id === id ? result.blueprint! : item)),
-      graphs: current.graphs.map((item) => (item.id === graph.id ? result.graph! : item)),
-      selectedGraphNodeId: undefined,
-      isDirty: true,
-    }));
+    set((current) => {
+      let blueprints = current.blueprints.map((item) =>
+        item.id === id ? { ...result.blueprint!, featherSourceLastSynced: source } : item,
+      );
+      if (result.blueprint!.name !== blueprint.name) {
+        const dependentGraphIds = new Set(
+          current.graphs
+            .filter((item) => item.id !== graph.id)
+            .filter((item) => item.nodes.some((node) => node.data.castBlueprintId === id))
+            .map((item) => item.id),
+        );
+        blueprints = invalidateFeatherSourceForGraphs(blueprints, dependentGraphIds);
+      }
+      return {
+        blueprints,
+        graphs: current.graphs.map((item) => (item.id === graph.id ? result.graph! : item)),
+        selectedGraphNodeId: undefined,
+        isDirty: true,
+      };
+    });
     return result;
   },
   applyBlueprintFeatherSource: (id, source) => {
@@ -4551,19 +4635,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
     const result = compileFeatherScriptToGraph({ source, blueprint, graph, variables: state.variables, blueprints: state.blueprints });
     if (!result.ok || !result.graph || !result.blueprint) return result;
-    set((current) => ({
-      blueprints: current.blueprints.map((item) => (item.id === id ? result.blueprint! : item)),
-      graphs: current.graphs.map((item) => (item.id === graph.id ? result.graph! : item)),
-      selectedGraphNodeId: undefined,
-      isDirty: true,
-    }));
+    set((current) => {
+      let blueprints = current.blueprints.map((item) =>
+        item.id === id
+          ? { ...result.blueprint!, featherSource: undefined, featherSourceLastSynced: undefined }
+          : item,
+      );
+      if (result.blueprint!.name !== blueprint.name) {
+        const dependentGraphIds = new Set(
+          current.graphs
+            .filter((item) => item.id !== graph.id)
+            .filter((item) => item.nodes.some((node) => node.data.castBlueprintId === id))
+            .map((item) => item.id),
+        );
+        blueprints = invalidateFeatherSourceForGraphs(blueprints, dependentGraphIds);
+      }
+      return {
+        blueprints,
+        graphs: current.graphs.map((item) => (item.id === graph.id ? result.graph! : item)),
+        selectedGraphNodeId: undefined,
+        isDirty: true,
+      };
+    });
     return result;
   },
   deleteBlueprint: (id) =>
     set((state) => {
       const blueprint = state.blueprints.find((item) => item.id === id);
       if (!blueprint) return state;
-      const remaining = state.blueprints.filter((item) => item.id !== id);
+      const dependentGraphIds = new Set(
+        state.graphs
+          .filter((graph) => graph.id !== blueprint.graphId)
+          .filter((graph) => graph.nodes.some((node) => node.data.castBlueprintId === id))
+          .map((graph) => graph.id),
+      );
+      const remaining = invalidateFeatherSourceForGraphs(
+        state.blueprints.filter((item) => item.id !== id),
+        dependentGraphIds,
+      );
       return {
         blueprints: remaining,
         graphs: state.graphs.filter((graph) => graph.id !== blueprint.graphId),
@@ -4614,8 +4723,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return id;
   },
   updateVariable: (id, patch) =>
-    set((state) => ({
-      variables: state.variables.map((variable) => {
+    set((state) => {
+      const currentVariable = state.variables.find((variable) => variable.id === id);
+      const nameChanged =
+        patch.name !== undefined && currentVariable !== undefined && patch.name !== currentVariable.name;
+      const affectedGraphIds = nameChanged
+        ? new Set(
+            state.graphs
+              .filter((graph) => graph.nodes.some((node) => node.data.variableId === id))
+              .map((graph) => graph.id),
+          )
+        : new Set<string>();
+      return {
+        blueprints: invalidateFeatherSourceForGraphs(state.blueprints, affectedGraphIds),
+        variables: state.variables.map((variable) => {
         if (variable.id !== id) return variable;
         const type = patch.type ?? variable.type;
         const defaultValue =
@@ -4630,8 +4751,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           type,
           defaultValue,
         };
-      }),
-      runtimeVariableValues:
+        }),
+        runtimeVariableValues:
         patch.defaultValue !== undefined || patch.type
           ? Object.fromEntries(
               Object.entries(state.runtimeVariableValues).map(([variableId, value]) => [
@@ -4645,22 +4766,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               ]),
             )
           : state.runtimeVariableValues,
-      isDirty: true,
-    })),
+        isDirty: true,
+      };
+    }),
   deleteVariable: (id) =>
-    set((state) => ({
-      variables: state.variables.filter((variable) => variable.id !== id),
-      runtimeVariableValues: Object.fromEntries(
-        Object.entries(state.runtimeVariableValues).filter(([variableId]) => variableId !== id),
-      ),
-      graphs: state.graphs.map((graph) => ({
-        ...graph,
-        nodes: graph.nodes.map((node) =>
-          node.data.variableId === id ? { ...node, data: { ...node.data, variableId: undefined } } : node,
+    set((state) => {
+      const affectedGraphIds = new Set(
+        state.graphs
+          .filter((graph) => graph.nodes.some((node) => node.data.variableId === id))
+          .map((graph) => graph.id),
+      );
+      return {
+        blueprints: invalidateFeatherSourceForGraphs(state.blueprints, affectedGraphIds),
+        variables: state.variables.filter((variable) => variable.id !== id),
+        runtimeVariableValues: Object.fromEntries(
+          Object.entries(state.runtimeVariableValues).filter(([variableId]) => variableId !== id),
         ),
-      })),
-      isDirty: true,
-    })),
+        graphs: state.graphs.map((graph) => ({
+          ...graph,
+          nodes: graph.nodes.map((node) =>
+            node.data.variableId === id ? { ...node, data: { ...node.data, variableId: undefined } } : node,
+          ),
+        })),
+        isDirty: true,
+      };
+    }),
   createDataAsset: (name, folderId) => {
     const id = makeId('data');
     const columnId = makeId('col');
@@ -4687,18 +4817,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isDirty: true,
     })),
   deleteDataAsset: (id) =>
-    set((state) => ({
-      dataAssets: state.dataAssets.filter((table) => table.id !== id),
-      graphs: state.graphs.map((graph) => ({
-        ...graph,
-        nodes: graph.nodes.map((node) =>
-          node.data.tableId === id
-            ? { ...node, data: normalizeNodeData({ ...node.data, tableId: undefined, rowKey: undefined, columnId: undefined }) }
-            : node,
-        ),
-      })),
-      isDirty: true,
-    })),
+    set((state) => {
+      const affectedGraphIds = new Set(
+        state.graphs
+          .filter((graph) => graph.nodes.some((node) => node.data.tableId === id))
+          .map((graph) => graph.id),
+      );
+      return {
+        blueprints: invalidateFeatherSourceForGraphs(state.blueprints, affectedGraphIds),
+        dataAssets: state.dataAssets.filter((table) => table.id !== id),
+        graphs: state.graphs.map((graph) => ({
+          ...graph,
+          nodes: graph.nodes.map((node) =>
+            node.data.tableId === id
+              ? { ...node, data: normalizeNodeData({ ...node.data, tableId: undefined, rowKey: undefined, columnId: undefined }) }
+              : node,
+          ),
+        })),
+        isDirty: true,
+      };
+    }),
   addDataAssetColumn: (tableId, name, type = 'string') => {
     const id = makeId('col');
     set((state) => ({
@@ -4741,8 +4879,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isDirty: true,
     })),
   deleteDataAssetColumn: (tableId, columnId) =>
-    set((state) => ({
-      dataAssets: state.dataAssets.map((table) =>
+    set((state) => {
+      const affectedGraphIds = new Set(
+        state.graphs
+          .filter((graph) =>
+            graph.nodes.some(
+              (node) => node.data.tableId === tableId && node.data.columnId === columnId,
+            ),
+          )
+          .map((graph) => graph.id),
+      );
+      return {
+        blueprints: invalidateFeatherSourceForGraphs(state.blueprints, affectedGraphIds),
+        dataAssets: state.dataAssets.map((table) =>
         table.id === tableId
           ? {
               ...table,
@@ -4753,17 +4902,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               }),
             }
           : table,
-      ),
-      graphs: state.graphs.map((graph) => ({
+        ),
+        graphs: state.graphs.map((graph) => ({
         ...graph,
         nodes: graph.nodes.map((node) =>
           node.data.tableId === tableId && node.data.columnId === columnId
             ? { ...node, data: normalizeNodeData({ ...node.data, columnId: undefined }) }
             : node,
         ),
-      })),
-      isDirty: true,
-    })),
+        })),
+        isDirty: true,
+      };
+    }),
   addDataAssetRow: (tableId, key) => {
     const id = makeId('row');
     set((state) => ({
@@ -5341,6 +5491,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const blueprint = state.blueprints.find((item) => item.id === blueprintId);
       if (!blueprint) return state;
       return {
+        blueprints: invalidateFeatherSourceForGraph(state.blueprints, blueprint.graphId),
         graphs: state.graphs.map((graph) => {
           if (graph.id !== blueprint.graphId) return graph;
           const offset = graph.nodes.length * 38;
@@ -5366,6 +5517,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!blueprint) return state;
       const isValueEdge = Boolean(targetHandle && targetHandle !== 'exec-in');
       return {
+        blueprints: invalidateFeatherSourceForGraph(state.blueprints, blueprint.graphId),
         graphs: state.graphs.map((graph) =>
           graph.id === blueprint.graphId
             ? {
@@ -5394,6 +5546,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const blueprint = state.blueprints.find((item) => item.id === state.activeBlueprintId);
       if (!blueprint) return state;
       return {
+        blueprints: invalidateFeatherSourceForGraph(state.blueprints, blueprint.graphId),
         graphs: state.graphs.map((graph) =>
           graph.id === blueprint.graphId
             ? {
@@ -5413,6 +5566,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!blueprint || nodeIds.length === 0) return state;
       const doomed = new Set(nodeIds);
       return {
+        blueprints: invalidateFeatherSourceForGraph(state.blueprints, blueprint.graphId),
         graphs: state.graphs.map((graph) =>
           graph.id === blueprint.graphId
             ? {
@@ -5433,6 +5587,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const blueprint = state.blueprints.find((item) => item.id === blueprintId);
       if (!blueprint) return state;
       return {
+        blueprints: invalidateFeatherSourceForGraph(state.blueprints, blueprint.graphId),
         graphs: state.graphs.map((graph) => {
           if (graph.id !== blueprint.graphId) return graph;
           const pasted: NodeForgeNode[] = nodes.map((node) => ({
@@ -5480,43 +5635,49 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (get().selectedGraphNodeId !== selectedGraphNodeId) set({ selectedGraphNodeId });
   },
   updateGraphNodeData: (id, patch) =>
-    set((state) => ({
-      // Find the node in whichever graph holds it (blueprint OR material graph).
-      graphs: state.graphs.map((graph) => {
-        const existing = graph.nodes.find((node) => node.id === id);
-        if (!existing) return graph;
-        const nextNodes = graph.nodes.map((node) =>
-          node.id === id ? { ...node, data: normalizeNodeData({ ...node.data, ...patch }) } : node,
-        );
-        let nextEdges = graph.edges;
-        const becameTextured =
-          existing.data.nodeKind === 'material.texture' &&
-          typeof patch.assetId !== 'undefined' &&
-          patch.assetId &&
-          !graph.edges.some((edge) => edge.source === id) &&
-          !graph.edges.some((edge) => edge.targetHandle === 'baseColor');
-        if (becameTextured) {
-          const output = graph.nodes.find((node) => node.data.nodeKind === 'material.output');
-          if (output) {
-            nextEdges = [
-              ...graph.edges,
-              {
-                id: makeId('edge'),
-                source: id,
-                target: output.id,
-                sourceHandle: 'value-out',
-                targetHandle: 'baseColor',
-                animated: false,
-                type: 'smoothstep',
-                style: { stroke: '#3DD0DC', strokeWidth: 2 },
-              },
-            ];
+    set((state) => {
+      const owningGraph = state.graphs.find((graph) => graph.nodes.some((node) => node.id === id));
+      return {
+        // Find the node in whichever graph holds it (blueprint OR material graph).
+        graphs: state.graphs.map((graph) => {
+          const existing = graph.nodes.find((node) => node.id === id);
+          if (!existing) return graph;
+          const nextNodes = graph.nodes.map((node) =>
+            node.id === id ? { ...node, data: normalizeNodeData({ ...node.data, ...patch }) } : node,
+          );
+          let nextEdges = graph.edges;
+          const becameTextured =
+            existing.data.nodeKind === 'material.texture' &&
+            typeof patch.assetId !== 'undefined' &&
+            patch.assetId &&
+            !graph.edges.some((edge) => edge.source === id) &&
+            !graph.edges.some((edge) => edge.targetHandle === 'baseColor');
+          if (becameTextured) {
+            const output = graph.nodes.find((node) => node.data.nodeKind === 'material.output');
+            if (output) {
+              nextEdges = [
+                ...graph.edges,
+                {
+                  id: makeId('edge'),
+                  source: id,
+                  target: output.id,
+                  sourceHandle: 'value-out',
+                  targetHandle: 'baseColor',
+                  animated: false,
+                  type: 'smoothstep',
+                  style: { stroke: '#3DD0DC', strokeWidth: 2 },
+                },
+              ];
+            }
           }
-        }
-        return { ...graph, nodes: nextNodes, edges: nextEdges };
-      }),
-      isDirty: true,
-    })),
+          return { ...graph, nodes: nextNodes, edges: nextEdges };
+        }),
+        ...(owningGraph
+          ? { blueprints: invalidateFeatherSourceForGraph(state.blueprints, owningGraph.id) }
+          : {}),
+        isDirty: true,
+      };
+    }),
   fireCustomEvent: (eventName) =>
     set((state) => ({
       runtimeEventQueue: [...state.runtimeEventQueue, eventName.trim() || 'CustomEvent'],
@@ -5542,9 +5703,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   removeAsset: (id) =>
     set((state) => {
       const asset = state.assets.find((item) => item.id === id);
+      const affectedGraphIds = new Set(
+        state.graphs
+          .filter((graph) => graph.nodes.some((node) => node.data.assetId === id))
+          .map((graph) => graph.id),
+      );
       // Only blob: URLs need revoking; data:/asset:/empty are no-ops but harmless.
       if (asset?.url?.startsWith('blob:')) URL.revokeObjectURL(asset.url);
       return {
+        blueprints: invalidateFeatherSourceForGraphs(state.blueprints, affectedGraphIds),
         assets: state.assets.filter((item) => item.id !== id),
         // Clear any dangling references so the engine never points at a removed asset.
         scenes: state.scenes.map((scene) => ({
@@ -11899,7 +12066,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const dirtied = changes.some(
         (change) => change.type !== 'select' && (change.type !== 'dimensions' || ('resizing' in change && change.resizing === true)),
       );
+      const changesScript = changes.some(
+        (change) => change.type === 'add' || change.type === 'remove' || change.type === 'replace',
+      );
       return {
+        ...(changesScript
+          ? { blueprints: invalidateFeatherSourceForGraph(state.blueprints, activeBlueprint.graphId) }
+          : {}),
         graphs: state.graphs.map((graph) =>
           graph.id === activeBlueprint.graphId ? { ...graph, nodes: applyNodeChanges(structuralChanges, graph.nodes) } : graph,
         ),
@@ -11912,6 +12085,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!activeBlueprint) return state;
       const dirtied = changes.some((change) => change.type !== 'select');
       return {
+        ...(dirtied
+          ? { blueprints: invalidateFeatherSourceForGraph(state.blueprints, activeBlueprint.graphId) }
+          : {}),
         graphs: state.graphs.map((graph) =>
           graph.id === activeBlueprint.graphId ? { ...graph, edges: applyEdgeChanges(changes, graph.edges) } : graph,
         ),
@@ -11924,6 +12100,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!activeBlueprint) return state;
       const isValueEdge = Boolean(connection.targetHandle && connection.targetHandle !== 'exec-in');
       return {
+        blueprints: invalidateFeatherSourceForGraph(state.blueprints, activeBlueprint.graphId),
         graphs: state.graphs.map((graph) =>
           graph.id === activeBlueprint.graphId
             ? {
@@ -11949,6 +12126,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!activeBlueprint) return state;
       let selectedGraphNodeId = state.selectedGraphNodeId;
       return {
+        blueprints: invalidateFeatherSourceForGraph(state.blueprints, activeBlueprint.graphId),
         graphs: state.graphs.map((graph) => {
           if (graph.id !== activeBlueprint.graphId) return graph;
           const offset = graph.nodes.length * 38;

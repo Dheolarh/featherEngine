@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { ChevronRight, type LucideIcon } from 'lucide-react';
 
 /**
@@ -11,16 +11,22 @@ export function PaletteGroup({
   icon: Icon,
   count,
   forceOpen = false,
+  defaultOpen = true,
   children,
 }: {
   title: string;
   icon: LucideIcon;
   count?: number;
   forceOpen?: boolean;
+  defaultOpen?: boolean;
   children: ReactNode;
 }) {
   const storageKey = `nf.palette.group.${title}`;
-  const [open, setOpen] = useState(() => localStorage.getItem(storageKey) !== '0');
+  const reactId = useId();
+  const [open, setOpen] = useState(() => {
+    const saved = localStorage.getItem(storageKey);
+    return saved === null ? defaultOpen : saved !== '0';
+  });
   const expanded = forceOpen || open;
   const toggle = () => {
     setOpen((value) => {
@@ -28,27 +34,27 @@ export function PaletteGroup({
       return !value;
     });
   };
+  const contentId = `palette-group-${reactId.replace(/:/g, '')}`;
   return (
     <section className={expanded ? 'palette-group' : 'palette-group collapsed'}>
-      <h3
-        className="palette-group-head"
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        onClick={toggle}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            toggle();
-          }
-        }}
-      >
-        <Icon size={14} aria-hidden />
-        <span>{title}</span>
-        {count !== undefined && <small>{count}</small>}
-        <ChevronRight size={12} className="palette-group-caret" aria-hidden />
+      <h3 className="palette-group-heading">
+        <button
+          type="button"
+          className="palette-group-head"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          aria-disabled={forceOpen || undefined}
+          disabled={forceOpen}
+          title={forceOpen ? 'Groups stay open while filtering' : undefined}
+          onClick={toggle}
+        >
+          <Icon size={14} aria-hidden />
+          <span>{title}</span>
+          {count !== undefined && <small>{count}</small>}
+          <ChevronRight size={12} className="palette-group-caret" aria-hidden />
+        </button>
       </h3>
-      {expanded && <div>{children}</div>}
+      <div id={contentId} hidden={!expanded}>{expanded ? children : null}</div>
     </section>
   );
 }

@@ -23,7 +23,8 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
   return (
     <motion.div
       layout
-      role="alert"
+      role={toast.kind === 'error' ? 'alert' : 'status'}
+      aria-atomic="true"
       className={`toast toast--${toast.kind}`}
       initial={{ opacity: 0, y: 12, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -60,7 +61,7 @@ export function ToastHost() {
   }, [projToast, clearProjToast]);
 
   return createPortal(
-    <div className="toast-host" aria-live="polite" aria-atomic="false">
+    <div className="toast-host">
       <AnimatePresence initial={false}>
         {toasts.map((toast) => (
           <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />

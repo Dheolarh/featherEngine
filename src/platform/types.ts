@@ -38,6 +38,24 @@ export interface OpenedProject {
   project: NodeForgeProject;
 }
 
+export interface ProjectTextWriteOptions {
+  /**
+   * Compare-and-swap guard. The write proceeds only when the file still contains this exact text;
+   * `null` means the file must still be missing.
+   */
+  expectedContents: string | null;
+}
+
+export type ProjectTextWriteResult =
+  | { kind: 'written' }
+  | {
+      kind: 'changed';
+      /** Contents that prevented the write. `null` means the file disappeared. */
+      currentContents: string | null;
+      /** Rare race-recovery copy retained inside the project, when one was needed. */
+      recoveryPath?: string;
+    };
+
 export interface Platform {
   readonly isDesktop: boolean;
   /** Create a new project on disk (desktop) or in memory (web). Returns null if cancelled. */
@@ -52,6 +70,35 @@ export interface Platform {
   importAsset(dir: string, file: File): Promise<{ path: string; url: string }>;
   /** Resolve a stored relative asset path to a runtime url for rendering. */
   resolveAssetUrl(dir: string, path: string): string;
+  /**
+   * Desktop only: read a UTF-8 text file below `projectDir`. `relativePath` must not be absolute or
+   * contain `.` / `..` path segments. Returns null when the file does not exist.
+   */
+  readProjectText?(projectDir: string, relativePath: string): Promise<string | null>;
+  /**
+   * Desktop only: write a UTF-8 text file below `projectDir`, creating its parent folders. The same
+   * project-relative path restrictions as `readProjectText` apply. With `expectedContents`, a
+   * concurrent external change is returned as `changed` and is never overwritten.
+   */
+  writeProjectText?(
+    projectDir: string,
+    relativePath: string,
+    contents: string,
+    options?: ProjectTextWriteOptions,
+  ): Promise<ProjectTextWriteResult>;
+  /**
+   * Desktop only: watch one or more project-relative files/directories. The debounced callback
+   * receives changed paths relative to the project, always using `/` separators. Resolves to a
+   * cleanup function that stops the watcher.
+   */
+  watchProjectPaths?(
+    projectDir: string,
+    relativePaths: string[],
+    onChange: (changedRelativePaths: string[]) => void,
+    options?: { debounceMs?: number },
+  ): Promise<() => void>;
+  /** Desktop only: reveal one safe project-relative file or directory in the OS file manager. */
+  revealProjectFile?(projectDir: string, relativePath: string): Promise<void>;
   /**
    * Write a standalone game bundle (the `game.json` the player loads).
    * Downloads the file on web; prompts for a save location on desktop.

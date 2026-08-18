@@ -24,6 +24,7 @@ import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { CommandPalette } from './components/CommandPalette';
 import { initHistory } from './store/history';
 import { initAutosave } from './store/autosave';
+import { initFeatherExternalSync } from './store/featherExternalStore';
 import { createMeadowTemplate } from './project/meadowTemplate';
 
 /** DEV-only: `?demo=meadows` auto-builds the Meadows template on load — used for headless screenshot QA
@@ -161,6 +162,7 @@ export default function App() {
   useEffect(() => {
     initHistory();
     initAutosave();
+    initFeatherExternalSync();
   }, []);
   useDemoAutoload();
 

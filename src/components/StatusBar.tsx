@@ -46,7 +46,7 @@ export function StatusBar() {
   const fpsTone = fps >= 55 ? 'ok' : fps >= 30 ? 'warn' : 'bad';
 
   return (
-    <footer className="status-bar" role="status" aria-live="polite">
+    <footer className="status-bar" aria-label="Editor status">
       <div className="status-bar__group">
         <span className="status-bar__item" title="Current selection">
           <MousePointer2 size={14} aria-hidden />

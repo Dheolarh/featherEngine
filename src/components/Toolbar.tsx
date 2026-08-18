@@ -28,7 +28,6 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { PREFAB_EDIT_SCENE_ID } from '../types';
 import { ProblemsButton, RuntimeErrorBadge } from './ProblemsPanel';
 import { useEditorStore } from '../store/editorStore';
@@ -498,20 +497,6 @@ export function Toolbar() {
           </>
         )}
       </div>
-
-      <AnimatePresence mode="popLayout">
-        {selectedObjectId && (
-          <motion.div
-            key={selectedObjectId}
-            className="selection-pill"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 6 }}
-          >
-            <span>{selectedObjectName}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <button
         className="icon-button"

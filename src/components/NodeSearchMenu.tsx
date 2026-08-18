@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import type { GraphNodeCategory, GraphNodeKind, GraphValueType, NodeForgeNodeData } from '../types';
 
 export interface NodeChoice {
@@ -41,12 +41,43 @@ export function NodeSearchMenu({
 }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const activeOptionRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  );
+  const onCloseRef = useRef(onClose);
+  const reactId = useId().replace(/:/g, '');
+  const titleId = `node-search-title-${reactId}`;
+  const listId = `node-search-results-${reactId}`;
+  const hintId = `node-search-hint-${reactId}`;
+  const countId = `node-search-count-${reactId}`;
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    const focusFrame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onCloseRef.current();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onCloseRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.cancelAnimationFrame(focusFrame);
+      window.requestAnimationFrame(() => previousFocusRef.current?.focus());
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -69,18 +100,50 @@ export function NodeSearchMenu({
     return groups;
   }, [filtered]);
 
+  useEffect(() => {
+    activeOptionRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
+
+  const menuWidth = Math.min(378, Math.max(280, window.innerWidth - 24));
+  const menuHeight = Math.min(458, Math.max(260, window.innerHeight - 24));
+  const left = Math.max(12, Math.min(x, window.innerWidth - menuWidth - 12));
+  const top = Math.max(12, Math.min(y, window.innerHeight - menuHeight - 12));
   return createPortal(
     <div
+      ref={menuRef}
       className="node-search"
-      style={{ left: Math.min(x, window.innerWidth - 390), top: Math.min(y, window.innerHeight - 470) }}
+      style={{ left, top, width: menuWidth, maxHeight: menuHeight }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
       onMouseDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key !== 'Tab') return;
+        event.preventDefault();
+        if (document.activeElement === inputRef.current) closeRef.current?.focus();
+        else inputRef.current?.focus();
+      }}
     >
+      <div className="node-search-heading">
+        <strong id={titleId}>Add a node</strong>
+        <button ref={closeRef} type="button" className="node-search-close" aria-label="Close node search" onClick={onClose}>
+          <X size={14} aria-hidden />
+        </button>
+      </div>
       <label className="node-search-field">
         <Search size={14} aria-hidden />
         <input
+          ref={inputRef}
           autoFocus
           value={query}
-          placeholder={filterHint ? `Search ${filterHint}…` : 'Search nodes…'}
+          placeholder={filterHint ? `Search ${filterHint}…` : 'Search actions, events, and values…'}
+          role="combobox"
+          aria-label="Search nodes"
+          aria-autocomplete="list"
+          aria-expanded="true"
+          aria-controls={listId}
+          aria-describedby={`${filterHint ? `${hintId} ` : ''}${countId}`}
+          aria-activedescendant={filtered[active] ? `node-search-option-${reactId}-${active}` : undefined}
           onChange={(event) => {
             setQuery(event.target.value);
             setActive(0);
@@ -99,11 +162,19 @@ export function NodeSearchMenu({
           }}
         />
       </label>
-      {filterHint && <div className="node-search-filter-hint">Showing {filterHint}</div>}
-      <div className="node-search-list">
-        {grouped.map((group) => (
-          <section className="node-search-group" key={group.category}>
-            <div className="node-search-group-title">
+      {filterHint && <div className="node-search-filter-hint" id={hintId}>Showing {filterHint}</div>}
+      <span className="sr-only" id={countId} role="status" aria-live="polite">
+        {filtered.length} {filtered.length === 1 ? 'node' : 'nodes'} available.
+      </span>
+      <div className="node-search-list" id={listId} role="listbox">
+        {grouped.map((group, groupIndex) => (
+          <section
+            className="node-search-group"
+            key={group.category}
+            role="group"
+            aria-labelledby={`node-search-group-${reactId}-${groupIndex}`}
+          >
+            <div className="node-search-group-title" id={`node-search-group-${reactId}-${groupIndex}`}>
               <span>{group.category}</span>
               <small>{group.choices.length}</small>
             </div>
@@ -112,6 +183,12 @@ export function NodeSearchMenu({
               return (
                 <button
                   key={`${choice.category}:${choice.label}`}
+                  ref={index === active ? activeOptionRef : undefined}
+                  id={`node-search-option-${reactId}-${index}`}
+                  type="button"
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={index === active}
                   className={index === active ? 'active' : undefined}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => onPick(choice)}
@@ -128,7 +205,7 @@ export function NodeSearchMenu({
             })}
           </section>
         ))}
-        {filtered.length === 0 && <div className="node-search-empty">No matching nodes</div>}
+        {filtered.length === 0 && <div className="node-search-empty" role="status">No matching nodes</div>}
       </div>
     </div>,
     document.body,

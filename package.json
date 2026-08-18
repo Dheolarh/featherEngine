@@ -9,6 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:production": "node scripts/export-smoke-test.mjs --browser",
+    "vscode:check": "npm --prefix extensions/featherscript-vscode run check",
+    "vscode:build": "npm --prefix extensions/featherscript-vscode run build",
     "build:player": "node scripts/build-player.mjs",
     "build:player:fast": "node scripts/build-player.mjs --skip-typecheck",
     "export:web": "node scripts/export-production.mjs",

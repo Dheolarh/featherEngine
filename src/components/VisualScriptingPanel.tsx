@@ -2,15 +2,18 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { Background, Controls, MiniMap, ReactFlow, useReactFlow, type Connection, type Edge, type NodeTypes } from '@xyflow/react';
 import {
   AlertTriangle,
+  ArrowRight,
   Boxes,
   CheckCircle2,
   Code2,
   Copy,
   Database,
   Download,
+  FolderOpen,
   GitBranch,
   LayoutDashboard,
   LayoutGrid,
+  Link2,
   MousePointer2,
   Plus,
   RotateCcw,
@@ -18,8 +21,10 @@ import {
   Search,
   Send,
   Sigma,
+  Sparkles,
   Table2,
   Trash2,
+  Unlink,
   Waypoints,
   Zap,
 } from 'lucide-react';
@@ -45,8 +50,13 @@ import { KEY_CODE_OPTIONS, keyLabelByCode } from '../utils/keyboardCodes';
 import { execTrace, setExecTraceEnabled, resetExecWindowCounts } from '../runtime/execTrace';
 import { valueTrace, setValueTraceEnabled, formatTraceValue } from '../runtime/valueTrace';
 import { FEATHER_SIDEBAR_API, getFeatherCompletions, type FeatherApiEntry, type FeatherCompletion } from '../scripting/featherApi';
-import { parseFeatherScript } from '../scripting/featherParser';
+import { compileFeatherScriptToGraph } from '../scripting/featherCompiler';
+import { parseFeatherScript, type FeatherDiagnostic } from '../scripting/featherParser';
 import { graphToFeatherScript } from '../scripting/featherScript';
+import { BEHAVIOR_PRESETS } from '../project/behaviors';
+import { confirmAction } from '../store/confirmStore';
+import { useProjectStore } from '../store/projectStore';
+import { useFeatherExternalStore } from '../store/featherExternalStore';
 
 const nodeTypes: NodeTypes = {
   nodeforge: NodeForgeGraphNode,
@@ -151,6 +161,50 @@ export const baseNodeChoices: NodeChoice[] = nodeGroups.flatMap((group) =>
   }),
 );
 
+const starterBehaviorIds = ['rotating-prop', 'collectible', 'door-on-interact', 'moving-platform', 'chase-player', 'health-and-death'];
+const starterBehaviors = starterBehaviorIds.flatMap((id) => {
+  const preset = BEHAVIOR_PRESETS.find((candidate) => candidate.id === id);
+  return preset ? [preset] : [];
+});
+
+const essentialNodes: Array<{ label: string; category: GraphNodeCategory }> = [
+  { label: 'Print', category: 'Runtime' },
+  { label: 'Translate', category: 'Runtime' },
+  { label: 'Rotate', category: 'Runtime' },
+  { label: 'Branch', category: 'Logic' },
+  { label: 'Collision Enter', category: 'Events' },
+  { label: 'Key Down', category: 'Events' },
+];
+
+const isBlockingFeatherWarning = (diagnostic: FeatherDiagnostic) =>
+  diagnostic.severity === 'warning' &&
+  !diagnostic.message.startsWith('Add a blueprint declaration at the top');
+
+const handleTabListKeyDown = (
+  event: ReactKeyboardEvent<HTMLDivElement>,
+  values: string[],
+  activeValue: string,
+  onSelect: (value: string) => boolean | void,
+) => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const currentIndex = Math.max(0, values.indexOf(activeValue));
+  const nextIndex =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? values.length - 1
+        : event.key === 'ArrowRight'
+          ? (currentIndex + 1) % values.length
+          : (currentIndex - 1 + values.length) % values.length;
+  const nextValue = values[nextIndex];
+  if (onSelect(nextValue) === false) return;
+  const tabList = event.currentTarget;
+  window.requestAnimationFrame(() => {
+    tabList.querySelector<HTMLButtonElement>(`[role="tab"][data-tab-value="${nextValue}"]`)?.focus();
+  });
+};
+
 const featherFileName = (name: string) => {
   const base = name.trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'Blueprint';
   return `${base}.feather`;
@@ -216,16 +270,19 @@ const graphValuePatch = (type: GraphValueType, value: GraphValue): Partial<NodeF
 function ValueEditor({
   type,
   value,
+  label = 'Value',
   onChange,
 }: {
   type: GraphValueType;
   value: GraphValue | undefined;
+  label?: string;
   onChange: (value: GraphValue) => void;
 }) {
   if (type === 'number') {
     return (
       <input
         type="number"
+        aria-label={label}
         step="0.1"
         value={typeof value === 'number' ? value : 0}
         onChange={(event) => onChange(Number(event.target.value))}
@@ -235,7 +292,7 @@ function ValueEditor({
 
   if (type === 'boolean') {
     return (
-      <select value={value ? 'true' : 'false'} onChange={(event) => onChange(event.target.value === 'true')}>
+      <select aria-label={label} value={value ? 'true' : 'false'} onChange={(event) => onChange(event.target.value === 'true')}>
         <option value="true">True</option>
         <option value="false">False</option>
       </select>
@@ -251,6 +308,7 @@ function ValueEditor({
             <span>{axis}</span>
             <input
               type="number"
+              aria-label={`${label} ${axis}`}
               step="0.1"
               value={vector[index]}
               onChange={(event) => {
@@ -265,7 +323,7 @@ function ValueEditor({
     );
   }
 
-  return <input value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />;
+  return <input aria-label={label} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />;
 }
 
 function GraphDataLibrary() {
@@ -293,14 +351,14 @@ function GraphDataLibrary() {
   const setDataAssetCell = useEditorStore((state) => state.setDataAssetCell);
 
   return (
-    <div className="graph-library">
+    <div className="graph-library" aria-label="Graph data library">
       <section>
-        <div className="library-heading">
+        <h3 className="library-heading">
           <span>Global Variables</span>
-          <button title="Create a global (shared) variable" onClick={() => createVariable()}>
+          <button title="Create a global (shared) variable" aria-label="Create a global variable" onClick={() => createVariable()}>
             <Plus size={14} aria-hidden />
           </button>
-        </div>
+        </h3>
         <small className="node-hint">
           SHARED across the whole game (one value for everything) — use for score, settings, Save Game. For per-object
           state (per-player gold, per-enemy health) use Instance Variables below instead.
@@ -309,13 +367,14 @@ function GraphDataLibrary() {
         {variables.map((variable) => (
           <div className="library-card" key={variable.id}>
             <div className="library-row">
-              <input value={variable.name} onChange={(event) => updateVariable(variable.id, { name: event.target.value })} />
-              <button title="Delete variable" onClick={() => deleteVariable(variable.id)}>
+              <input aria-label="Global variable name" value={variable.name} onChange={(event) => updateVariable(variable.id, { name: event.target.value })} />
+              <button title="Delete variable" aria-label={`Delete global variable ${variable.name}`} onClick={() => deleteVariable(variable.id)}>
                 <Trash2 size={14} aria-hidden />
               </button>
             </div>
             <div className="library-row two">
               <select
+                aria-label={`Type for global variable ${variable.name}`}
                 value={variable.type}
                 onChange={(event) =>
                   updateVariable(variable.id, {
@@ -333,6 +392,7 @@ function GraphDataLibrary() {
               <label className="library-check" title="Include this variable in Save Game nodes">
                 <input
                   type="checkbox"
+                  aria-label={`Save global variable ${variable.name}`}
                   checked={variable.persistent}
                   onChange={(event) => updateVariable(variable.id, { persistent: event.target.checked })}
                 />
@@ -342,6 +402,7 @@ function GraphDataLibrary() {
             <ValueEditor
               type={variable.type}
               value={variable.defaultValue}
+              label={`Default value for global variable ${variable.name}`}
               onChange={(defaultValue) => updateVariable(variable.id, { defaultValue })}
             />
           </div>
@@ -349,16 +410,17 @@ function GraphDataLibrary() {
       </section>
 
       <section>
-        <div className="library-heading">
+        <h3 className="library-heading">
           <span>Instance Variables{activeBlueprint ? ` · ${activeBlueprint.name}` : ''}</span>
           <button
             title={activeBlueprint ? 'Declare a per-instance variable on this blueprint' : 'Open a blueprint first'}
+            aria-label={activeBlueprint ? `Create an instance variable for ${activeBlueprint.name}` : 'Open a blueprint to create an instance variable'}
             disabled={!activeBlueprint}
             onClick={() => activeBlueprint && addBlueprintVariable(activeBlueprint.id)}
           >
             <Plus size={14} aria-hidden />
           </button>
-        </div>
+        </h3>
         {!activeBlueprint && <small className="node-hint">Open a blueprint to declare its per-instance variables.</small>}
         {activeBlueprint && instanceVars.length === 0 && (
           <small className="node-hint">
@@ -370,15 +432,17 @@ function GraphDataLibrary() {
             <div className="library-card" key={variable.id}>
               <div className="library-row">
                 <input
+                  aria-label="Instance variable name"
                   value={variable.name}
                   onChange={(event) => updateBlueprintVariable(activeBlueprint.id, variable.id, { name: event.target.value })}
                 />
-                <button title="Delete instance variable" onClick={() => removeBlueprintVariable(activeBlueprint.id, variable.id)}>
+                <button title="Delete instance variable" aria-label={`Delete instance variable ${variable.name}`} onClick={() => removeBlueprintVariable(activeBlueprint.id, variable.id)}>
                   <Trash2 size={14} aria-hidden />
                 </button>
               </div>
               <div className="library-row two">
                 <select
+                  aria-label={`Type for instance variable ${variable.name}`}
                   value={variable.type}
                   onChange={(event) =>
                     updateBlueprintVariable(activeBlueprint.id, variable.id, {
@@ -397,6 +461,7 @@ function GraphDataLibrary() {
               <ValueEditor
                 type={variable.type}
                 value={variable.defaultValue}
+                label={`Default value for instance variable ${variable.name}`}
                 onChange={(defaultValue) => updateBlueprintVariable(activeBlueprint.id, variable.id, { defaultValue })}
               />
             </div>
@@ -404,18 +469,18 @@ function GraphDataLibrary() {
       </section>
 
       <section>
-        <div className="library-heading">
+        <h3 className="library-heading">
           <span>Data Assets</span>
-          <button title="Create Data Asset" onClick={() => createDataAsset()}>
+          <button title="Create Data Asset" aria-label="Create a data asset" onClick={() => createDataAsset()}>
             <Plus size={14} aria-hidden />
           </button>
-        </div>
+        </h3>
 
         {dataAssets.map((table) => (
           <div className="library-card data-table-card" key={table.id}>
             <div className="library-row">
-              <input value={table.name} onChange={(event) => renameDataAsset(table.id, event.target.value)} />
-              <button title="Delete Data Asset" onClick={() => deleteDataAsset(table.id)}>
+              <input aria-label="Data asset name" value={table.name} onChange={(event) => renameDataAsset(table.id, event.target.value)} />
+              <button title="Delete Data Asset" aria-label={`Delete data asset ${table.name}`} onClick={() => deleteDataAsset(table.id)}>
                 <Trash2 size={14} aria-hidden />
               </button>
             </div>
@@ -435,10 +500,12 @@ function GraphDataLibrary() {
               {table.columns.map((column) => (
                 <div key={column.id} className="table-column-editor">
                   <input
+                    aria-label={`Column name in ${table.name}`}
                     value={column.name}
                     onChange={(event) => updateDataAssetColumn(table.id, column.id, { name: event.target.value })}
                   />
                   <select
+                    aria-label={`Type for column ${column.name}`}
                     value={column.type}
                     onChange={(event) =>
                       updateDataAssetColumn(table.id, column.id, { type: event.target.value as GraphValueType })
@@ -450,7 +517,7 @@ function GraphDataLibrary() {
                       </option>
                     ))}
                   </select>
-                  <button title="Delete column" onClick={() => deleteDataAssetColumn(table.id, column.id)}>
+                  <button title="Delete column" aria-label={`Delete column ${column.name}`} onClick={() => deleteDataAssetColumn(table.id, column.id)}>
                     <Trash2 size={12} aria-hidden />
                   </button>
                 </div>
@@ -461,8 +528,8 @@ function GraphDataLibrary() {
               {table.rows.map((row) => (
                 <div key={row.id} className="table-row-editor">
                   <div className="library-row">
-                    <input value={row.key} onChange={(event) => updateDataAssetRow(table.id, row.id, { key: event.target.value })} />
-                    <button title="Delete row" onClick={() => deleteDataAssetRow(table.id, row.id)}>
+                    <input aria-label={`Row key in ${table.name}`} value={row.key} onChange={(event) => updateDataAssetRow(table.id, row.id, { key: event.target.value })} />
+                    <button title="Delete row" aria-label={`Delete row ${row.key || 'without a key'}`} onClick={() => deleteDataAssetRow(table.id, row.id)}>
                       <Trash2 size={12} aria-hidden />
                     </button>
                   </div>
@@ -472,6 +539,7 @@ function GraphDataLibrary() {
                       <ValueEditor
                         type={column.type}
                         value={row.values[column.id]}
+                        label={`${column.name} value for row ${row.key || 'without a key'}`}
                         onChange={(value) => setDataAssetCell(table.id, row.id, column.id, value)}
                       />
                     </label>
@@ -490,6 +558,8 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
   const updateGraphNodeData = useEditorStore((state) => state.updateGraphNodeData);
   const fireCustomEvent = useEditorStore((state) => state.fireCustomEvent);
   const deleteGraphNode = useEditorStore((state) => state.deleteGraphNode);
+  const onConnect = useEditorStore((state) => state.onConnect);
+  const onEdgesChange = useEditorStore((state) => state.onEdgesChange);
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const assets = useEditorStore((state) => state.assets);
   const audioAssets = useMemo(() => assets.filter((asset) => asset.type === 'audio'), [assets]);
@@ -507,6 +577,13 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
   const sceneObjects = useStableActiveObjects();
   const activeBlueprintId = useEditorStore((state) => state.activeBlueprintId);
   const isAnimNode = Boolean(node?.data.nodeKind.startsWith('animator.'));
+  const [keyboardConnectionTarget, setKeyboardConnectionTarget] = useState('');
+  const [connectionMessage, setConnectionMessage] = useState('');
+
+  useEffect(() => {
+    setKeyboardConnectionTarget('');
+    setConnectionMessage('');
+  }, [node?.id]);
 
   // Objects that actually have an animator controller — the choices for a Set/Get Anim node's Target.
   const animObjects = useMemo(
@@ -529,7 +606,7 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
 
   if (!node) {
     return (
-      <aside className="graph-inspector">
+        <aside className="graph-inspector" aria-label="Node details and graph data">
         <div className="empty-state compact">
           <MousePointer2 size={18} aria-hidden />
           <span>Select a node</span>
@@ -694,9 +771,79 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
     delete next[key];
     updateGraphNodeData(node.id, { envPatch: Object.keys(next).length ? next : undefined });
   };
+  const isValueConnectionSource = valueProducerKinds.has(node.data.nodeKind);
+  const connectionSourceType =
+    outputTypeOf[node.data.nodeKind] ?? (node.data.valueType as GraphValueType | undefined) ?? 'any';
+  const existingConnections = activeGraph?.edges.filter((edge) => edge.source === node.id || edge.target === node.id) ?? [];
+  const keyboardConnectionOptions = activeGraph
+    ? isValueConnectionSource
+      ? activeGraph.nodes.flatMap((candidate) =>
+          candidate.id === node.id
+            ? []
+            : valueInputsFor(candidate.data.nodeKind)
+                .filter((input) =>
+                  valueTypesCompatible(
+                    connectionSourceType,
+                    inputTypeForHandle(
+                      candidate.data.nodeKind,
+                      input.id,
+                      candidate.data.valueType as GraphValueType | undefined,
+                    ),
+                  ),
+                )
+                .filter(
+                  (input) =>
+                    !activeGraph.edges.some(
+                      (edge) =>
+                        edge.source === node.id &&
+                        edge.sourceHandle === 'value-out' &&
+                        edge.target === candidate.id &&
+                        edge.targetHandle === input.id,
+                    ),
+                )
+                .map((input) => ({
+                  value: JSON.stringify([candidate.id, input.id]),
+                  label: `${candidate.data.label} · ${input.label}`,
+                })),
+        )
+      : node.data.hasOutput === false
+        ? []
+        : activeGraph.nodes
+            .filter(
+              (candidate) =>
+                candidate.id !== node.id &&
+                candidate.data.hasInput !== false &&
+                !valueProducerKinds.has(candidate.data.nodeKind) &&
+                !activeGraph.edges.some(
+                  (edge) =>
+                    edge.source === node.id &&
+                    edge.sourceHandle === 'exec-out' &&
+                    edge.target === candidate.id &&
+                    edge.targetHandle === 'exec-in',
+                ),
+            )
+            .map((candidate) => ({
+              value: JSON.stringify([candidate.id, 'exec-in']),
+              label: candidate.data.label,
+            }))
+    : [];
+
+  const connectWithKeyboard = () => {
+    if (!keyboardConnectionTarget) return;
+    const [target, targetHandle] = JSON.parse(keyboardConnectionTarget) as [string, string];
+    onConnect({
+      source: node.id,
+      sourceHandle: isValueConnectionSource ? 'value-out' : 'exec-out',
+      target,
+      targetHandle,
+    });
+    const targetNode = activeGraph?.nodes.find((candidate) => candidate.id === target);
+    setKeyboardConnectionTarget('');
+    setConnectionMessage(`Connected ${node.data.label} to ${targetNode?.data.label ?? 'the selected node'}.`);
+  };
 
   return (
-    <aside className="graph-inspector">
+    <aside className="graph-inspector" aria-label={`Details for ${node.data.label}`}>
       <div className="graph-inspector-header">
         <span className="eyebrow">Node Inspector</span>
         <h3>{node.data.label}</h3>
@@ -707,11 +854,15 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
           <span>Kind</span>
           <input value={node.data.nodeKind} readOnly />
         </label>
+        <a className="node-connection-skip" href="#node-connection-editor">
+          Jump to connections
+        </a>
 
         {updatesNodeKey && (
           <label className="node-field">
             <span>Key</span>
             <select
+              aria-label="Preset key"
               value={node.data.keyCode ?? 'KeyW'}
               onChange={(event) => updateGraphNodeData(node.id, { keyCode: event.target.value })}
             >
@@ -725,6 +876,7 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
               )}
             </select>
             <input
+              aria-label="Custom keyboard or mouse code"
               value={node.data.keyCode ?? 'KeyW'}
               placeholder="KeyboardEvent.code or Mouse0"
               onChange={(event) => updateGraphNodeData(node.id, { keyCode: event.target.value.trim() || 'KeyW' })}
@@ -1390,6 +1542,7 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
             <ValueEditor
               type="vector3"
               value={node.data.vectorValue ?? [0, 0, 0]}
+              label={node.data.nodeKind === 'action.spawnParticleSystem' ? 'Offset' : 'Vector'}
               onChange={(value) => updateGraphNodeData(node.id, graphValuePatch('vector3', value))}
             />
           </label>
@@ -1444,6 +1597,7 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
                 <ValueEditor
                   type={selectedVarType}
                   value={graphValueFromNode(node, selectedVarType)}
+                  label={`Fallback value for ${selectedInstanceVar?.name ?? selectedVariable?.name ?? 'variable'}`}
                   onChange={(value) => updateGraphNodeData(node.id, graphValuePatch(selectedVarType, value))}
                 />
               </label>
@@ -2322,6 +2476,68 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
           </button>
         )}
 
+        <section id="node-connection-editor" className="node-connection-editor" aria-labelledby="node-connection-heading" tabIndex={-1}>
+          <div className="node-connection-heading">
+            <span className="node-connection-icon"><Link2 size={14} aria-hidden /></span>
+            <div>
+              <h4 id="node-connection-heading">Connections</h4>
+              <small>{isValueConnectionSource ? 'Send this value into a compatible input.' : 'Choose what should run next.'}</small>
+            </div>
+          </div>
+          {keyboardConnectionOptions.length > 0 ? (
+            <div className="node-connection-create">
+              <label>
+                <span>{isValueConnectionSource ? 'Connect value to' : 'Run next'}</span>
+                <select
+                  value={keyboardConnectionTarget}
+                  onChange={(event) => setKeyboardConnectionTarget(event.target.value)}
+                >
+                  <option value="">Choose a node…</option>
+                  {keyboardConnectionOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" onClick={connectWithKeyboard} disabled={!keyboardConnectionTarget}>
+                Connect
+              </button>
+            </div>
+          ) : (
+            <small className="node-hint">
+              {node.data.hasOutput === false
+                ? 'This node has no outgoing connection.'
+                : 'All compatible nodes are already connected. Add another node to continue.'}
+            </small>
+          )}
+          {existingConnections.length > 0 && (
+            <ul className="node-connection-list" aria-label={`Connections for ${node.data.label}`}>
+              {existingConnections.map((edge) => {
+                const isOutgoing = edge.source === node.id;
+                const otherId = isOutgoing ? edge.target : edge.source;
+                const other = activeGraph?.nodes.find((candidate) => candidate.id === otherId);
+                const connectionLabel = `${isOutgoing ? 'To' : 'From'} ${other?.data.label ?? 'unknown node'}`;
+                return (
+                  <li key={edge.id}>
+                    <span>{connectionLabel}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove connection ${connectionLabel.toLowerCase()}`}
+                      title="Remove connection"
+                      onClick={() => {
+                        onEdgesChange([{ id: edge.id, type: 'remove' }]);
+                        setConnectionMessage(`Removed connection ${connectionLabel.toLowerCase()}.`);
+                      }}
+                    >
+                      <Trash2 size={12} aria-hidden />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <span className="sr-only" role="status" aria-live="polite">{connectionMessage}</span>
+        </section>
+
         <p className="node-inspector-description">{node.data.description}</p>
 
         <button className="node-delete-button" onClick={() => deleteGraphNode(node.id)}>
@@ -2340,36 +2556,62 @@ export function VisualScriptingPanel() {
   const blueprints = useEditorStore((state) => state.blueprints);
   const activeBlueprint = useEditorStore((state) => state.activeBlueprint());
   const activeBlueprintId = useEditorStore((state) => state.activeBlueprintId);
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId);
   // Stable list — only used for instance counts / pickers, must not re-render the graph during Play.
   const sceneObjects = useStableActiveObjects();
+  const selectedObject = sceneObjects.find((object) => object.id === selectedObjectId);
   const setActiveBlueprint = useEditorStore((state) => state.setActiveBlueprint);
   const createBlueprint = useEditorStore((state) => state.createBlueprint);
+  const createObjectWithProps = useEditorStore((state) => state.createObjectWithProps);
+  const openObjectScript = useEditorStore((state) => state.openObjectScript);
+  const attachBehaviorPreset = useEditorStore((state) => state.attachBehaviorPreset);
+  const attachScript = useEditorStore((state) => state.attachScript);
   const onNodesChange = useEditorStore((state) => state.onNodesChange);
   const onEdgesChange = useEditorStore((state) => state.onEdgesChange);
   const onConnect = useEditorStore((state) => state.onConnect);
   const addGraphNode = useEditorStore((state) => state.addGraphNode);
   const addGraphNodeToBlueprint = useEditorStore((state) => state.addGraphNodeToBlueprint);
+  const connectGraphNodes = useEditorStore((state) => state.connectGraphNodes);
   const variables = useEditorStore((state) => state.variables);
   const createVariable = useEditorStore((state) => state.createVariable);
-  const deleteGraphNode = useEditorStore((state) => state.deleteGraphNode);
   const deleteGraphNodes = useEditorStore((state) => state.deleteGraphNodes);
   const pasteGraphNodes = useEditorStore((state) => state.pasteGraphNodes);
   const autoLayoutActiveGraph = useEditorStore((state) => state.autoLayoutActiveGraph);
   const updateBlueprintFeatherSource = useEditorStore((state) => state.updateBlueprintFeatherSource);
   const syncBlueprintFeatherSource = useEditorStore((state) => state.syncBlueprintFeatherSource);
+  const projectDir = useProjectStore((state) => state.projectDir);
+  const externalStatus = useFeatherExternalStore((state) => state.statuses[activeBlueprintId]);
+  const externalConflict = useFeatherExternalStore((state) => state.conflicts[activeBlueprintId]);
+  const linkExternalSource = useFeatherExternalStore((state) => state.linkBlueprint);
+  const unlinkExternalSource = useFeatherExternalStore((state) => state.unlinkBlueprint);
+  const revealExternalSource = useFeatherExternalStore((state) => state.revealBlueprintFile);
+  const recreateExternalSource = useFeatherExternalStore((state) => state.recreateBlueprintFile);
+  const syncExternalSource = useFeatherExternalStore((state) => state.syncBlueprintNow);
+  const resolveExternalConflict = useFeatherExternalStore((state) => state.resolveConflict);
   const selectedGraphNode = useEditorStore((state) => state.selectedGraphNode());
   const selectGraphNode = useEditorStore((state) => state.selectGraphNode);
   const instanceCount = sceneObjects.filter((object) => object.script?.blueprintId === activeBlueprintId).length;
   const selectedNodeDetail = selectedGraphNode?.data.label ?? 'Blueprint Graph';
-  const [editorMode, setEditorMode] = useState<'blueprint' | 'script'>('blueprint');
+  const [editorMode, setEditorMode] = useState<'blueprint' | 'script'>(() =>
+    activeBlueprint?.featherSource !== undefined ? 'script' : 'blueprint',
+  );
   const [scriptCopied, setScriptCopied] = useState(false);
   const [scriptSyncMessage, setScriptSyncMessage] = useState<{ kind: 'success' | 'error' | 'pending'; text: string } | null>(null);
+  const [compileResult, setCompileResult] = useState<{ source: string; diagnostics: FeatherDiagnostic[] } | null>(null);
   const [featherSelection, setFeatherSelection] = useState({ start: 0, end: 0 });
   const [featherCompletionIndex, setFeatherCompletionIndex] = useState(0);
+  const [dismissedCompletionSource, setDismissedCompletionSource] = useState<string | null>(null);
+  const [allowEditorTabExit, setAllowEditorTabExit] = useState(false);
+  const [compactVisualPane, setCompactVisualPane] = useState<'nodes' | 'canvas' | 'details'>('canvas');
+  const [compactCodePane, setCompactCodePane] = useState<'reference' | 'editor'>('editor');
+  const externalEditingAvailable = Boolean(projectDir && projectDir !== 'web');
 
   const { screenToFlowPosition } = useReactFlow();
   const flowShellRef = useRef<HTMLDivElement | null>(null);
   const featherEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const focusVisualCanvas = () => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => flowShellRef.current?.focus()));
+  };
   // When the search menu was opened by dragging a wire into empty space, `pending` holds the socket the
   // drag started from, so picking a node auto-wires it (Unreal-style). null = opened via right-click.
   const [searchMenu, setSearchMenu] = useState<{
@@ -2380,6 +2622,22 @@ export function VisualScriptingPanel() {
   useEffect(() => {
     if (editorMode === 'script') setSearchMenu(null);
   }, [editorMode]);
+  useEffect(() => {
+    const blueprint = useEditorStore.getState().blueprints.find((item) => item.id === activeBlueprintId);
+    setEditorMode(blueprint?.featherSource !== undefined ? 'script' : 'blueprint');
+    setCompileResult(null);
+  }, [activeBlueprintId]);
+
+  const unlinkCurrentExternalSource = async () => {
+    if (!activeBlueprint?.featherSourcePath) return;
+    const confirmed = await confirmAction({
+      title: 'Unlink external script?',
+      message: `Feather will stop watching ${activeBlueprint.featherSourcePath}. The file stays on disk.`,
+      confirmLabel: 'Unlink file',
+      cancelLabel: 'Keep linked',
+    });
+    if (confirmed) await unlinkExternalSource(activeBlueprint.id);
+  };
   // Set on connect-start, cleared by a successful onConnect; if still set at connect-end the drag landed
   // on empty canvas, which is our cue to open the node menu with that source connection pending.
   const connectingRef = useRef<{ nodeId: string; handleId: string | null; handleType: 'source' | 'target' } | null>(
@@ -2407,9 +2665,16 @@ export function VisualScriptingPanel() {
   );
   const featherSource = activeBlueprint?.featherSource ?? featherScript;
   const featherParse = useMemo(() => parseFeatherScript(featherSource), [featherSource]);
-  const featherDiagnostics = featherParse.diagnostics;
+  const featherDiagnostics = compileResult?.source === featherSource ? compileResult.diagnostics : featherParse.diagnostics;
+  const featherParseErrorCount = featherParse.diagnostics.filter((item) => item.severity === 'error').length;
   const featherErrorCount = featherDiagnostics.filter((item) => item.severity === 'error').length;
-  const featherCompletions = useMemo(
+  const featherWarningCount = featherDiagnostics.filter((item) => item.severity === 'warning').length;
+  const featherDiagnosticSummary = featherErrorCount
+    ? `${featherErrorCount} ${featherErrorCount === 1 ? 'error' : 'errors'}. ${featherDiagnostics.find((item) => item.severity === 'error')?.message ?? ''}`
+    : featherWarningCount
+      ? `${featherWarningCount} ${featherWarningCount === 1 ? 'warning' : 'warnings'}. ${featherDiagnostics[0]?.message ?? ''}`
+      : 'No FeatherScript errors or warnings.';
+  const availableFeatherCompletions = useMemo(
     () =>
       featherSelection.start === featherSelection.end
         ? getFeatherCompletions(featherSource, featherSelection.start, {
@@ -2420,6 +2685,8 @@ export function VisualScriptingPanel() {
         : [],
     [activeBlueprint?.variables, featherSelection.end, featherSelection.start, featherSource, variables],
   );
+  const featherCompletions =
+    dismissedCompletionSource === featherSource ? [] : availableFeatherCompletions;
   const activeFeatherCompletion = featherCompletions[Math.min(featherCompletionIndex, featherCompletions.length - 1)];
   const filteredNodeGroups = useMemo(() => {
     const query = paletteFilter.trim().toLowerCase();
@@ -2465,7 +2732,8 @@ export function VisualScriptingPanel() {
   };
 
   const updateFeatherSource = (source: string) => {
-    setScriptSyncMessage({ kind: 'pending', text: 'Syncing' });
+    setScriptSyncMessage({ kind: 'pending', text: 'Checking changes…' });
+    setAllowEditorTabExit(false);
     updateBlueprintFeatherSource(activeBlueprintId, source);
   };
 
@@ -2479,6 +2747,7 @@ export function VisualScriptingPanel() {
     const end = editor?.selectionEnd ?? featherSelection.end;
     const next = `${featherSource.slice(0, start)}${text}${featherSource.slice(end)}`;
     const nextCaret = start + text.length;
+    setCompactCodePane('editor');
     updateFeatherSource(next);
     window.requestAnimationFrame(() => {
       featherEditorRef.current?.focus();
@@ -2491,10 +2760,28 @@ export function VisualScriptingPanel() {
 
   const insertFeatherSnippet = (entry: FeatherApiEntry) => insertFeatherText(entry.insertText);
 
+  const insertStarterVariable = () => {
+    const firstLineEnd = featherSource.indexOf('\n');
+    const insertionPoint = firstLineEnd >= 0 ? firstLineEnd + 1 : featherSource.length;
+    const declaration = '\nvar value: number = 0\n';
+    const next = `${featherSource.slice(0, insertionPoint)}${declaration}${featherSource.slice(insertionPoint)}`;
+    setCompactCodePane('editor');
+    updateFeatherSource(next);
+    const caret = insertionPoint + declaration.length;
+    window.requestAnimationFrame(() => {
+      featherEditorRef.current?.focus();
+      if (!featherEditorRef.current) return;
+      featherEditorRef.current.selectionStart = caret;
+      featherEditorRef.current.selectionEnd = caret;
+      setFeatherSelection({ start: caret, end: caret });
+    });
+  };
+
   const acceptFeatherCompletion = (completion: FeatherCompletion | undefined) => {
     if (!completion) return;
     const next = `${featherSource.slice(0, completion.replacementStart)}${completion.insertText}${featherSource.slice(completion.replacementEnd)}`;
     const nextCaret = completion.replacementStart + completion.caretOffset;
+    setCompactCodePane('editor');
     updateFeatherSource(next);
     setFeatherCompletionIndex(0);
     window.requestAnimationFrame(() => {
@@ -2518,19 +2805,52 @@ export function VisualScriptingPanel() {
         setFeatherCompletionIndex((index) => (index - 1 + featherCompletions.length) % featherCompletions.length);
         return;
       }
-      if (event.key === 'Tab') {
+      if (event.key === 'Tab' && !event.shiftKey) {
         event.preventDefault();
         acceptFeatherCompletion(activeFeatherCompletion);
         return;
       }
       if (event.key === 'Escape') {
         event.preventDefault();
+        setDismissedCompletionSource(featherSource);
         setFeatherCompletionIndex(0);
         return;
       }
     }
 
-    if (event.key !== 'Tab' || !activeBlueprint) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setAllowEditorTabExit(true);
+      setScriptSyncMessage({ kind: 'pending', text: 'Tab will leave the editor' });
+      return;
+    }
+
+    if (event.key === 'Enter' && activeBlueprint) {
+      event.preventDefault();
+      const target = event.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const lineStart = featherSource.lastIndexOf('\n', start - 1) + 1;
+      const currentLine = featherSource.slice(lineStart, start);
+      const indentation = currentLine.match(/^\s*/)?.[0] ?? '';
+      const blockIndent = currentLine.trimEnd().endsWith(':') ? '    ' : '';
+      const insertion = `\n${indentation}${blockIndent}`;
+      const next = `${featherSource.slice(0, start)}${insertion}${featherSource.slice(end)}`;
+      const nextCaret = start + insertion.length;
+      updateFeatherSource(next);
+      window.requestAnimationFrame(() => {
+        target.selectionStart = nextCaret;
+        target.selectionEnd = nextCaret;
+        setFeatherSelection({ start: nextCaret, end: nextCaret });
+      });
+      return;
+    }
+
+    if (event.key !== 'Tab' || !activeBlueprint || event.shiftKey) return;
+    if (allowEditorTabExit) {
+      setAllowEditorTabExit(false);
+      return;
+    }
     event.preventDefault();
     const target = event.currentTarget;
     const start = target.selectionStart;
@@ -2549,31 +2869,61 @@ export function VisualScriptingPanel() {
   }, [featherSelection.start, featherSource]);
 
   useEffect(() => {
+    if (editorMode !== 'script') return;
     if (!activeBlueprint || activeBlueprint.featherSource === undefined) {
       setScriptSyncMessage(null);
+      setCompileResult(null);
       return;
     }
-    if (featherErrorCount > 0) {
-      setScriptSyncMessage({ kind: 'error', text: 'Not synced' });
+    if (featherParseErrorCount > 0) {
+      setCompileResult({ source: featherSource, diagnostics: featherParse.diagnostics });
+      setScriptSyncMessage({ kind: 'error', text: 'Fix errors to update Visual' });
       return;
     }
 
-    setScriptSyncMessage({ kind: 'pending', text: 'Syncing' });
+    setScriptSyncMessage({ kind: 'pending', text: 'Checking changes…' });
     const timeout = window.setTimeout(() => {
-      const result = syncBlueprintFeatherSource(activeBlueprint.id, featherSource);
-      const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
-      const warnings = result.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length;
-      if (!result.ok || errors) {
-        setScriptSyncMessage({ kind: 'error', text: `${errors || 1} error${errors === 1 ? '' : 's'}` });
+      const state = useEditorStore.getState();
+      const blueprint = state.blueprints.find((item) => item.id === activeBlueprint.id);
+      const liveGraph = state.graphs.find((item) => item.id === blueprint?.graphId);
+      if (!blueprint || !liveGraph) return;
+      const preview = compileFeatherScriptToGraph({
+        source: featherSource,
+        blueprint,
+        graph: liveGraph,
+        variables: state.variables,
+        blueprints: state.blueprints,
+        preserveSource: true,
+      });
+      setCompileResult({ source: featherSource, diagnostics: preview.diagnostics });
+      const errors = preview.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
+      const warnings = preview.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length;
+      const blockingWarnings = preview.diagnostics.filter(isBlockingFeatherWarning).length;
+      if (!preview.ok || errors || blockingWarnings) {
+        const count = errors || blockingWarnings;
+        const label = errors ? 'error' : 'warning';
+        setScriptSyncMessage({
+          kind: 'error',
+          text: `Fix ${count} ${label}${count === 1 ? '' : 's'} to update Visual`,
+        });
         return;
       }
+      syncBlueprintFeatherSource(activeBlueprint.id, featherSource);
       setScriptSyncMessage({
         kind: 'success',
-        text: warnings ? `Synced with ${warnings} warning${warnings === 1 ? '' : 's'}` : 'Synced',
+        text: warnings ? `Visual updated · ${warnings} suggestion${warnings === 1 ? '' : 's'}` : 'Visual is up to date',
       });
     }, 350);
     return () => window.clearTimeout(timeout);
-  }, [activeBlueprint?.id, activeBlueprint?.featherSource, featherErrorCount, featherSource, syncBlueprintFeatherSource]);
+  }, [
+    activeBlueprint?.id,
+    activeBlueprint?.featherSource,
+    editorMode,
+    featherParse.diagnostics,
+    featherParseErrorCount,
+    featherSource,
+    syncBlueprintFeatherSource,
+  ]);
 
   // Exec-flow visualization (Unreal-style): while Play runs with this editor open, the runtime marks
   // every exec node it runs (see runtime/execTrace); we poll that trace and pulse the nodes + wires
@@ -2637,16 +2987,15 @@ export function VisualScriptingPanel() {
     if (!nodes) return [];
     const hasValues = Object.keys(liveValues).length > 0;
     const hasHits = Object.keys(hitCounts).length > 0;
-    if (!hotNodes.size && !hasValues && !hasHits) return nodes;
     return nodes.map((node) => {
       const live = liveValues[node.id];
       const hits = hitCounts[node.id];
       const hot = hotNodes.has(node.id);
-      if (!live && !hot && !hits) return node;
       return {
         ...node,
+        ariaLabel: `${node.data.label}, ${node.data.category} node${node.selected ? ', selected' : ''}`,
         ...(hot ? { className: 'exec-hot' } : {}),
-        ...((live || hits)
+        ...((hasValues || hasHits) && (live || hits)
           ? {
               data: {
                 ...node.data,
@@ -2859,9 +3208,7 @@ export function VisualScriptingPanel() {
       const isDelete = event.key === 'Delete' || event.key === 'Backspace';
       // The working set = every marquee/shift-selected node, falling back to the inspector's single selection.
       const selectedNodes = graph?.nodes.filter((node) => node.selected) ?? [];
-      if (selectedGraphNode && !selectedNodes.some((node) => node.id === selectedGraphNode.id)) {
-        selectedNodes.push(selectedGraphNode);
-      }
+      const selectedEdges = graph?.edges.filter((edge) => edge.selected) ?? [];
       if (isCopy && selectedNodes.length && graph) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -2885,15 +3232,16 @@ export function VisualScriptingPanel() {
           edges: clipboard.edges,
         });
       }
-      if (isDelete && selectedNodes.length) {
+      if (isDelete && (selectedNodes.length || selectedEdges.length)) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        deleteGraphNodes(selectedNodes.map((node) => node.id));
+        if (selectedEdges.length) onEdgesChange(selectedEdges.map((edge) => ({ id: edge.id, type: 'remove' })));
+        if (selectedNodes.length) deleteGraphNodes(selectedNodes.map((node) => node.id));
       }
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [activeBlueprintId, clipboard, deleteGraphNodes, graph, pasteGraphNodes, selectGraphNode, selectedGraphNode]);
+  }, [activeBlueprintId, clipboard, deleteGraphNodes, graph, onEdgesChange, pasteGraphNodes, selectGraphNode]);
 
   // Reject self-wires, exec↔value crosses, and typed value mismatches (number↛vector3, etc.).
   // `any` is a wild card so references / untyped Get Variable still connect freely.
@@ -2948,69 +3296,301 @@ export function VisualScriptingPanel() {
   const styledEdges = useMemo<Edge[]>(() => {
     if (!graph) return [];
     const typeByNode = new Map<string, GraphValueType | 'any'>();
+    const labelByNode = new Map<string, string>();
     for (const node of graph.nodes) {
       typeByNode.set(node.id, outputTypeOf[node.data.nodeKind] ?? (node.data.valueType as GraphValueType | undefined) ?? 'any');
+      labelByNode.set(node.id, node.data.label);
     }
     return graph.edges.map((edge) => {
       const exec = isExecHandle(edge.sourceHandle);
       // A wire pulses gold while both its endpoints executed within the trace window.
       const hot = exec && hotNodes.has(edge.source) && hotNodes.has(edge.target);
       const stroke = hot ? '#ffd34d' : exec ? EXEC_WIRE_COLOR : VALUE_TYPE_COLORS[typeByNode.get(edge.source) ?? 'any'];
-      return { ...edge, style: { ...edge.style, stroke, strokeWidth: hot ? 3 : 2 } };
+      return {
+        ...edge,
+        ariaLabel: `${exec ? 'Execution' : 'Value'} connection from ${labelByNode.get(edge.source) ?? 'unknown node'} to ${labelByNode.get(edge.target) ?? 'unknown node'}`,
+        style: { ...edge.style, stroke, strokeWidth: hot ? 3 : 2 },
+      };
     });
   }, [graph, hotNodes]);
 
+  const compileCurrentDraft = () => {
+    if (!activeBlueprint || !graph) return null;
+    const result = compileFeatherScriptToGraph({
+      source: featherSource,
+      blueprint: activeBlueprint,
+      graph,
+      variables,
+      blueprints,
+      preserveSource: true,
+    });
+    setCompileResult({ source: featherSource, diagnostics: result.diagnostics });
+    return result;
+  };
+
+  const switchToVisual = () => {
+    if (!activeBlueprint || activeBlueprint.featherSource === undefined) {
+      setEditorMode('blueprint');
+      return true;
+    }
+    const result = compileCurrentDraft();
+    const errors = result?.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length ?? 1;
+    const warnings = result?.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length ?? 0;
+    const blockingWarnings = result?.diagnostics.filter(isBlockingFeatherWarning).length ?? 0;
+    if (!result?.ok || errors || blockingWarnings) {
+      const count = errors || blockingWarnings;
+      const label = errors ? 'error' : 'warning';
+      setScriptSyncMessage({
+        kind: 'error',
+        text: `Fix ${count} ${label}${count === 1 ? '' : 's'} before opening Visual`,
+      });
+      setCompactCodePane('editor');
+      window.requestAnimationFrame(() => featherEditorRef.current?.focus());
+      return false;
+    }
+    syncBlueprintFeatherSource(activeBlueprint.id, featherSource);
+    setScriptSyncMessage({
+      kind: 'success',
+      text: warnings ? `Visual updated · ${warnings} suggestion${warnings === 1 ? '' : 's'}` : 'Visual is up to date',
+    });
+    setEditorMode('blueprint');
+    return true;
+  };
+
+  const jumpToDiagnostic = (diagnostic: FeatherDiagnostic) => {
+    const lines = featherSource.split('\n');
+    const lineIndex = Math.max(0, Math.min(lines.length - 1, diagnostic.line - 1));
+    const lineStart = lines.slice(0, lineIndex).reduce((total, line) => total + line.length + 1, 0);
+    const start = Math.min(featherSource.length, lineStart + Math.max(0, diagnostic.column - 1));
+    const end = Math.min(featherSource.length, start + Math.max(1, diagnostic.length));
+    setEditorMode('script');
+    setCompactCodePane('editor');
+    window.requestAnimationFrame(() => {
+      const editor = featherEditorRef.current;
+      if (!editor) return;
+      editor.focus();
+      editor.selectionStart = start;
+      editor.selectionEnd = end;
+      setFeatherSelection({ start, end });
+    });
+  };
+
+  const applyStarterBehavior = (presetId: string) => {
+    const preset = BEHAVIOR_PRESETS.find((candidate) => candidate.id === presetId);
+    if (!preset) return;
+    const objectId = selectedObject?.id ?? createObjectWithProps('cube', { name: preset.name });
+    const blueprintId = attachBehaviorPreset(objectId, preset.id);
+    if (!blueprintId) return;
+    setActiveBlueprint(blueprintId);
+    setEditorMode('blueprint');
+    focusVisualCanvas();
+  };
+
+  const startBlankBehavior = () => {
+    const objectId = selectedObject?.id ?? createObjectWithProps('cube', { name: 'Scripted Cube' });
+    openObjectScript(objectId);
+    setEditorMode('blueprint');
+    focusVisualCanvas();
+  };
+
+  const addStarterFlow = (
+    eventLabel: 'Start' | 'Update',
+    actionLabel: 'Print' | 'Rotate' | 'Translate',
+    data: Partial<NodeForgeNodeData>,
+  ) => {
+    if (!graph || !activeBlueprint) return;
+    const eventNode = graph.nodes.find((node) => node.data.label === eventLabel);
+    const eventId =
+      eventNode?.id ??
+      addGraphNodeToBlueprint(
+        activeBlueprint.id,
+        eventLabel,
+        'Events',
+        eventLabel === 'Start' ? { hasInput: false } : {},
+      );
+    const actionId = addGraphNodeToBlueprint(activeBlueprint.id, actionLabel, 'Runtime', data);
+    connectGraphNodes(activeBlueprint.id, eventId, actionId, 'exec-out', 'exec-in');
+    selectGraphNode(actionId);
+    window.requestAnimationFrame(() => {
+      autoLayoutActiveGraph();
+      flowShellRef.current?.focus();
+    });
+  };
+
+  const resetCodeFromVisual = async () => {
+    const confirmed = await confirmAction({
+      title: 'Replace this code draft?',
+      message: 'This will replace your current FeatherScript draft with code generated from the Visual graph.',
+      confirmLabel: 'Use visual version',
+      cancelLabel: 'Keep draft',
+      danger: true,
+    });
+    if (confirmed) updateBlueprintFeatherSource(activeBlueprintId, undefined);
+  };
+
+  const attachActiveBehavior = async () => {
+    if (!selectedObject || !activeBlueprint) return;
+    if (selectedObject.script && selectedObject.script.blueprintId !== activeBlueprint.id) {
+      const confirmed = await confirmAction({
+        title: `Replace ${selectedObject.name}'s behavior?`,
+        message: `This object will stop using its current behavior and use ${activeBlueprint.name} instead.`,
+        confirmLabel: 'Replace behavior',
+        cancelLabel: 'Keep current',
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    attachScript(selectedObject.id, activeBlueprint.id);
+  };
+
   if (!graph || !activeBlueprint) {
     return (
-      <section className="panel scripting-panel">
-        <div className="empty-state">
-          <Waypoints size={22} aria-hidden />
-          <span>No Blueprint open</span>
-          <small>Double-click an object in the Hierarchy to edit its visual script, or select one that already has a Blueprint.</small>
+      <section className="panel scripting-panel scripting-panel-welcome">
+        <div className="scripting-welcome">
+          <div className="scripting-welcome-hero">
+            <span className="scripting-welcome-icon">
+              <Sparkles size={22} aria-hidden />
+            </span>
+            <div>
+              <span className="eyebrow">Scripting, made simple</span>
+              <h2>Make an object do something</h2>
+              <p>
+                {selectedObject
+                  ? `Add an editable behavior to ${selectedObject.name}, then press Play to try it.`
+                  : 'Choose a ready-made behavior. Feather will create an object, wire the logic, and open it for you.'}
+              </p>
+            </div>
+          </div>
+
+          {selectedObject?.script ? (
+            <div className="scripting-welcome-current">
+              <div>
+                <strong>{selectedObject.name} already has a behavior</strong>
+                <span>Open it to edit the visual flow or FeatherScript code.</span>
+              </div>
+              <button type="button" className="primary-button" onClick={() => openObjectScript(selectedObject.id)}>
+                Open behavior
+                <ArrowRight size={14} aria-hidden />
+              </button>
+            </div>
+          ) : (
+            <div className="starter-behavior-section">
+              <div className="starter-section-heading">
+                <div>
+                  <strong>Start with a recipe</strong>
+                  <span>You can change every node and value afterward.</span>
+                </div>
+                <small>{selectedObject ? `Adding to ${selectedObject.name}` : 'Creates a cube automatically'}</small>
+              </div>
+              <div className="starter-behavior-grid">
+                {starterBehaviors.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="starter-behavior-card"
+                    onClick={() => applyStarterBehavior(preset.id)}
+                  >
+                    <span className="starter-behavior-icon" aria-hidden>{preset.icon}</span>
+                    <span>
+                      <strong>{preset.name}</strong>
+                      <small>{preset.description}</small>
+                    </span>
+                    <ArrowRight size={14} aria-hidden />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="scripting-welcome-footer">
+            {!selectedObject?.script && (
+              <button type="button" className="secondary-button" onClick={startBlankBehavior}>
+                <Plus size={14} aria-hidden />
+                Start blank
+              </button>
+            )}
+            {blueprints.length > 0 && (
+              <label className="welcome-blueprint-picker">
+                <span>Or open an existing behavior</span>
+                <select defaultValue="" onChange={(event) => event.target.value && setActiveBlueprint(event.target.value)}>
+                  <option value="" disabled>Choose behavior…</option>
+                  {blueprints.map((blueprint) => (
+                    <option key={blueprint.id} value={blueprint.id}>{blueprint.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <button type="button" className="text-button" onClick={createBlueprint}>
+              Create a reusable behavior only
+            </button>
+          </div>
         </div>
       </section>
     );
   }
 
   return (
-    <section className="panel scripting-panel">
+    <section className="panel scripting-panel" aria-labelledby="scripting-behavior-title">
+      <div className="scripting-header-stack">
       <div className="panel-header">
         <div>
-          <span className="eyebrow">Reusable Blueprint</span>
-          <h2>{activeBlueprint.name}</h2>
-          <div className="scripting-mode-toggle" role="tablist" aria-label="Scripting mode">
+          <span className="eyebrow">Reusable behavior</span>
+          <h2 id="scripting-behavior-title">{activeBlueprint.name}</h2>
+          <div
+            className="scripting-mode-toggle"
+            role="tablist"
+            aria-label="Scripting mode"
+            onKeyDown={(event) =>
+              handleTabListKeyDown(event, ['blueprint', 'script'], editorMode, (value) =>
+                value === 'blueprint' ? switchToVisual() : void setEditorMode('script'),
+              )
+            }
+          >
             <button
+              id="visual-scripting-tab"
               className={editorMode === 'blueprint' ? 'active' : ''}
               type="button"
               role="tab"
+              data-tab-value="blueprint"
+              tabIndex={editorMode === 'blueprint' ? 0 : -1}
               aria-selected={editorMode === 'blueprint'}
-              onClick={() => setEditorMode('blueprint')}
+              aria-controls="visual-scripting-workspace"
+              onClick={switchToVisual}
             >
               <Waypoints size={13} aria-hidden />
-              <span>Blueprint</span>
+              <span>Visual</span>
             </button>
             <button
+              id="code-scripting-tab"
               className={editorMode === 'script' ? 'active' : ''}
               type="button"
               role="tab"
+              data-tab-value="script"
+              tabIndex={editorMode === 'script' ? 0 : -1}
               aria-selected={editorMode === 'script'}
+              aria-controls="code-scripting-workspace"
               onClick={() => setEditorMode('script')}
             >
               <Code2 size={13} aria-hidden />
-              <span>Script</span>
+              <span>Code</span>
             </button>
           </div>
         </div>
         <div className="panel-actions graph-actions">
-          <span className="blueprint-instances">
+          <span
+            className={`blueprint-instances${instanceCount === 0 ? ' is-unattached' : ''}`}
+            title={`${instanceCount} scene ${instanceCount === 1 ? 'object uses' : 'objects use'} this behavior`}
+            aria-label={`${instanceCount} scene ${instanceCount === 1 ? 'instance' : 'instances'}`}
+          >
             <Boxes size={14} aria-hidden />
-            {instanceCount}
+            {instanceCount} {instanceCount === 1 ? 'instance' : 'instances'}
           </span>
           <select
             className="blueprint-select"
             value={activeBlueprintId}
             onChange={(event) => setActiveBlueprint(event.target.value)}
             title="Select Blueprint asset"
+            aria-label="Select reusable behavior"
           >
             {blueprints.map((blueprint) => (
               <option key={blueprint.id} value={blueprint.id}>
@@ -3022,19 +3602,80 @@ export function VisualScriptingPanel() {
             <button
               className="icon-button compact"
               title="Auto-arrange nodes on a grid"
+              aria-label="Auto-arrange nodes on a grid"
               onClick={autoLayoutActiveGraph}
             >
               <LayoutGrid size={14} aria-hidden />
             </button>
           )}
-          <button className="icon-button compact" title="Create reusable Blueprint" onClick={createBlueprint}>
+          <button className="icon-button compact" title="Create reusable Blueprint" aria-label="Create reusable behavior" onClick={createBlueprint}>
             <Plus size={14} aria-hidden />
           </button>
         </div>
       </div>
 
+      {instanceCount === 0 && (
+        <div className="blueprint-usage-banner" role="status">
+          <span className="blueprint-usage-icon"><Link2 size={15} aria-hidden /></span>
+          <div>
+            <strong>This behavior is not attached yet</strong>
+            <span>It will not run during Play until a scene object uses it.</span>
+          </div>
+          {selectedObject && selectedObject.script?.blueprintId !== activeBlueprint.id && (
+            <button type="button" onClick={() => void attachActiveBehavior()}>
+              Use on {selectedObject.name}
+            </button>
+          )}
+        </div>
+      )}
+      </div>
+
+      {editorMode === 'blueprint' && externalConflict && (
+        <div className="feather-external-status conflict feather-visual-conflict-notice" role="alert">
+          <AlertTriangle size={14} aria-hidden />
+          <span>
+            <strong>External script conflict</strong>
+            <small>Sync is paused until you choose which version to keep.</small>
+          </span>
+          <button type="button" onClick={() => setEditorMode('script')}>
+            Review in Code
+          </button>
+        </div>
+      )}
+
+      {editorMode !== 'script' && (
+        <div id="code-scripting-workspace" role="tabpanel" aria-labelledby="code-scripting-tab" hidden />
+      )}
+      {editorMode !== 'blueprint' && (
+        <div id="visual-scripting-workspace" role="tabpanel" aria-labelledby="visual-scripting-tab" hidden />
+      )}
+
       {editorMode === 'script' ? (
-        <div className="feather-script-body">
+        <div
+          className="feather-script-body"
+          id="code-scripting-workspace"
+          role="tabpanel"
+          aria-labelledby="code-scripting-tab"
+          data-compact-pane={compactCodePane}
+        >
+          <div className="scripting-compact-nav" role="group" aria-label="Code workspace view">
+            <button
+              type="button"
+              aria-pressed={compactCodePane === 'reference'}
+              className={compactCodePane === 'reference' ? 'active' : ''}
+              onClick={() => setCompactCodePane('reference')}
+            >
+              Reference
+            </button>
+            <button
+              type="button"
+              aria-pressed={compactCodePane === 'editor'}
+              className={compactCodePane === 'editor' ? 'active' : ''}
+              onClick={() => setCompactCodePane('editor')}
+            >
+              Code editor
+            </button>
+          </div>
           <aside className="node-palette feather-script-sidebar">
             <div className="blueprint-card graph-overview-card">
               <div>
@@ -3054,12 +3695,28 @@ export function VisualScriptingPanel() {
               </h3>
               <div>
                 {(activeBlueprint.variables ?? []).map((variable) => (
-                  <span key={variable.id} className="feather-symbol">
+                  <button
+                    key={variable.id}
+                    type="button"
+                    className="feather-symbol"
+                    title={`Insert self.${variable.name.replace(/\s+/g, '_')}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => insertFeatherText(`self.${variable.name.replace(/\s+/g, '_')}`)}
+                  >
                     <strong>{variable.name}</strong>
                     <small>{variable.type}</small>
-                  </span>
+                  </button>
                 ))}
-                {(activeBlueprint.variables ?? []).length === 0 && <span className="feather-symbol empty">No variables</span>}
+                {(activeBlueprint.variables ?? []).length === 0 && (
+                  <button
+                    type="button"
+                    className="feather-symbol empty"
+                    onClick={insertStarterVariable}
+                  >
+                    <Plus size={13} aria-hidden />
+                    <span>Create your first variable</span>
+                  </button>
+                )}
               </div>
             </section>
             <section className="feather-api">
@@ -3084,8 +3741,8 @@ export function VisualScriptingPanel() {
                 ))}
               </div>
             </section>
-            <section className="feather-diagnostics">
-              <h3>
+            <section className="feather-diagnostics" aria-labelledby="feather-diagnostics-title">
+              <h3 id="feather-diagnostics-title">
                 <AlertTriangle size={13} aria-hidden />
                 <span>Diagnostics</span>
                 <small>{featherDiagnostics.length}</small>
@@ -3094,19 +3751,21 @@ export function VisualScriptingPanel() {
                 {featherDiagnostics.length === 0 ? (
                   <span className="feather-diagnostic empty">No issues</span>
                 ) : (
-                  featherDiagnostics.slice(0, 8).map((diagnostic, index) => (
-                    <span
+                  featherDiagnostics.map((diagnostic, index) => (
+                    <button
                       key={`${diagnostic.line}:${diagnostic.column}:${diagnostic.message}:${index}`}
+                      type="button"
                       className={`feather-diagnostic ${diagnostic.severity}`}
+                      onClick={() => jumpToDiagnostic(diagnostic)}
+                      title="Jump to this issue"
                     >
                       <strong>
                         {diagnostic.line}:{diagnostic.column}
                       </strong>
                       <span>{diagnostic.message}</span>
-                    </span>
+                    </button>
                   ))
                 )}
-                {featherDiagnostics.length > 8 && <span className="feather-diagnostic empty">+{featherDiagnostics.length - 8} more</span>}
               </div>
             </section>
           </aside>
@@ -3118,20 +3777,69 @@ export function VisualScriptingPanel() {
                 <span>{featherFileName(activeBlueprint.name)}</span>
               </div>
               <div className="panel-actions">
-                <span className={`feather-status${featherErrorCount ? ' has-errors' : ''}`}>
-                  {featherErrorCount ? <AlertTriangle size={13} aria-hidden /> : <CheckCircle2 size={13} aria-hidden />}
+                <span
+                  className={`feather-status${featherErrorCount ? ' has-errors' : featherWarningCount ? ' has-warnings' : ''}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {featherErrorCount || featherWarningCount
+                    ? <AlertTriangle size={13} aria-hidden />
+                    : <CheckCircle2 size={13} aria-hidden />}
                   <span>
                     {featherErrorCount
                       ? `${featherErrorCount} error${featherErrorCount === 1 ? '' : 's'}`
-                      : featherDiagnostics.length
-                        ? `${featherDiagnostics.length} warning${featherDiagnostics.length === 1 ? '' : 's'}`
-                        : 'Parsed'}
+                      : featherWarningCount
+                        ? `${featherWarningCount} warning${featherWarningCount === 1 ? '' : 's'}`
+                        : 'Ready'}
                   </span>
                 </span>
-                {scriptSyncMessage && <span className={`feather-sync-message ${scriptSyncMessage.kind}`}>{scriptSyncMessage.text}</span>}
+                {scriptSyncMessage && (
+                  <span
+                    className={`feather-sync-message ${scriptSyncMessage.kind}`}
+                    role={scriptSyncMessage.kind === 'pending' ? undefined : 'status'}
+                    aria-live={scriptSyncMessage.kind === 'pending' ? 'off' : 'polite'}
+                  >
+                    {scriptSyncMessage.text}
+                  </span>
+                )}
+                {activeBlueprint.featherSourcePath ? (
+                  <>
+                    <button
+                      className="icon-button compact"
+                      title={`Reveal linked script: ${activeBlueprint.featherSourcePath}`}
+                      aria-label="Reveal linked FeatherScript file"
+                      onClick={() => void revealExternalSource(activeBlueprint.id)}
+                    >
+                      <FolderOpen size={14} aria-hidden />
+                    </button>
+                    <button
+                      className="icon-button compact"
+                      title="Unlink external FeatherScript file"
+                      aria-label="Unlink external FeatherScript file"
+                      onClick={() => void unlinkCurrentExternalSource()}
+                    >
+                      <Unlink size={14} aria-hidden />
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="icon-button compact"
+                    title={
+                      externalEditingAvailable
+                        ? 'Create a linked .feather file for VS Code or another editor'
+                        : 'Save this project in the desktop app to link an external editor'
+                    }
+                    aria-label="Link FeatherScript to an external editor"
+                    onClick={() => void linkExternalSource(activeBlueprint.id)}
+                    disabled={!externalEditingAvailable}
+                  >
+                    <Link2 size={14} aria-hidden />
+                  </button>
+                )}
                 <button
                   className="icon-button compact"
                   title={scriptCopied ? 'Copied' : 'Copy FeatherScript'}
+                  aria-label={scriptCopied ? 'FeatherScript copied' : 'Copy FeatherScript'}
                   onClick={() => void copyFeatherScript()}
                   disabled={!featherSource}
                 >
@@ -3139,8 +3847,9 @@ export function VisualScriptingPanel() {
                 </button>
                 <button
                   className="icon-button compact"
-                  title="Reset from Blueprint graph"
-                  onClick={() => updateBlueprintFeatherSource(activeBlueprintId, undefined)}
+                  title="Replace draft with code from Visual"
+                  aria-label="Replace code draft with the Visual version"
+                  onClick={() => void resetCodeFromVisual()}
                   disabled={activeBlueprint.featherSource === undefined}
                 >
                   <RotateCcw size={14} aria-hidden />
@@ -3148,6 +3857,7 @@ export function VisualScriptingPanel() {
                 <button
                   className="icon-button compact"
                   title="Download FeatherScript"
+                  aria-label="Download FeatherScript"
                   onClick={downloadFeatherScript}
                   disabled={!featherSource}
                 >
@@ -3155,44 +3865,188 @@ export function VisualScriptingPanel() {
                 </button>
               </div>
             </div>
-            <textarea
-              ref={featherEditorRef}
-              className="feather-code feather-code-editor"
-              value={featherSource}
-              onChange={(event) => {
-                syncFeatherSelection(event.currentTarget);
-                updateFeatherSource(event.target.value);
-              }}
-              onClick={(event) => syncFeatherSelection(event.currentTarget)}
-              onKeyDown={onFeatherEditorKeyDown}
-              onKeyUp={(event) => syncFeatherSelection(event.currentTarget)}
-              onSelect={(event) => syncFeatherSelection(event.currentTarget)}
-              spellCheck={false}
-              aria-invalid={featherErrorCount > 0}
-              aria-label="FeatherScript source"
-            />
-            {featherCompletions.length > 0 && (
-              <div className="feather-completions" role="listbox" aria-label="FeatherScript completions">
-                {featherCompletions.map((completion, index) => (
-                  <button
-                    key={`${completion.id}:${completion.insertText}`}
-                    type="button"
-                    role="option"
-                    aria-selected={index === featherCompletionIndex}
-                    className={index === featherCompletionIndex ? 'active' : ''}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => acceptFeatherCompletion(completion)}
-                  >
-                    <strong>{completion.signature}</strong>
-                    <small>{completion.description}</small>
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="feather-editor-guide" id="feather-editor-help">
+              <Sparkles size={14} aria-hidden />
+              <span>Edits update Visual automatically.</span>
+              <small>Type <code>on</code> or <code>self.</code> for suggestions · Tab accepts · Esc, then Tab leaves the editor</small>
+            </div>
+            <div className="feather-external-notices">
+              {activeBlueprint.featherSourcePath && externalStatus && (
+                <div
+                  className={`feather-external-status ${externalStatus.kind}`}
+                  role={externalStatus.kind === 'conflict' || externalStatus.kind === 'error' ? 'alert' : 'status'}
+                  aria-live="polite"
+                >
+                  {externalStatus.kind === 'synced' ? (
+                    <CheckCircle2 size={14} aria-hidden />
+                  ) : externalStatus.kind === 'syncing' ? (
+                    <RotateCcw size={14} aria-hidden />
+                  ) : (
+                    <AlertTriangle size={14} aria-hidden />
+                  )}
+                  <span>
+                    <strong>{activeBlueprint.featherSourcePath}</strong>
+                    <small>{externalStatus.message}</small>
+                  </span>
+                  {externalStatus.kind === 'missing' && (
+                    <button type="button" onClick={() => void recreateExternalSource(activeBlueprint.id)}>
+                      Recreate file
+                    </button>
+                  )}
+                  {externalStatus.kind === 'error' && (
+                    <button type="button" onClick={() => void syncExternalSource(activeBlueprint.id)}>
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+              {externalConflict && (
+                <section className="feather-external-conflict" role="alert" aria-label="External script conflict">
+                  <div className="feather-external-conflict__summary">
+                    <AlertTriangle size={16} aria-hidden />
+                    <span>
+                      <strong>Feather and the external file differ</strong>
+                      <small>Review both versions, then choose which one should become current.</small>
+                    </span>
+                    <div className="feather-external-conflict__actions">
+                      <button
+                        type="button"
+                        onClick={() => void resolveExternalConflict(activeBlueprint.id, 'external')}
+                        disabled={externalStatus?.kind === 'syncing'}
+                      >
+                        Use external file
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => void resolveExternalConflict(activeBlueprint.id, 'internal')}
+                        disabled={externalStatus?.kind === 'syncing'}
+                      >
+                        Keep Feather version
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void resolveExternalConflict(activeBlueprint.id, 'visual')}
+                        disabled={externalStatus?.kind === 'syncing'}
+                      >
+                        Use Visual graph
+                      </button>
+                    </div>
+                  </div>
+                  <details>
+                    <summary>Compare versions</summary>
+                    <div className="feather-external-compare">
+                      <div>
+                        <strong>Feather</strong>
+                        <pre>{externalConflict.internalSource}</pre>
+                      </div>
+                      <div>
+                        <strong>External file</strong>
+                        <pre>{externalConflict.diskSource}</pre>
+                      </div>
+                      <div>
+                        <strong>Visual graph</strong>
+                        <pre>{externalConflict.visualSource}</pre>
+                      </div>
+                    </div>
+                  </details>
+                </section>
+              )}
+            </div>
+            <div className="feather-editor-stage">
+              <span
+                className="sr-only"
+                id="feather-editor-diagnostics"
+                role={featherErrorCount ? 'alert' : 'status'}
+                aria-live="polite"
+              >
+                {featherDiagnosticSummary}
+              </span>
+              <textarea
+                ref={featherEditorRef}
+                className="feather-code feather-code-editor"
+                value={featherSource}
+                onChange={(event) => {
+                  syncFeatherSelection(event.currentTarget);
+                  updateFeatherSource(event.target.value);
+                }}
+                onClick={(event) => syncFeatherSelection(event.currentTarget)}
+                onKeyDown={onFeatherEditorKeyDown}
+                onKeyUp={(event) => syncFeatherSelection(event.currentTarget)}
+                onSelect={(event) => syncFeatherSelection(event.currentTarget)}
+                spellCheck={false}
+                aria-invalid={featherErrorCount > 0}
+                aria-autocomplete="list"
+                aria-haspopup="listbox"
+                aria-describedby="feather-editor-help feather-editor-diagnostics"
+                aria-errormessage={featherErrorCount ? 'feather-editor-diagnostics' : undefined}
+                aria-controls={featherCompletions.length ? 'feather-completion-list' : undefined}
+                aria-expanded={featherCompletions.length > 0}
+                aria-activedescendant={featherCompletions.length ? `feather-completion-${featherCompletionIndex}` : undefined}
+                aria-label="FeatherScript source"
+              />
+              {featherCompletions.length > 0 && (
+                <div
+                  className="feather-completions"
+                  id="feather-completion-list"
+                  role="listbox"
+                  aria-label="FeatherScript completions"
+                >
+                  {featherCompletions.map((completion, index) => (
+                    <button
+                      key={`${completion.id}:${completion.insertText}`}
+                      id={`feather-completion-${index}`}
+                      type="button"
+                      role="option"
+                      tabIndex={-1}
+                      aria-selected={index === featherCompletionIndex}
+                      className={index === featherCompletionIndex ? 'active' : ''}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => acceptFeatherCompletion(completion)}
+                    >
+                      <strong>{completion.signature}</strong>
+                      <small>{completion.description}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : (
-        <div className="scripting-body">
+        <div
+          className="scripting-body"
+          id="visual-scripting-workspace"
+          role="tabpanel"
+          aria-labelledby="visual-scripting-tab"
+          data-compact-pane={compactVisualPane}
+        >
+          <div className="scripting-compact-nav" role="group" aria-label="Visual scripting workspace view">
+            <button
+              type="button"
+              aria-pressed={compactVisualPane === 'nodes'}
+              className={compactVisualPane === 'nodes' ? 'active' : ''}
+              onClick={() => setCompactVisualPane('nodes')}
+            >
+              Add nodes
+            </button>
+            <button
+              type="button"
+              aria-pressed={compactVisualPane === 'canvas'}
+              className={compactVisualPane === 'canvas' ? 'active' : ''}
+              onClick={() => setCompactVisualPane('canvas')}
+            >
+              Canvas
+            </button>
+            <button
+              type="button"
+              aria-pressed={compactVisualPane === 'details'}
+              className={compactVisualPane === 'details' ? 'active' : ''}
+              onClick={() => setCompactVisualPane('details')}
+            >
+              Details
+            </button>
+          </div>
           <aside className="node-palette">
             <div className="blueprint-card graph-overview-card">
               <div>
@@ -3209,15 +4063,45 @@ export function VisualScriptingPanel() {
               <input
                 value={paletteFilter}
                 onChange={(event) => setPaletteFilter(event.target.value)}
-                placeholder="Search nodes…"
+                placeholder="Search actions, events, values…"
+                aria-label="Search scripting nodes"
                 spellCheck={false}
               />
             </label>
+          {!paletteFilter.trim() && (
+            <section className="essential-node-group">
+              <h3>
+                <Sparkles size={13} aria-hidden />
+                <span>Essentials</span>
+                <small>{essentialNodes.length}</small>
+              </h3>
+              <div className="essential-node-grid">
+                {essentialNodes.map(({ label, category }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => addPaletteNode(label, category)}
+                    title={nodeDescriptions[label]}
+                  >
+                    <span className="node-palette-icon"><Plus size={12} aria-hidden /></span>
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           {filteredNodeGroups.length === 0 && (
             <div className="empty-state compact">No nodes match “{paletteFilter}”</div>
           )}
           {filteredNodeGroups.map(({ title, icon: Icon, nodes }) => (
-            <PaletteGroup key={title} title={title} icon={Icon} count={nodes.length} forceOpen={paletteFilter.trim() !== ''}>
+            <PaletteGroup
+              key={title}
+              title={title}
+              icon={Icon}
+              count={nodes.length}
+              forceOpen={paletteFilter.trim() !== ''}
+              defaultOpen={title === 'Events'}
+            >
               {nodes.map((node) => (
                 <button
                   key={node}
@@ -3243,22 +4127,37 @@ export function VisualScriptingPanel() {
           className={connectingKind ? `flow-shell connecting-from-${connectingKind}` : 'flow-shell'}
           ref={flowShellRef}
           tabIndex={0}
+          role="region"
+          aria-label="Visual scripting canvas"
+          aria-describedby="visual-scripting-help"
           // Capture-phase: runs before ReactFlow's own pointer handlers, so node
           // selection works reliably even inside the docked panel. ReactFlow tags
           // each node wrapper with data-id.
-          onPointerDown={() => flowShellRef.current?.focus()}
+          onPointerDown={(event) => {
+            if ((event.target as HTMLElement).classList.contains('react-flow__pane')) flowShellRef.current?.focus();
+          }}
           onClickCapture={(event) => {
             const nodeEl = (event.target as HTMLElement).closest('.react-flow__node');
             const id = nodeEl?.getAttribute('data-id');
             if (id) selectGraphNode(id);
           }}
           onContextMenuCapture={(event) => {
+            if (!(event.target as HTMLElement).classList.contains('react-flow__pane')) return;
             event.preventDefault();
             setSearchMenu({ x: event.clientX, y: event.clientY });
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            setSearchMenu({ x: bounds.left + bounds.width / 2, y: bounds.top + Math.min(180, bounds.height / 2) });
           }}
           onDragOver={onCanvasDragOver}
           onDrop={onCanvasDrop}
         >
+          <p className="sr-only" id="visual-scripting-help">
+            Use the Essentials list or search to add nodes. Tab to a node, then press Enter or Space to select it and use arrow keys to move it. Use the Connections section in Details to create or remove wires. Press Delete to remove a selected node or wire. Press Shift F10 to open node search.
+          </p>
           <div className="flow-hud" aria-hidden>
             <span>{selectedNodeDetail}</span>
             <small>
@@ -3267,7 +4166,42 @@ export function VisualScriptingPanel() {
               right-click) to add a node · Shift+drag to box-select
             </small>
           </div>
+          {graph.edges.length === 0 && graph.nodes.length <= 2 && (
+            <div className="starter-flow-coach" role="region" aria-label="Quick start">
+              <div className="starter-flow-copy">
+                <span className="starter-flow-icon"><Sparkles size={16} aria-hidden /></span>
+                <div>
+                  <strong>What should happen first?</strong>
+                  <small>Choose one working flow. You can edit its values and add more nodes next.</small>
+                </div>
+              </div>
+              <div className="starter-flow-actions">
+                <button
+                  type="button"
+                  onClick={() => addStarterFlow('Start', 'Print', { message: 'Hello from Feather!' })}
+                >
+                  <strong>Say hello</strong>
+                  <small>Start → Print</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addStarterFlow('Update', 'Rotate', { axis: 'y', amount: 90 })}
+                >
+                  <strong>Spin</strong>
+                  <small>Update → Rotate</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addStarterFlow('Update', 'Translate', { axis: 'z', amount: 2 })}
+                >
+                  <strong>Move forward</strong>
+                  <small>Update → Translate</small>
+                </button>
+              </div>
+            </div>
+          )}
           <ReactFlow
+            aria-label="Visual script diagram"
             nodes={flowNodes}
             edges={styledEdges}
             nodeTypes={nodeTypes}
@@ -3284,27 +4218,28 @@ export function VisualScriptingPanel() {
               event.stopPropagation();
               onEdgesChange([{ id: edge.id, type: 'remove' }]);
             }}
-            onSelectionChange={({ nodes }) => {
+            onSelectionChange={({ nodes, edges }) => {
               // Only ADOPT an actual selection here — never clear on an empty event. Editing a node's
               // fields in the inspector replaces the nodes array, and because we don't persist React Flow's
               // `selected` flag, React Flow momentarily reports an empty selection; clearing on that would
               // deselect the node and close the inspector mid-edit. Real deselection is handled by onPaneClick.
               const id = nodes[0]?.id;
               if (id && id !== selectedGraphNode?.id) selectGraphNode(id);
+              if (edges.length > 0) selectGraphNode(undefined);
             }}
             onPaneClick={() => {
               selectGraphNode(undefined);
               setSearchMenu(null);
             }}
-            deleteKeyCode={[]}
+            deleteKeyCode={['Backspace', 'Delete']}
             defaultEdgeOptions={defaultEdgeOptions}
             connectionLineStyle={connectionLineStyle}
             snapToGrid
             snapGrid={snapGrid}
             fitView
           >
-            <MiniMap pannable zoomable nodeStrokeWidth={3} />
-            <Controls position="bottom-right" />
+            <MiniMap ariaLabel="Visual script overview" pannable zoomable nodeStrokeWidth={3} />
+            <Controls aria-label="Visual script zoom controls" position="bottom-right" />
             <Background color="#30394D" gap={18} size={1} />
           </ReactFlow>
         </div>
