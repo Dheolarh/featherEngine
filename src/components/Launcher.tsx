@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   AlertTriangle,
   ArrowRight,
+  Boxes,
   Car,
   Clapperboard,
   Crosshair,
@@ -28,6 +29,7 @@ import { createDrivingTemplate } from '../project/drivingTemplate';
 import { createSimRacingTemplate } from '../project/simRacingTemplate';
 import { createMeadowTemplate } from '../project/meadowTemplate';
 import { createCubeRealmTemplate } from '../project/cubeRealmTemplate';
+import { createPhysicsLabTemplate } from '../project/physicsLabTemplate';
 
 type TemplateChoice = {
   icon: LucideIcon;
@@ -62,6 +64,7 @@ const TEMPLATES: TemplateChoice[] = [
   { icon: Car, title: 'Driving', blurb: 'NFS-lite neon cruise & garage', build: createDrivingTemplate },
   { icon: Gauge, title: 'Sim racing', blurb: 'Realistic car physics & laps', build: createSimRacingTemplate },
   { icon: Clapperboard, title: 'Cinematic', blurb: '"The Summit" film flythrough', build: createFilmModeTemplate },
+  { icon: Boxes, title: 'Physics Lab', blurb: 'Axis locks, stay events, spin & gravity', build: createPhysicsLabTemplate },
 ];
 
 export function Launcher() {

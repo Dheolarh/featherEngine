@@ -363,6 +363,8 @@ function bodySignature(object: SceneObject): string {
     p?.collisionMask,
     p?.ccd,
     (p?.extraColliders ?? []).map((e) => `${e.shape},${e.offset.join(',')},${e.size.join(',')}`).join(';'),
+    (p?.lockedTranslation ?? []).join(','),
+    (p?.lockedRotation ?? []).join(','),
   ].join('|');
   bodySignatureCache.set(object, { sig, meshToken });
   return sig;
@@ -399,10 +401,23 @@ export interface PhysicsFrameResult {
   triggersExit: PhysicsContactEvent[];
   /** Solid-contact pairs that ENDED this step (drives event.collisionExit). */
   collisionsExit: PhysicsContactEvent[];
+  /**
+   * Solid-contact pairs still touching this step (drives event.collisionStay — "while standing on",
+   * "while pressed"). A resting contact fires enter exactly once, so continuous logic needs this.
+   * ONLY populated for objects listed in frame()'s `stayListeners`: a settled pile can hold hundreds
+   * of pairs, and emitting two events per pair per frame for nobody would be pure waste.
+   */
+  collisionsStay: PhysicsContactEvent[];
+  /** Sensor/trigger pairs still overlapping this step (drives event.triggerStay — damage zones,
+   *  healing auras, pressure plates). Same `stayListeners` gating as `collisionsStay`. */
+  triggersStay: PhysicsContactEvent[];
   /** Character-controller object ids that are standing on the ground this frame. */
   grounded: string[];
   /** Post-step linear velocity of each DYNAMIC body, keyed by object id (drives the Get Velocity node). */
   velocities: Map<string, Vector3Tuple>;
+  /** Post-step ANGULAR velocity (radians/sec, world axes) of each DYNAMIC body, keyed by object id
+   *  (drives the Get Angular Velocity node). Sleeping bodies report zero, matching `velocities`. */
+  angularVelocities: Map<string, Vector3Tuple>;
   /** Post-step state of each raycast-sim vehicle, keyed by chassis object id (drives the sim-car writeback). */
   vehicles: Map<string, VehicleFrameState>;
 }
@@ -470,6 +485,12 @@ export interface VehicleWheelState {
   /** Lowercased `surface` tag of what this wheel rolls on ('' = untagged tarmac) — drives kick-up VFX. */
   surface: string;
 }
+
+/** Shared empty set so frame()'s default `stayListeners` argument allocates nothing per frame. */
+const emptyStayListeners: ReadonlySet<string> = new Set<string>();
+
+/** Earth gravity — what the world runs at until a scene authors `environment.gravity`. */
+const DEFAULT_GRAVITY: Vector3Tuple = [0, -9.81, 0];
 
 export interface PhysicsContactEvent {
   objectId: string;
@@ -633,6 +654,13 @@ class PhysicsRuntime {
   private preStepSpeed = new Map<string, number>();
   private handleToId = new Map<number, string>();
   private handleToTrigger = new Map<number, boolean>();
+  /**
+   * Every collider pair currently in contact, keyed by its sorted handle pair. Rapier only reports the
+   * EDGES of a contact (started / stopped), so "still touching" has to be tracked here between them.
+   * Entries are added on `started`, removed on `stopped` — including the stop Rapier emits when a
+   * collider is removed, which is what keeps this from leaking as bodies are destroyed.
+   */
+  private activePairs = new Map<string, { h1: number; h2: number; isTrigger: boolean }>();
   private charEntries = new Map<string, CharacterEntry>();
   private terrainEntries = new Map<string, TerrainEntry>();
   private jointEntries = new Map<string, JointEntry>();
@@ -673,8 +701,10 @@ class PhysicsRuntime {
    * yet (Play start) so the ground exists before bodies can fall through it.
    */
   private terrainSyncTick = 0;
+  /** Gravity currently pushed into the world, so frame() can skip the WASM write when it's unchanged. */
+  private gravity: Vector3Tuple = DEFAULT_GRAVITY;
   constructor() {
-    this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    this.world = new RAPIER.World({ x: DEFAULT_GRAVITY[0], y: DEFAULT_GRAVITY[1], z: DEFAULT_GRAVITY[2] });
     this.world.timestep = 1 / 60;
   }
 
@@ -696,6 +726,18 @@ class PhysicsRuntime {
     // thin wall in a single step and strike whatever is behind it. CCD makes a projectile sweep its motion
     // each step so it stops at the first surface it crosses (cover blocks the shot, as expected).
     if (object.projectile || object.physics?.ccd) body.enableCcd(true);
+    // AXIS LOCKS: remove degrees of freedom from the solver itself (not a per-frame velocity clamp), so a
+    // 2.5D prop can never drift off the play plane and an upright crate can never tip. Rapier takes the
+    // axes that stay ENABLED, so each authored lock flag is inverted here. Locks only bite on dynamic
+    // bodies — fixed/kinematic ones are driven by their transform and never integrated by the solver.
+    const lockedTranslation = object.physics?.lockedTranslation;
+    if (lockedTranslation) {
+      body.setEnabledTranslations(!lockedTranslation[0], !lockedTranslation[1], !lockedTranslation[2], false);
+    }
+    const lockedRotation = object.physics?.lockedRotation;
+    if (lockedRotation) {
+      body.setEnabledRotations(!lockedRotation[0], !lockedRotation[1], !lockedRotation[2], false);
+    }
     const collider = this.world.createCollider(colliderDescFor(object), body);
     const extraHandles: number[] = [];
     for (const extraDesc of extraColliderDescs(object)) {
@@ -1376,11 +1418,16 @@ class PhysicsRuntime {
     impulses: Record<string, Vector3Tuple>,
     delta: number,
     setVelocities: Record<string, Vector3Tuple> = {},
+    setAngularVelocities: Record<string, Vector3Tuple> = {},
     angularImpulses: Record<string, Vector3Tuple> = {},
     wind: Vector3Tuple = [0, 0, 0],
     windTurbulence = 0,
+    /** Scene gravity (units/s²). Defaults to Earth; per-body `gravityScale` still multiplies it. */
+    gravity: Vector3Tuple = DEFAULT_GRAVITY,
     vehicleInputs: Record<string, VehicleInput> = {},
     gravityZones: Record<string, number> = {},
+    /** Object ids whose graph has a Collision Stay / Trigger Stay root. Empty = skip stay entirely. */
+    stayListeners: ReadonlySet<string> = emptyStayListeners,
   ): PhysicsFrameResult {
     // Paused (Set Time Scale 0): skip the step entirely — the dt clamp below would otherwise creep the
     // world forward at 1/240s per frame. The empty result freezes every body exactly where it is; contact
@@ -1393,10 +1440,24 @@ class PhysicsRuntime {
         triggers: [],
         triggersExit: [],
         collisionsExit: [],
+        collisionsStay: [],
+        triggersStay: [],
         grounded: [],
         velocities: new Map(),
+        angularVelocities: new Map(),
         vehicles: new Map(),
       };
+    }
+    // Scene gravity, pushed across the WASM boundary only when it actually changes — re-assigning a
+    // constant 60×/s would be pure overhead. Bodies already asleep under the OLD gravity would never
+    // notice the switch on their own, so wake the dynamics: flipping to low-g/zero-g/inverted has to
+    // take effect immediately, not whenever something happens to bump them.
+    if (gravity[0] !== this.gravity[0] || gravity[1] !== this.gravity[1] || gravity[2] !== this.gravity[2]) {
+      this.gravity = [gravity[0], gravity[1], gravity[2]];
+      this.world.gravity = { x: gravity[0], y: gravity[1], z: gravity[2] };
+      for (const entry of this.entries.values()) {
+        if (entry.body.isDynamic()) entry.body.wakeUp();
+      }
     }
     const dt = Math.min(Math.max(delta, 1 / 240), 1 / 20);
     // Per-frame gust factor for wind (shared by every wind-affected body this step).
@@ -1488,6 +1549,7 @@ class PhysicsRuntime {
         const impulse = impulses[object.id];
         const torque = angularImpulses[object.id];
         const sv = setVelocities[object.id];
+        const sav = setAngularVelocities[object.id];
         const windInfluence = object.physics.windInfluence ?? 0;
         const windActive = hasWind && windInfluence > 0;
         // Nothing is driving this body this frame — no scripted move/rotate, no impulse/torque/velocity,
@@ -1495,7 +1557,7 @@ class PhysicsRuntime {
         // none of them it would just read body.linvel() and discard it. Skipping saves that WASM call +
         // its Vector allocation for every idle dynamic body, every frame — the bulk of a settled scene.
         // Rapier owns the body's motion (gravity, momentum, contacts) regardless.
-        if (!movedX && !movedY && !movedZ && !movedRotation && !impulse && !torque && !sv && !windActive) {
+        if (!movedX && !movedY && !movedZ && !movedRotation && !impulse && !torque && !sv && !sav && !windActive) {
           continue;
         }
         // Per-axis: an axis a script touched becomes velocity-controlled this frame;
@@ -1527,6 +1589,9 @@ class PhysicsRuntime {
         if (torque) body.applyTorqueImpulse({ x: torque[0], y: torque[1], z: torque[2] }, true);
         // Set Velocity node: hard-set the body's linear velocity (overrides the transform-derived velocity).
         if (sv) body.setLinvel({ x: sv[0], y: sv[1], z: sv[2] }, true);
+        // Set Angular Velocity node: hard-set the body's spin (rad/s). Applied AFTER applyTorqueImpulse so
+        // an explicit "spin at exactly this rate" wins over a torque kick queued in the same frame.
+        if (sav) body.setAngvel({ x: sav[0], y: sav[1], z: sav[2] }, true);
       } else if (type === 'kinematic') {
         body.setNextKinematicTranslation({ x: cur[0], y: cur[1], z: cur[2] });
         body.setNextKinematicRotation(quatFromEuler(curRot));
@@ -1924,13 +1989,16 @@ class PhysicsRuntime {
       const b = this.handleToId.get(h2);
       if (!a || !b) return;
       const isTrigger = this.handleToTrigger.get(h1) || this.handleToTrigger.get(h2);
+      const pairKey = h1 < h2 ? `${h1}:${h2}` : `${h2}:${h1}`;
       // Exit events (started=false): sensors feed event.triggerExit (proximity prompts), solid contacts
       // feed event.collisionExit (e.g. left the ground / stopped touching a wall).
       if (!started) {
+        this.activePairs.delete(pairKey);
         const exitList = isTrigger ? triggersExit : collisionsExit;
         exitList.push({ objectId: a, otherObjectId: b }, { objectId: b, otherObjectId: a });
         return;
       }
+      this.activePairs.set(pairKey, { h1, h2, isTrigger: Boolean(isTrigger) });
       const list = isTrigger ? triggers : collisions;
       const speed = Math.max(this.preStepSpeed.get(a) ?? 0, this.preStepSpeed.get(b) ?? 0);
       // Contact DETAIL (solid contacts only): the manifold's world normal + first solver contact
@@ -1964,23 +2032,49 @@ class PhysicsRuntime {
       );
     });
 
+    // STAY: replay every still-touching pair as an event for whichever side is actually listening. A pair
+    // whose handles no longer resolve belongs to a destroyed body — drop it so the map can't grow stale if
+    // a removal ever slips through without its stop event.
+    const collisionsStay: PhysicsContactEvent[] = [];
+    const triggersStay: PhysicsContactEvent[] = [];
+    if (stayListeners.size > 0) {
+      for (const [pairKey, pair] of this.activePairs) {
+        const a = this.handleToId.get(pair.h1);
+        const b = this.handleToId.get(pair.h2);
+        if (!a || !b) {
+          this.activePairs.delete(pairKey);
+          continue;
+        }
+        const stayList = pair.isTrigger ? triggersStay : collisionsStay;
+        // One event per listening side only — an unlistened partner would just be indexed and dropped.
+        if (stayListeners.has(a)) stayList.push({ objectId: a, otherObjectId: b });
+        if (stayListeners.has(b)) stayList.push({ objectId: b, otherObjectId: a });
+      }
+    }
+
     const transforms = new Map<string, { position: Vector3Tuple; rotation: Vector3Tuple }>();
     const velocities = new Map<string, Vector3Tuple>();
+    const angularVelocities = new Map<string, Vector3Tuple>();
     // Raycast-vehicle chassis are dynamic bodies too — publish their velocity so Get Velocity works on
     // sim cars AND impact-speed consumers (breakaway props, contact damage) see how fast a car hit them.
     for (const [id, entry] of this.vehicleEntries) {
       const lv = entry.body.linvel();
       velocities.set(id, [lv.x, lv.y, lv.z]);
+      const av = entry.body.angvel();
+      angularVelocities.set(id, [av.x, av.y, av.z]);
     }
     for (const [id, entry] of this.entries) {
       const object = byId.get(id);
       if (entry.body.isDynamic()) {
         if (entry.body.isSleeping()) {
           velocities.set(id, [0, 0, 0]);
+          angularVelocities.set(id, [0, 0, 0]);
           continue;
         }
         const lv = entry.body.linvel();
         velocities.set(id, [lv.x, lv.y, lv.z]);
+        const av = entry.body.angvel();
+        angularVelocities.set(id, [av.x, av.y, av.z]);
       } else if (object?.physics?.bodyType === 'fixed' && !movedFixedBodies.has(id)) {
         // Static scenery still collides, but its authored transform is already correct.
         // Avoid per-frame Rapier readback and store churn for floors, walls, and cover.
@@ -2085,7 +2179,20 @@ class PhysicsRuntime {
       }
     }
 
-    return { transforms, renderTransforms, collisions, triggers, triggersExit, collisionsExit, grounded: [...grounded], velocities, vehicles };
+    return {
+      transforms,
+      renderTransforms,
+      collisions,
+      triggers,
+      triggersExit,
+      collisionsExit,
+      collisionsStay,
+      triggersStay,
+      grounded: [...grounded],
+      velocities,
+      angularVelocities,
+      vehicles,
+    };
   }
 
   /**

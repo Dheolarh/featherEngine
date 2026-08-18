@@ -74,7 +74,7 @@ export const nodeGroups: Array<{
   {
     title: 'Events',
     icon: Zap,
-    nodes: ['Start', 'Update', 'Key Down', 'Key Up', 'Custom Event', 'Collision Enter', 'Collision Exit', 'Trigger Enter', 'Trigger Exit', 'Interact', 'On Receive Damage', 'On Land', 'Timer'],
+    nodes: ['Start', 'Update', 'Key Down', 'Key Up', 'Custom Event', 'Collision Enter', 'Collision Stay', 'Collision Exit', 'Trigger Enter', 'Trigger Stay', 'Trigger Exit', 'Interact', 'On Receive Damage', 'On Land', 'Timer'],
   },
   {
     title: 'Logic',
@@ -134,7 +134,7 @@ export const nodeGroups: Array<{
   {
     title: 'Physics',
     icon: Boxes,
-    nodes: ['Apply Force', 'Apply Impulse', 'Apply Torque', 'Set Physics', 'Set Velocity', 'Get Velocity', 'Overlap Sphere', 'Sphere Cast', 'Set Joint Motor', 'Cut Cable', 'Set Cable Length', 'Get Cable Tension', 'Fracture'],
+    nodes: ['Apply Force', 'Apply Impulse', 'Apply Torque', 'Set Physics', 'Set Velocity', 'Get Velocity', 'Set Angular Velocity', 'Get Angular Velocity', 'Set Gravity', 'Overlap Sphere', 'Sphere Cast', 'Set Joint Motor', 'Cut Cable', 'Set Cable Length', 'Get Cable Tension', 'Fracture'],
   },
   {
     title: 'Persistence',
@@ -626,7 +626,9 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
     node.data.nodeKind === 'action.translate' ||
     node.data.nodeKind === 'action.rotate' ||
     node.data.nodeKind === 'action.applyForce' ||
-    node.data.nodeKind === 'action.applyImpulse';
+    node.data.nodeKind === 'action.applyImpulse' ||
+    node.data.nodeKind === 'action.applyTorque' ||
+    node.data.nodeKind === 'action.setAngularVelocity';
   const updatesImpulseSpace = node.data.nodeKind === 'action.applyImpulse';
   const updatesSound = node.data.nodeKind === 'action.playSound';
   const updatesCinematic = node.data.nodeKind === 'action.playCinematic';
@@ -663,7 +665,10 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
     node.data.nodeKind === 'animator.setTrigger' ||
     node.data.nodeKind === 'animator.getParam';
   const updatesStringValue = node.data.nodeKind === 'value.string';
-  const updatesVectorValue = node.data.nodeKind === 'value.vector3' || node.data.nodeKind === 'action.spawnParticleSystem';
+  const updatesVectorValue =
+    node.data.nodeKind === 'value.vector3' ||
+    node.data.nodeKind === 'action.spawnParticleSystem' ||
+    node.data.nodeKind === 'action.setGravity';
   const updatesSaveSlot =
     node.data.nodeKind === 'save.write' ||
     node.data.nodeKind === 'save.load' ||
@@ -736,8 +741,10 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
   const updatesOtherObject =
     node.data.nodeKind === 'event.collisionEnter' ||
     node.data.nodeKind === 'event.collisionExit' ||
+    node.data.nodeKind === 'event.collisionStay' ||
     node.data.nodeKind === 'event.triggerEnter' ||
-    node.data.nodeKind === 'event.triggerExit';
+    node.data.nodeKind === 'event.triggerExit' ||
+    node.data.nodeKind === 'event.triggerStay';
   // The transform getters (Get Position/Rotation/Scale) read an actor via the full sentinel set, like
   // Get Object Var — so they get their own richer Target dropdown ($player/$trigger/$cast resolve at runtime).
   const readsTransformTarget =

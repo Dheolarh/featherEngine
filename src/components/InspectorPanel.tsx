@@ -8,7 +8,7 @@ import { useAssetUrl } from '../three/ModelAsset';
 import { DRACO_DECODER_PATH, extendGLTFLoader } from '../three/gltfDecoders';
 import { focusWorkspacePanel } from './workspacePanels';
 import { SocketPickerModal } from './SocketPickerModal';
-import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, ReflectionProbeComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, TreeArchetype, TreeComponent, TreeSpec, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
+import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, AxisLockTuple, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, ReflectionProbeComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, TreeArchetype, TreeComponent, TreeSpec, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
 import { resolveVehicleWheels } from '../runtime/vehicleWheels';
 import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { particlePresetIds } from '../runtime/particlePresets';
@@ -234,6 +234,46 @@ function LayerMaskField({
             </label>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+const lockAxes = ['X', 'Y', 'Z'] as const;
+
+/** Three checkboxes freezing a body's translation (or rotation) per world axis. */
+function AxisLockField({
+  label,
+  title,
+  value,
+  onChange,
+}: {
+  label: string;
+  title: string;
+  value?: AxisLockTuple;
+  onChange: (value: AxisLockTuple | undefined) => void;
+}) {
+  const locks = value ?? [false, false, false];
+  return (
+    <div className="layer-mask-field">
+      <span>{label}</span>
+      <div>
+        {lockAxes.map((axis, index) => (
+          <label key={axis} title={`${title} — ${axis} axis`}>
+            <input
+              type="checkbox"
+              checked={locks[index]}
+              onChange={(event) => {
+                const next: AxisLockTuple = [locks[0], locks[1], locks[2]];
+                next[index] = event.target.checked;
+                // Drop the field entirely once nothing is locked, so an unlocked body keeps a clean
+                // component and its physics body signature stays byte-identical to a never-touched one.
+                onChange(next.some(Boolean) ? next : undefined);
+              }}
+            />
+            <em>{axis}</em>
+          </label>
+        ))}
       </div>
     </div>
   );
@@ -2784,6 +2824,31 @@ function PhysicsSection({
           {physics.ccd && (
             <p className="field-hint">Stops this body tunnelling through thin walls/floors at high speed. Small cost — use for fast objects.</p>
           )}
+          <label className="field-row">
+            <span>Linear damping</span>
+            <NumberInput value={physics.linearDamping ?? 0} min={0} step={0.05} onChange={(linearDamping) => onChange({ linearDamping })} />
+          </label>
+          <label className="field-row">
+            <span>Angular damping</span>
+            <NumberInput value={physics.angularDamping ?? 0.05} min={0} step={0.05} onChange={(angularDamping) => onChange({ angularDamping })} />
+          </label>
+          <p className="field-hint">Drag on movement / spin — higher settles the body sooner. Picking a Material preset overwrites both.</p>
+          <AxisLockField
+            label="Lock move"
+            title="Freeze position"
+            value={physics.lockedTranslation}
+            onChange={(lockedTranslation) => onChange({ lockedTranslation })}
+          />
+          <AxisLockField
+            label="Lock spin"
+            title="Freeze rotation"
+            value={physics.lockedRotation}
+            onChange={(lockedRotation) => onChange({ lockedRotation })}
+          />
+          <p className="field-hint">
+            Freezes degrees of freedom in the solver. Lock move Z for a 2.5D side-scroller; lock spin X+Z to keep a
+            crate, barrel, or character upright while it can still turn.
+          </p>
         </>
       )}
       {physics.bodyType === 'fixed' && (

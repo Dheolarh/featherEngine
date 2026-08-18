@@ -54,6 +54,7 @@ export const outputTypeOf: Partial<Record<GraphNodeKind, GraphValueType>> = {
   'action.getRotation': 'vector3',
   'action.getScale': 'vector3',
   'query.velocity': 'vector3',
+  'query.angularVelocity': 'vector3',
   'ai.hasLineOfSight': 'boolean',
   'query.sphereCast': 'boolean',
 };
@@ -74,8 +75,10 @@ export const outputTypeForHandle = (
   if (
     kind === 'event.collisionEnter' ||
     kind === 'event.collisionExit' ||
+    kind === 'event.collisionStay' ||
     kind === 'event.triggerEnter' ||
-    kind === 'event.triggerExit'
+    kind === 'event.triggerExit' ||
+    kind === 'event.triggerStay'
   ) {
     if (sourceHandle === 'normal' || sourceHandle === 'point') return 'vector3';
     if (sourceHandle === 'speed') return 'number';

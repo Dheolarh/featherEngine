@@ -78,6 +78,9 @@ export interface GraphRuntime {
   timerRoots: NodeForgeNode[];
   /** The graph's On Receive Damage root, if any — read once per scripted object per tick. */
   receiveDamageRoot: NodeForgeNode | undefined;
+  /** True when the graph has a Collision Stay / Trigger Stay root. Physics only bothers replaying
+   *  resting contacts for objects running such a graph, so this is what gates that whole pass. */
+  hasStayRoot: boolean;
 }
 
 export interface CompiledGraphNode {
@@ -182,6 +185,9 @@ export const buildGraphRuntime = (graph: ProjectGraph): GraphRuntime => {
       (node.data.nodeKind === 'event.update' && Number(node.data.numberValue ?? 0) > 0),
   );
   const receiveDamageRoot = eventRoots.find((node) => node.data.nodeKind === 'event.receiveDamage');
+  const hasStayRoot = dispatchEventRoots.some(
+    (node) => node.data.nodeKind === 'event.collisionStay' || node.data.nodeKind === 'event.triggerStay',
+  );
 
   return {
     graph,
@@ -197,6 +203,7 @@ export const buildGraphRuntime = (graph: ProjectGraph): GraphRuntime => {
     functionRoots,
     timerRoots,
     receiveDamageRoot,
+    hasStayRoot,
   };
 };
 
