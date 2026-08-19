@@ -10423,3 +10423,14 @@ body.is-scrubbing * {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+/* Launcher template cards now come from the store catalog, so they carry a real download size. */
+.template-card-meta {
+  color: var(--muted);
+  font-size: var(--text-3xs);
+}
+
+.template-card-icon img {
+  border-radius: 6px;
+  object-fit: cover;
+}

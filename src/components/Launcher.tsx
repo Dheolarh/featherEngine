@@ -1,41 +1,24 @@
-import { useState } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
-  Car,
-  Clapperboard,
-  Crosshair,
+  Boxes,
   Eye,
   FolderOpen,
   Gamepad2,
-  Gauge,
-  Mountain,
-  PersonStanding,
   Plus,
   RotateCcw,
   Sparkles,
-  Sprout,
   X,
 } from 'lucide-react';
 import { getPlatform, isDesktop } from '../platform';
 import { useProjectStore } from '../store/projectStore';
 import { clearRecovery, readRecovery } from '../store/autosave';
-import { createThirdPersonTemplate } from '../project/thirdPersonTemplate';
-import { createFirstPersonTemplate } from '../project/firstPersonTemplate';
-import { createFilmModeTemplate } from '../project/filmModeTemplate';
-import { createDrivingTemplate } from '../project/drivingTemplate';
-import { createSimRacingTemplate } from '../project/simRacingTemplate';
-import { createMeadowTemplate } from '../project/meadowTemplate';
-import { createCubeRealmTemplate } from '../project/cubeRealmTemplate';
+import { useMarketplaceStore } from '../store/marketplaceStore';
+import { formatSize, type StoreListing } from '../marketplace/catalog';
 
-type TemplateChoice = {
-  icon: LucideIcon;
-  title: string;
-  blurb: string;
-  featured?: boolean;
-  build: () => Promise<unknown> | unknown;
-};
+/** The starter world shown first. Everything else keeps the catalog's order. */
+const FEATURED_SLUG = 'template-third-person';
 
 /** Human-friendly "time ago" for the recovery banner. */
 function formatAgo(ms: number): string {
@@ -48,22 +31,6 @@ function formatAgo(ms: number): string {
   return new Date(ms).toLocaleString();
 }
 
-const TEMPLATES: TemplateChoice[] = [
-  {
-    icon: PersonStanding,
-    title: 'Third-person',
-    blurb: 'Character, follow camera, and a guided world ready to explore.',
-    featured: true,
-    build: createThirdPersonTemplate,
-  },
-  { icon: Sprout, title: 'Meadows', blurb: 'Walk through interactive BOTW-style grass', build: createMeadowTemplate },
-  { icon: Mountain, title: 'Cube Realm', blurb: 'Action slice: combo, day cycle, shrine', build: createCubeRealmTemplate },
-  { icon: Crosshair, title: 'First-person shooter', blurb: 'Neon FPS with guns & grenades', build: createFirstPersonTemplate },
-  { icon: Car, title: 'Driving', blurb: 'NFS-lite neon cruise & garage', build: createDrivingTemplate },
-  { icon: Gauge, title: 'Sim racing', blurb: 'Realistic car physics & laps', build: createSimRacingTemplate },
-  { icon: Clapperboard, title: 'Cinematic', blurb: '"The Summit" film flythrough', build: createFilmModeTemplate },
-];
-
 export function Launcher() {
   const [name, setName] = useState('My Game');
   const newProject = useProjectStore((state) => state.newProject);
@@ -71,12 +38,30 @@ export function Launcher() {
   const openRecent = useProjectStore((state) => state.openRecent);
   const removeRecent = useProjectStore((state) => state.removeRecent);
   const useDemo = useProjectStore((state) => state.useDemo);
+  const newProjectFromPackageUrl = useProjectStore((state) => state.newProjectFromPackageUrl);
   const recentProjects = useProjectStore((state) => state.recentProjects);
   const busy = useProjectStore((state) => state.busy);
   const error = useProjectStore((state) => state.error);
   const restoreRecovery = useProjectStore((state) => state.restoreRecovery);
   // Unsaved work from a crashed/closed session, if any (read once on mount).
   const [recovery, setRecovery] = useState(() => readRecovery());
+
+  // Starter worlds come from the asset store, so the Launcher and the Asset Store panel can't drift
+  // apart — there is one catalog, and adding a template to it is enough to surface it in both.
+  const loadCatalog = useMarketplaceStore((state) => state.load);
+  const catalogStatus = useMarketplaceStore((state) => state.status);
+  const catalogError = useMarketplaceStore((state) => state.error);
+  const packages = useMarketplaceStore((state) => state.packages);
+  useEffect(() => {
+    void loadCatalog();
+  }, [loadCatalog]);
+
+  // Derived with useMemo, not in the selector: a selector returning a new array each call breaks
+  // zustand's snapshot caching.
+  const templates = useMemo(() => {
+    const worlds = packages.filter((entry) => entry.kind === 'project');
+    return worlds.sort((a, b) => Number(b.slug === FEATURED_SLUG) - Number(a.slug === FEATURED_SLUG));
+  }, [packages]);
   const createBlankProject = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const projectName = name.trim();
@@ -84,14 +69,10 @@ export function Launcher() {
     await newProject(projectName);
   };
 
-  const createTemplateProject = async (builder: () => Promise<unknown> | unknown) => {
-    try {
-      await newProject(name.trim());
-      if (!useProjectStore.getState().hasProject) return;
-      await builder();
-    } catch (error) {
-      useProjectStore.setState({ error: error instanceof Error ? error.message : 'Template failed' });
-    }
+  // Installing a template creates the project itself (and validates the package before doing so),
+  // so unlike the blank path this doesn't call newProject first.
+  const createTemplateProject = async (listing: StoreListing) => {
+    await newProjectFromPackageUrl(listing.downloadUrl, name.trim());
   };
 
   const handleReveal = async (event: React.MouseEvent, dir: string) => {
@@ -142,7 +123,7 @@ export function Launcher() {
             <p>Create, iterate, and play in one focused workspace. Start with a blank canvas or a ready-to-run world.</p>
           </div>
           <div className="launcher-intro-meta" aria-label="Available starter projects">
-            <strong>{TEMPLATES.length}</strong>
+            <strong>{templates.length || '—'}</strong>
             <span>starter worlds</span>
           </div>
         </section>
@@ -294,25 +275,40 @@ export function Launcher() {
                 <h2 id="starter-worlds-title">Choose a starting point</h2>
                 <p>Every starter world is ready to play and fully editable.</p>
               </div>
-              <span className="launcher-template-count">{TEMPLATES.length} worlds</span>
+              <span className="launcher-template-count">
+                {catalogStatus === 'ready' ? `${templates.length} worlds` : '…'}
+              </span>
             </div>
+
+            {catalogStatus === 'loading' && <p className="launcher-template-hint">Loading starter worlds…</p>}
+            {catalogStatus === 'error' && (
+              <p className="launcher-template-hint">
+                Could not load starter worlds ({catalogError}). You can still create a blank project.
+              </p>
+            )}
+
             <div className="template-grid">
-              {TEMPLATES.map(({ icon: Icon, title, blurb, featured, build }) => (
+              {templates.map((listing, index) => (
                 <button
                   type="button"
-                  key={title}
-                  className={`template-card ${featured ? 'template-card--featured' : ''}`}
+                  key={listing.id}
+                  className={`template-card ${index === 0 ? 'template-card--featured' : ''}`}
                   disabled={busy || !name.trim()}
-                  aria-label={`Create ${name.trim() || 'project'} from the ${title} template`}
-                  onClick={() => void createTemplateProject(build)}
+                  aria-label={`Create ${name.trim() || 'project'} from the ${listing.title} template`}
+                  onClick={() => void createTemplateProject(listing)}
                 >
                   <span className="template-card-icon">
-                    <Icon size={20} aria-hidden />
+                    {listing.thumbnail ? (
+                      <img src={listing.thumbnail} alt="" width={20} height={20} />
+                    ) : (
+                      <Boxes size={20} aria-hidden />
+                    )}
                   </span>
                   <span className="template-card-copy">
-                    {featured && <span className="template-card-kicker">Recommended</span>}
-                    <strong>{title}</strong>
-                    <small>{blurb}</small>
+                    {index === 0 && <span className="template-card-kicker">Recommended</span>}
+                    <strong>{listing.title}</strong>
+                    <small>{listing.description}</small>
+                    <span className="template-card-meta">{formatSize(listing.sizeBytes)}</span>
                   </span>
                   <ArrowRight className="template-card-arrow" size={16} aria-hidden />
                 </button>
