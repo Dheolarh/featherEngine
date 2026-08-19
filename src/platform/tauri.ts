@@ -6,6 +6,7 @@ import {
   exists,
   lstat,
   mkdir,
+  readFile,
   readTextFile,
   watch,
   writeFile,
@@ -301,7 +302,7 @@ export const tauriPlatform: Platform = {
     return typeof dir === 'string' ? dir : null;
   },
 
-  async exportPackage(name, pkg) {
+  async exportPackage(name, bytes) {
     const safe = (name || 'package').replace(/[^\w.\-]+/g, '_');
     const target = await save({
       title: 'Export package',
@@ -309,7 +310,7 @@ export const tauriPlatform: Platform = {
       filters: [{ name: 'NodeForge package', extensions: ['nfpack', 'json'] }],
     });
     if (typeof target !== 'string') return null;
-    await writeTextFile(target, JSON.stringify(pkg));
+    await writeFile(target, bytes);
     return target;
   },
 
@@ -320,7 +321,7 @@ export const tauriPlatform: Platform = {
       filters: [{ name: 'NodeForge package', extensions: ['nfpack', 'json'] }],
     });
     if (typeof target !== 'string') return null;
-    return JSON.parse(await readTextFile(target));
+    return await readFile(target);
   },
 
   async saveBinary(defaultName, bytes, options) {

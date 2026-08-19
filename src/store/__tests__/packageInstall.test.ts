@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useEditorStore } from '../editorStore';
 import { useProjectStore } from '../projectStore';
 import { buildPackage, type NodeForgePackage } from '../../project/package';
+import { writePackageArchive } from '../../project/packageArchive';
+import { dataUrlToBytes } from '../../utils/contentHash';
 
 /**
  * Coverage for the asset store's install path: a package published behind a URL must download,
@@ -14,8 +16,21 @@ const PNG_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 /** Stub `fetch` with a duck-typed response so the test never touches the network. */
-const stubFetch = (response: Partial<Response> & { json: () => Promise<unknown> }) =>
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+const stubFetch = (response: { ok?: boolean; status?: number; statusText?: string; body?: Uint8Array }) =>
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      ...response,
+      arrayBuffer: async () => (response.body ?? new Uint8Array()).buffer,
+    }),
+  );
+
+/** Serve a package the way the store does: as a real `.nfpack` archive carrying its asset bytes. */
+const servePackage = (pkg: NodeForgePackage, bytes = new Map<string, Uint8Array>()) =>
+  stubFetch({ body: writePackageArchive(pkg, bytes) });
 
 interface Published {
   pkg: NodeForgePackage;
@@ -74,7 +89,7 @@ describe('importPackageFromUrl — asset store transport', () => {
   it('downloads a published package and merges it additively with fresh ids', async () => {
     const published = publishTestPackage();
     const prefabsBefore = useEditorStore.getState().prefabs.length;
-    stubFetch({ ok: true, status: 200, statusText: 'OK', json: async () => published.pkg });
+    servePackage(published.pkg, new Map([[published.assetId, dataUrlToBytes(PNG_DATA_URL)]]));
 
     await useProjectStore.getState().importPackageFromUrl('https://store.example/packages/crate.nfpack');
 
@@ -105,7 +120,7 @@ describe('importPackageFromUrl — asset store transport', () => {
 
   it('surfaces an HTTP failure without touching the project', async () => {
     const prefabsBefore = useEditorStore.getState().prefabs.length;
-    stubFetch({ ok: false, status: 404, statusText: 'Not Found', json: async () => ({}) });
+    stubFetch({ ok: false, status: 404, statusText: 'Not Found' });
 
     await useProjectStore.getState().importPackageFromUrl('https://store.example/packages/missing.nfpack');
 
@@ -116,7 +131,7 @@ describe('importPackageFromUrl — asset store transport', () => {
 
   it('rejects a URL that returns JSON which is not a package', async () => {
     const prefabsBefore = useEditorStore.getState().prefabs.length;
-    stubFetch({ ok: true, status: 200, statusText: 'OK', json: async () => ({ hello: 'world' }) });
+    stubFetch({ body: new TextEncoder().encode(JSON.stringify({ hello: 'world' })) });
 
     await useProjectStore.getState().importPackageFromUrl('https://store.example/not-a-package.json');
 

@@ -134,11 +134,13 @@ export interface Platform {
   pickDirectory?(title?: string): Promise<string | null>;
   /**
    * Write a portable template/module package (`.nfpack`). Downloads on web; prompts for a save
-   * location on desktop. Returns a short destination label, or null if cancelled.
+   * location on desktop. Takes the already-serialized container bytes — the format (zip archive or
+   * legacy JSON) is the caller's business, not the platform's. Returns a short destination label,
+   * or null if cancelled.
    */
-  exportPackage(name: string, pkg: unknown): Promise<string | null>;
-  /** Open a `.nfpack` package file and return its parsed JSON, or null if cancelled. */
-  openPackage(): Promise<unknown | null>;
+  exportPackage(name: string, bytes: Uint8Array): Promise<string | null>;
+  /** Open a `.nfpack` file and return its raw bytes, or null if cancelled. */
+  openPackage(): Promise<Uint8Array | null>;
   /**
    * Write arbitrary binary data (e.g. an exported MP4/WebM recording). On desktop, prompts for a
    * save location via a native "Save As" dialog and writes the bytes. On web, downloads via a blob

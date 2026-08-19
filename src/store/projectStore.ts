@@ -3,14 +3,20 @@ import { persist } from 'zustand/middleware';
 import { getPlatform, isDesktop } from '../platform';
 import type { ExportPlatformsReport, ExportTarget } from '../platform/types';
 import { blankProject } from '../project/serialize';
-import { buildGameBundle, embedAssets, stripUnusedAssets, type GameBundle } from '../project/exportGame';
+import { buildGameBundle, embedAssets, mimeForAsset, stripUnusedAssets, type GameBundle } from '../project/exportGame';
 import { verifyGameBundle, type BundleReport } from '../project/verifyBundle';
 import {
   buildPackage,
-  parsePackage,
   remapPackageForImport,
+  type NodeForgePackage,
+  type PackageContent,
   type PackageMeta,
 } from '../project/package';
+import {
+  readPackageFile,
+  writePackageArchive,
+  type PackageArchive,
+} from '../project/packageArchive';
 import type { AssetItem } from '../types';
 import { contentAddressedName, dataUrlToBytes, sha256Hex } from '../utils/contentHash';
 import { useEditorStore } from './editorStore';
@@ -32,7 +38,20 @@ const MAX_ASSET_BYTES = 512 * 1024 * 1024;
  * `source`. External bytes are hash-verified: a mismatch means the file was swapped or truncated in
  * transit, and installing it anyway would silently corrupt the project.
  */
-async function loadPackageAssetBytes(asset: AssetItem): Promise<{ bytes: Uint8Array; mime: string; hash: string }> {
+async function loadPackageAssetBytes(
+  asset: AssetItem,
+  carried?: Uint8Array,
+): Promise<{ bytes: Uint8Array; mime: string; hash: string }> {
+  // Bytes shipped inside the package archive — the common case now, and no network at all.
+  if (carried) {
+    const hash = await sha256Hex(carried);
+    if (asset.hash && hash !== asset.hash) {
+      throw new Error(`"${asset.name}" failed its integrity check — the archive's bytes don't match its manifest.`);
+    }
+    // Archive entries carry no MIME, so derive it from the name — an image labelled
+    // application/octet-stream won't render once it becomes a data URL on the web path.
+    return { bytes: carried, mime: mimeForAsset(asset) ?? 'application/octet-stream', hash };
+  }
   if (asset.data) {
     const bytes = dataUrlToBytes(asset.data);
     return { bytes, mime: mimeFromDataUrl(asset.data), hash: asset.hash ?? (await sha256Hex(bytes)) };
@@ -77,6 +96,7 @@ async function resolvePackageAssets(
   projectDir: string | null,
   platform: Awaited<ReturnType<typeof getPlatform>>,
   existingAssets: AssetItem[] = [],
+  carried: Map<string, Uint8Array> = new Map(),
 ): Promise<AssetItem[]> {
   const onDisk = platform.isDesktop && !!projectDir && projectDir !== 'web';
   const written = new Map<string, { path?: string; url?: string }>(
@@ -87,7 +107,7 @@ async function resolvePackageAssets(
   for (const asset of assets) {
     let loaded: { bytes: Uint8Array; mime: string; hash: string };
     try {
-      loaded = await loadPackageAssetBytes(asset);
+      loaded = await loadPackageAssetBytes(asset, carried.get(asset.id));
     } catch {
       resolved.push({ ...asset, unresolved: true });
       continue;
@@ -139,9 +159,9 @@ interface InstallSummary {
 /**
  * Download a `.nfpack` over HTTP — the asset store's transport. Deliberately separate from the
  * install so a network failure reads differently from a corrupt package, and so the only difference
- * between "opened a file" and "installed from the store" is where the JSON came from.
+ * between "opened a file" and "installed from the store" is where the bytes came from.
  */
-async function fetchPackage(url: string, signal?: AbortSignal): Promise<unknown> {
+async function fetchPackage(url: string, signal?: AbortSignal): Promise<Uint8Array> {
   let response: Response;
   try {
     response = await fetch(url, { signal });
@@ -150,28 +170,53 @@ async function fetchPackage(url: string, signal?: AbortSignal): Promise<unknown>
     throw new Error(`Could not reach ${url}. Check your connection.`);
   }
   if (!response.ok) throw new Error(`Download failed (HTTP ${response.status} ${response.statusText}).`);
-  try {
-    return await response.json();
-  } catch {
-    throw new Error('That URL did not return a package file.');
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+/** Pack a built package into its `.nfpack` container, moving asset bytes out of base64 and into
+ *  archive entries. This is what gets written to disk or uploaded — one file, compressed. */
+function serializePackage(pkg: NodeForgePackage): Uint8Array {
+  const bytes = new Map<string, Uint8Array>();
+  for (const asset of pkg.assets) {
+    if (asset.data) bytes.set(asset.id, dataUrlToBytes(asset.data));
   }
+  return writePackageArchive(pkg, bytes);
 }
 
 /**
- * The shared tail of every package install, whatever the source: validate → re-id everything so the
- * merge is purely additive → materialise asset bytes → append into the project.
+ * The shared tail of every install: re-id everything so the merge is purely additive, materialise
+ * asset bytes, then hand the content to `merge` (append for a module, replace-world for a project).
  */
+async function applyPackage(
+  { pkg, bytes }: PackageArchive,
+  projectDir: string | null,
+  platform: Awaited<ReturnType<typeof getPlatform>>,
+  merge: (content: PackageContent, assets: AssetItem[]) => void,
+): Promise<InstallSummary> {
+  const editor = useEditorStore.getState();
+  const { content, assets } = remapPackageForImport(pkg, editor.skeletons, editor.assets);
+  // The archive keys bytes by the package's ORIGINAL asset ids while remap hands back new ones, so
+  // rekey by content hash — otherwise every carried asset looks absent and falls back to the network.
+  const carried = new Map<string, Uint8Array>();
+  for (const original of pkg.assets) {
+    const data = bytes.get(original.id);
+    if (!data || !original.hash) continue;
+    const match = assets.find((entry) => entry.hash === original.hash);
+    if (match) carried.set(match.id, data);
+  }
+  const resolved = await resolvePackageAssets(assets, projectDir, platform, editor.assets, carried);
+  merge(content, resolved);
+  return { name: pkg.meta?.name ?? 'package', prefabs: content.prefabs.length, assets: resolved.length };
+}
+
+/** Install from raw `.nfpack` bytes — either container: a zip archive or a legacy plain-JSON file. */
 async function installParsedPackage(
-  raw: unknown,
+  input: Uint8Array,
   projectDir: string | null,
   platform: Awaited<ReturnType<typeof getPlatform>>,
 ): Promise<InstallSummary> {
-  const pkg = parsePackage(raw);
   const editor = useEditorStore.getState();
-  const { content, assets } = remapPackageForImport(pkg, editor.skeletons, editor.assets);
-  const resolved = await resolvePackageAssets(assets, projectDir, platform, editor.assets);
-  editor.mergePackage(content, resolved);
-  return { name: pkg.meta?.name ?? 'package', prefabs: content.prefabs.length, assets: resolved.length };
+  return applyPackage(readPackageFile(input), projectDir, platform, editor.mergePackage);
 }
 
 const installedMessage = ({ name, prefabs, assets }: InstallSummary) =>
@@ -542,7 +587,7 @@ export const useProjectStore = create<ProjectState>()(
               ...meta,
             });
             const platform = await getPlatform();
-            const destination = await platform.exportPackage(name, pkg);
+            const destination = await platform.exportPackage(name, serializePackage(pkg));
             if (destination) {
               set({ toast: { kind: 'success', message: `Package exported: ${destination}` } });
             }
@@ -574,7 +619,7 @@ export const useProjectStore = create<ProjectState>()(
               ...meta,
             });
             const platform = await getPlatform();
-            const destination = await platform.exportPackage(name, pkg);
+            const destination = await platform.exportPackage(name, serializePackage(pkg));
             if (destination) {
               const c = collected.content;
               set({
@@ -608,7 +653,7 @@ export const useProjectStore = create<ProjectState>()(
               ...meta,
             });
             const platform = await getPlatform();
-            const destination = await platform.exportPackage(name, pkg);
+            const destination = await platform.exportPackage(name, serializePackage(pkg));
             if (destination) {
               const scenes = collected.content.scenes?.length ?? 0;
               set({
@@ -629,9 +674,8 @@ export const useProjectStore = create<ProjectState>()(
         newProjectFromPackageUrl: async (url, name) => {
           set({ busy: true, error: null });
           try {
-            const raw = await fetchPackage(url);
-            const pkg = parsePackage(raw);
-            if (pkg.kind !== 'project' || !pkg.content.scenes?.length) {
+            const archive = readPackageFile(await fetchPackage(url));
+            if (archive.pkg.kind !== 'project' || !archive.pkg.content.scenes?.length) {
               throw new Error('That package is a module, not a project template. Install it into an open project instead.');
             }
             // Only create the project once we know the package is usable — otherwise a bad download
@@ -640,14 +684,17 @@ export const useProjectStore = create<ProjectState>()(
             if (!get().hasProject) return false;
 
             const platform = await getPlatform();
-            const editor = useEditorStore.getState();
-            const { content, assets } = remapPackageForImport(pkg, editor.skeletons, editor.assets);
-            const resolved = await resolvePackageAssets(assets, get().projectDir, platform, editor.assets);
-            useEditorStore.getState().mergeProjectPackage(content, resolved);
+            const summary = await applyPackage(
+              archive,
+              get().projectDir,
+              platform,
+              useEditorStore.getState().mergeProjectPackage,
+            );
+            const scenes = useEditorStore.getState().scenes.length;
             set({
               toast: {
                 kind: 'success',
-                message: `Created "${name}" from "${pkg.meta?.name ?? 'template'}" (${content.scenes?.length ?? 0} scene(s)).`,
+                message: `Created "${name}" from "${summary.name}" (${scenes} scene(s)).`,
               },
             });
             return true;

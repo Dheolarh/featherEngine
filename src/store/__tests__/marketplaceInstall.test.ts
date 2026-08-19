@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { NodeForgePackage } from '../../project/package';
+import { readPackageFile } from '../../project/packageArchive';
 import type { SceneObject } from '../../types';
 import { useEditorStore } from '../editorStore';
 import { useProjectStore } from '../projectStore';
@@ -17,7 +17,10 @@ import { useMarketplaceStore } from '../marketplaceStore';
 
 const PUBLIC_STORE = join(process.cwd(), 'public', 'store');
 
-/** Serve `public/store/**` off disk, routed by URL path, so no network is involved. */
+/**
+ * Serve `public/store/**` off disk, routed by URL path, so no network is involved. Exposes both
+ * `json()` and `arrayBuffer()` because the catalog is JSON while packages are binary archives.
+ */
 function serveBundledStore() {
   vi.stubGlobal(
     'fetch',
@@ -25,10 +28,22 @@ function serveBundledStore() {
       const path = new URL(String(input), document.baseURI).pathname;
       const relative = path.slice(path.indexOf('/store/') + '/store/'.length);
       try {
-        const body = await readFile(join(PUBLIC_STORE, relative), 'utf8');
-        return { ok: true, status: 200, statusText: 'OK', json: async () => JSON.parse(body) };
+        const body = await readFile(join(PUBLIC_STORE, relative));
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => JSON.parse(body.toString('utf8')),
+          arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+        };
       } catch {
-        return { ok: false, status: 404, statusText: 'Not Found', json: async () => ({}) };
+        return {
+          ok: false,
+          status: 404,
+          statusText: 'Not Found',
+          json: async () => ({}),
+          arrayBuffer: async () => new ArrayBuffer(0),
+        };
       }
     }),
   );
@@ -190,7 +205,7 @@ describe('shipped package integrity', () => {
     expect(files.length).toBeGreaterThan(0);
 
     for (const file of files) {
-      const pkg = JSON.parse(await readFile(join(dir, file), 'utf8')) as NodeForgePackage;
+      const { pkg } = readPackageFile(new Uint8Array(await readFile(join(dir, file))));
       const available = new Set(pkg.assets.map((asset) => asset.id));
       const referenced = new Set<string>();
       const add = (id?: string) => {
@@ -249,7 +264,7 @@ describe('shipped package integrity', () => {
   it('contains no duplicated objects or duplicated asset bytes', async () => {
     const dir = join(PUBLIC_STORE, 'packages');
     for (const file of (await readdir(dir)).filter((entry) => entry.endsWith('.nfpack'))) {
-      const pkg = JSON.parse(await readFile(join(dir, file), 'utf8')) as NodeForgePackage;
+      const { pkg } = readPackageFile(new Uint8Array(await readFile(join(dir, file))));
 
       for (const scene of pkg.content.scenes ?? []) {
         const seen = new Map<string, number>();

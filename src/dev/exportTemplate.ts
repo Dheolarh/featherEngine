@@ -1,6 +1,7 @@
 import { useProjectStore } from '../store/projectStore';
 import { useEditorStore } from '../store/editorStore';
 import { buildPackage } from '../project/package';
+import { writePackageArchive } from '../project/packageArchive';
 import { sha256Hex } from '../utils/contentHash';
 import type { AssetItem } from '../types';
 
@@ -108,8 +109,14 @@ function captureAssetSources(): { sources: Map<string, string>; restore: () => v
   return { sources, restore: () => { window.fetch = original; } };
 }
 
-/** Turn a live project asset into an external package asset (url + hash), dropping its bytes. */
-async function toExternalAsset(asset: AssetItem, sources: Map<string, string>): Promise<AssetItem | null> {
+/**
+ * Read a live project asset's bytes back out, hash them, and recover the public path they came from.
+ * The bytes go INTO the archive; `source` is kept alongside as a fallback for manifest-only reads.
+ */
+async function toPackagedAsset(
+  asset: AssetItem,
+  sources: Map<string, string>,
+): Promise<{ asset: AssetItem; bytes: Uint8Array } | null> {
   if (!asset.url) return null;
   const response = await fetch(asset.url);
   const buffer = await response.arrayBuffer();
@@ -120,13 +127,16 @@ async function toExternalAsset(asset: AssetItem, sources: Map<string, string>): 
     return null;
   }
   return {
-    id: asset.id,
-    name: asset.name,
-    type: asset.type,
-    size: buffer.byteLength,
-    hash,
-    createdAt: asset.createdAt,
-    source: { url, sha256: hash, bytes: buffer.byteLength },
+    asset: {
+      id: asset.id,
+      name: asset.name,
+      type: asset.type,
+      size: buffer.byteLength,
+      hash,
+      createdAt: asset.createdAt,
+      source: { url, sha256: hash, bytes: buffer.byteLength },
+    },
+    bytes: new Uint8Array(buffer),
   };
 }
 
@@ -143,11 +153,11 @@ async function run(key: TemplateKey) {
     const editor = useEditorStore.getState();
     const collected = editor.buildProjectPackage();
     const live = editor.assets.filter((asset) => collected.assetIds.includes(asset.id));
-    const external = (await Promise.all(live.map((asset) => toExternalAsset(asset, sources)))).filter(
-      (asset): asset is AssetItem => !!asset,
+    const packaged = (await Promise.all(live.map((asset) => toPackagedAsset(asset, sources)))).filter(
+      (entry): entry is { asset: AssetItem; bytes: Uint8Array } => !!entry,
     );
 
-    const pkg = buildPackage('project', collected.content, external, {
+    const pkg = buildPackage('project', collected.content, packaged.map((entry) => entry.asset), {
       id: `pkg-feather-${def.slug}`,
       name: def.title,
       description: def.description,
@@ -156,23 +166,26 @@ async function run(key: TemplateKey) {
       tags: def.tags,
     });
 
-    const response = await fetch('/__feather/export-template', {
+    // One file: manifest + every asset, compressed. This is what gets published and downloaded.
+    const archive = writePackageArchive(pkg, new Map(packaged.map((entry) => [entry.asset.id, entry.bytes])));
+    const response = await fetch(`/__feather/export-template?slug=${encodeURIComponent(def.slug)}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ slug: def.slug, pkg }),
+      headers: { 'content-type': 'application/octet-stream' },
+      body: archive,
     });
     if (!response.ok) throw new Error(await response.text());
 
-    const bytes = external.reduce((sum, asset) => sum + (asset.source?.bytes ?? 0), 0);
+    const rawBytes = packaged.reduce((sum, entry) => sum + entry.bytes.byteLength, 0);
     const summary = {
       slug: def.slug,
       scenes: collected.content.scenes?.length ?? 0,
       objects: (collected.content.scenes ?? []).reduce((sum, scene) => sum + scene.objects.length, 0),
       prefabs: collected.content.prefabs.length,
       blueprints: collected.content.blueprints.length,
-      assets: external.length,
-      skipped: live.length - external.length,
-      assetMB: +(bytes / 1048576).toFixed(1),
+      assets: packaged.length,
+      skipped: live.length - packaged.length,
+      rawMB: +(rawBytes / 1048576).toFixed(1),
+      archiveMB: +(archive.byteLength / 1048576).toFixed(1),
     };
     console.info('[template-export] done', summary);
     // Surfaced in the DOM so a headless driver can read the result without a console bridge.

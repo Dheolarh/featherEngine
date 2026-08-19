@@ -3,6 +3,7 @@ import { useEditorStore } from '../editorStore';
 import { useProjectStore } from '../projectStore';
 import { buildPackage, parsePackage, remapPackageForImport } from '../../project/package';
 import { blankProject } from '../../project/serialize';
+import { writePackageArchive } from '../../project/packageArchive';
 import { PREFAB_EDIT_SCENE_ID, type NodeForgeNode } from '../../types';
 
 /**
@@ -139,7 +140,12 @@ describe('kind: project packages', () => {
     );
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK', json: async () => modulePkg }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        arrayBuffer: async () => writePackageArchive(modulePkg, new Map()).buffer,
+      }),
     );
 
     const created = await useProjectStore.getState().newProjectFromPackageUrl('store/mod.nfpack', 'Nope');

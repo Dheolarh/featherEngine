@@ -77,16 +77,21 @@ export const webPlatform: Platform = {
     return null;
   },
 
-  async exportPackage(name, pkg) {
+  async exportPackage(name, bytes) {
     const safe = name.replace(/[^\w.\-]+/g, '_') || 'package';
-    downloadJson(`${safe}.nfpack`, pkg);
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${safe}.nfpack`;
+    anchor.click();
+    URL.revokeObjectURL(url);
     return `${name} downloaded as ${safe}.nfpack`;
   },
 
   async openPackage() {
     const file = await pickPackageFile();
     if (!file) return null;
-    return JSON.parse(await file.text());
+    return new Uint8Array(await file.arrayBuffer());
   },
 
   async saveBinary(defaultName, bytes, options) {

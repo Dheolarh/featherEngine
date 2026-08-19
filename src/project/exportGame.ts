@@ -19,13 +19,15 @@ export interface GameBundle {
   project: NodeForgeProject;
 }
 
-/** Read an asset's bytes (from its runtime `url`) into a self-contained data URL. */
 /**
  * Correct MIME type for an asset, by file extension. The Tauri asset server often reports binary
  * assets (.glb, .mp3, …) as `text/html`, which then poisons the embedded data URL — the player's
  * `<audio>`/texture decoders reject the wrong type. We re-stamp the data URL with this instead.
+ *
+ * Exported so package installs can label bytes unpacked from an archive: those arrive with no MIME
+ * at all, and an image handed back as `application/octet-stream` will not render.
  */
-function mimeForAsset(asset: AssetItem): string | null {
+export function mimeForAsset(asset: AssetItem): string | null {
   const ext = (asset.path ?? asset.name ?? '').toLowerCase().split('.').pop() ?? '';
   switch (ext) {
     case 'glb':

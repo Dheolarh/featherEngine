@@ -40,16 +40,20 @@ function templateExportSink(): Plugin {
           res.statusCode = 405;
           return res.end('POST only');
         }
+        // The body is the finished `.nfpack` archive (binary), so the slug travels in the query.
+        const slug = new URL(req.url ?? '', 'http://localhost').searchParams.get('slug') ?? '';
         const chunks: Buffer[] = [];
         req.on('data', (chunk: Buffer) => chunks.push(chunk));
         req.on('end', () => {
           try {
-            const { slug, pkg } = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-            if (!slug || !/^[a-z0-9-]+$/.test(slug)) throw new Error('bad slug');
+            if (!slug || !/^[a-z0-9-]+$/.test(slug)) throw new Error('bad or missing slug');
+            const bytes = Buffer.concat(chunks);
+            if (!bytes.length) throw new Error('empty body');
             const dir = resolve(__dirname, 'public/store/packages');
             mkdirSync(dir, { recursive: true });
-            writeFileSync(resolve(dir, `${slug}.nfpack`), `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
-            server.config.logger.info(`[template-export] wrote public/store/packages/${slug}.nfpack`);
+            writeFileSync(resolve(dir, `${slug}.nfpack`), bytes);
+            const mb = (bytes.length / 1048576).toFixed(1);
+            server.config.logger.info(`[template-export] wrote public/store/packages/${slug}.nfpack (${mb} MB)`);
             res.setHeader('content-type', 'application/json');
             res.end(JSON.stringify({ ok: true, slug }));
           } catch (error) {

@@ -3,16 +3,19 @@
  * Builds the bundled asset-store catalog: a set of `.nfpack` packages plus the `catalog.json`
  * index that the Asset Store panel reads.
  *
- * The packages here are authored the same way an outside publisher would author them — plain JSON,
- * no engine imports — so this script doubles as the reference for what an upload must look like.
+ * The packages here are authored the same way an outside publisher would author them — plain data,
+ * so this script doubles as the reference for what an upload must look like.
  * Output is byte-stable (fixed ids and timestamps) so rebuilding doesn't churn git.
  *
- * Run: node scripts/build-store-catalog.mjs
+ * Run: npm run build:store  (vite-node, so it can share the container code in src/)
  */
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Run through vite-node so the container format has ONE implementation. A hand-rolled copy of the
+// zip layout here would drift from the engine's reader the first time either changed.
+import { readPackageFile, writePackageArchive } from '../src/project/packageArchive';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'public', 'store');
@@ -109,9 +112,8 @@ const thumbnail = (from, to, glyph) => {
 };
 
 /**
- * Reference a file served by the app as an EXTERNAL package asset: the `.nfpack` carries only the
- * hash and URL, and the installer downloads + verifies the bytes. This is how a package stays a
- * small manifest instead of ballooning into base64 — a 22 MB model would become ~29 MB of JSON.
+ * Read a file from public/ into the package. Its bytes go INTO the archive, and a `source` URL is
+ * kept as a fallback for manifest-only packages. Hash-verified on install either way.
  */
 async function externalAsset(id, publicPath, type) {
   const absolute = join(ROOT, 'public', publicPath);
@@ -119,13 +121,18 @@ async function externalAsset(id, publicPath, type) {
   const { size } = await stat(absolute);
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   return {
-    id,
-    name: publicPath.split('/').pop(),
-    type,
-    size,
-    hash: sha256,
-    createdAt: EPOCH,
-    source: { url: publicPath, sha256, bytes: size },
+    asset: {
+      id,
+      name: publicPath.split('/').pop(),
+      type,
+      size,
+      hash: sha256,
+      createdAt: EPOCH,
+      // Kept alongside the archived bytes as a fallback: if a future package ships manifest-only,
+      // the installer can still fetch from here.
+      source: { url: publicPath, sha256, bytes: size },
+    },
+    bytes: new Uint8Array(bytes),
   };
 }
 
@@ -341,8 +348,9 @@ const PACKS = [
  * where the bytes come from at install time.
  */
 async function buildWeaponPack() {
-  const sword = await externalAsset('asset-store-sword', 'templates/Sword.glb', 'model');
+  const { asset: sword, bytes } = await externalAsset('asset-store-sword', 'templates/Sword.glb', 'model');
   return {
+    assetBytes: new Map([[sword.id, bytes]]),
     slug: 'blade-prop',
     meta: {
       id: 'pkg-feather-blade-prop',
@@ -440,18 +448,11 @@ const TEMPLATE_THUMBNAILS = {
 };
 
 /**
- * Total install footprint: the manifest plus the bytes actually fetched. Deduplicated by content
- * hash, because an install downloads identical bytes once no matter how many entries reference
- * them — counting every entry would overstate the download.
+ * Install footprint = the archive, because the archive IS the download: manifest and every asset in
+ * one compressed file. Identical bytes referenced under two ids are stored once by the container,
+ * so this needs no deduplication of its own.
  */
-function installFootprint(pkg, json) {
-  const unique = new Map();
-  for (const asset of pkg.assets) {
-    const key = asset.hash ?? asset.id;
-    if (!unique.has(key)) unique.set(key, asset.source?.bytes ?? 0);
-  }
-  return Buffer.byteLength(json, 'utf8') + [...unique.values()].reduce((sum, bytes) => sum + bytes, 0);
-}
+const installFootprint = (archiveBytes) => archiveBytes;
 
 /**
  * Refuse to list a package built from a doubled project.
@@ -483,7 +484,7 @@ function detectDoubling(pkg) {
 }
 
 /** The catalog row for a package, whether authored here or exported from the running editor. */
-function catalogEntry({ pkg, slug, file, json, thumbnail }) {
+function catalogEntry({ pkg, slug, file, archiveBytes, thumbnail }) {
   return {
     id: pkg.meta.id,
     slug,
@@ -496,7 +497,7 @@ function catalogEntry({ pkg, slug, file, json, thumbnail }) {
     license: 'CC0-1.0',
     priceCents: 0,
     thumbnail: thumbnail ?? pkg.meta.thumbnail,
-    sizeBytes: installFootprint(pkg, json),
+    sizeBytes: installFootprint(archiveBytes),
     downloadUrl: `packages/${file}`,
     engineVersion: ENGINE_VERSION,
     contents: {
@@ -518,11 +519,12 @@ async function main() {
   const entries = [];
   for (const pack of packs) {
     const pkg = buildPackage(pack.meta, pack.content, pack.assets ?? [], pack.kind ?? 'module');
-    const json = `${JSON.stringify(pkg, null, 2)}\n`;
+    // One file: manifest plus every asset's bytes, compressed.
+    const archive = writePackageArchive(pkg, pack.assetBytes ?? new Map());
     const file = `${pack.slug}.nfpack`;
-    await writeFile(join(PACKAGES_DIR, file), json, 'utf8');
-    entries.push(catalogEntry({ pkg, slug: pack.slug, file, json }));
-    console.log(`  ${file} — ${(Buffer.byteLength(json, 'utf8') / 1024).toFixed(1)} KB`);
+    await writeFile(join(PACKAGES_DIR, file), archive);
+    entries.push(catalogEntry({ pkg, slug: pack.slug, file, archiveBytes: archive.byteLength }));
+    console.log(`  ${file} — ${(archive.byteLength / 1024).toFixed(1)} KB`);
   }
 
   // Starter templates are produced by the running editor (`?exportTemplate=<key>`, written by the
@@ -533,17 +535,15 @@ async function main() {
     .sort();
   const doubled = [];
   for (const file of exported) {
-    const json = await readFile(join(PACKAGES_DIR, file), 'utf8');
-    const pkg = JSON.parse(json);
+    const raw = new Uint8Array(await readFile(join(PACKAGES_DIR, file)));
+    const { pkg } = readPackageFile(raw);
     const problems = detectDoubling(pkg);
     if (problems.length) doubled.push(`  ${file}: ${problems.join('; ')}`);
     const slug = file.replace(/\.nfpack$/, '');
     const [from, to, glyph] = TEMPLATE_THUMBNAILS[slug] ?? ['#5B8CFF', '#1B2C63', '\u{1F5FA}'];
-    entries.push(catalogEntry({ pkg, slug, file, json, thumbnail: thumbnail(from, to, glyph) }));
-    const entry = entries[entries.length - 1];
+    entries.push(catalogEntry({ pkg, slug, file, archiveBytes: raw.byteLength, thumbnail: thumbnail(from, to, glyph) }));
     console.log(
-      `  ${file} — manifest ${(Buffer.byteLength(json, 'utf8') / 1024).toFixed(0)} KB, ` +
-        `install ${(entry.sizeBytes / 1048576).toFixed(1)} MB (exported from the editor)`,
+      `  ${file} — ${(raw.byteLength / 1048576).toFixed(1)} MB single file (exported from the editor)`,
     );
   }
 

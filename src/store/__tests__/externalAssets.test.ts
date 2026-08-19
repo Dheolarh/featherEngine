@@ -6,6 +6,7 @@ import { useEditorStore } from '../editorStore';
 import { useProjectStore } from '../projectStore';
 import type { AssetItem } from '../../types';
 import type { NodeForgePackage } from '../../project/package';
+import { writePackageArchive } from '../../project/packageArchive';
 import { blankProject } from '../../project/serialize';
 
 /**
@@ -91,14 +92,26 @@ function packageWithExternalModel(overrides: {
   };
 }
 
-/** Serve `public/**` off disk plus any in-memory packages, routed by URL path. */
+/**
+ * Serve `public/**` off disk plus any in-memory packages, routed by URL path. Packages are served
+ * as real `.nfpack` archives — manifest-only here, so these tests still exercise the EXTERNAL
+ * `source` fetch path rather than bytes carried inside the container.
+ */
 function serve(packages: Record<string, NodeForgePackage>) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL) => {
       const path = new URL(String(input), document.baseURI).pathname.replace(/^\//, '');
       const pkg = packages[path];
-      if (pkg) return { ok: true, status: 200, statusText: 'OK', json: async () => pkg };
+      if (pkg) {
+        const archive = writePackageArchive(pkg, new Map());
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          arrayBuffer: async () => archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength),
+        };
+      }
       try {
         const bytes = await readFile(join(PUBLIC, path));
         return {
