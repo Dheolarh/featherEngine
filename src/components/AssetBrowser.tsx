@@ -233,7 +233,8 @@ export function AssetBrowser() {
   }, [folders]);
 
   const importFiles = async (files: FileList | File[], folderId?: string) => {
-    const all = Array.from(files);
+    const dropped = Array.from(files);
+    const all = dropped.filter((file) => isAccepted(file.name));
     const platform = await getPlatform();
     const dir = projectDir ?? 'web';
     const items: AssetItem[] = [];
@@ -253,7 +254,8 @@ export function AssetBrowser() {
         // The whole selection is passed along so the FBX's sibling texture images resolve.
         let file = original;
         if (/\.fbx$/i.test(original.name)) {
-          const converted = await fbxToGlb(original, all);
+          // Sidecar images may be TGA/BMP (Unreal-style) and are not imported as their own assets.
+          const converted = await fbxToGlb(original, dropped);
           file = converted.file;
           if (converted.droppedTextures > 0) strippedTextures = true;
         }

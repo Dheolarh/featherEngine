@@ -23,6 +23,7 @@ import {
   type FeatherVariableDeclaration,
   type FeatherEventHandler,
 } from './featherParser';
+import { isBlockingFeatherWarning, suggestIdentifier } from './featherDiagnostics';
 
 export interface FeatherCompileResult {
   ok: boolean;
@@ -74,13 +75,16 @@ interface ValueRef {
 const RESERVED_CALLEES = new Set([
   'print', 'wait', 'destroy', 'fire_event', 'apply_damage', 'apply_force', 'apply_impulse', 'apply_torque',
   'set_var', 'get_var', 'set_position', 'set_rotation', 'set_scale', 'look_at', 'set_velocity', 'set_physics',
-  'set_visible', 'set_active', 'set_joint_motor', 'spawn_object', 'spawn_prefab', 'explode', 'spawn_decal', 'cooldown', 'do_once', 'cast',
+  'set_visible', 'set_active', 'set_joint_motor', 'set_ragdoll', 'tween', 'fracture',
+  'burst_particles', 'set_particles', 'spawn_particles', 'play_animation', 'set_movement_mode',
+  'enter_vehicle', 'exit_vehicle', 'spawn_projectile', 'spawn_attached', 'cut_cable', 'set_cable_length',
+  'spawn_object', 'spawn_prefab', 'explode', 'spawn_decal', 'cooldown', 'do_once', 'cast',
   'find_actor', 'find_actors', 'raycast', 'overlap_sphere', 'sphere_cast', 'contact_normal', 'contact_point', 'impact_speed', 'velocity', 'cable_tension', 'position', 'rotation',
   'scale', 'node_value', 'last_spawned', 'cycle', 'vec3', 'min', 'max', 'clamp', 'lerp', 'distance', 'normalize',
   'length', 'dot', 'map_range', 'abs', 'round', 'floor', 'sin', 'cos', 'pow', 'random', 'random_int', 'range',
   'append', 'vec_add', 'vec_sub', 'vec_scale',
   'if', 'else', 'elif', 'for', 'while', 'match', 'return', 'pass', 'on', 'function', 'var', 'blueprint',
-  'detached', 'none', 'true', 'false', 'self', 'other', 'payload',
+  'detached', 'none', 'true', 'false', 'self', 'other', 'payload', 'node',
 ]);
 
 const sanitizeIdentifier = (value: string | undefined, fallback: string): string => {
@@ -324,6 +328,55 @@ const parseLiteral = (raw: string | undefined): GraphValue | undefined => {
   return undefined;
 };
 
+/** Parse `{ enabled: true, body: "dynamic" }` into a key → raw-expression map. */
+const parseObjectLiteral = (raw: string | undefined): Map<string, string> => {
+  const map = new Map<string, string>();
+  if (!raw) return map;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return map;
+  for (const part of splitTopLevel(trimmed.slice(1, -1))) {
+    let quote: '"' | "'" | null = null;
+    let escaped = false;
+    let depth = 0;
+    let colon = -1;
+    for (let i = 0; i < part.length; i += 1) {
+      const ch = part[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (quote) {
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+        continue;
+      }
+      if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+      if (ch === ')' || ch === ']' || ch === '}') depth = Math.max(0, depth - 1);
+      if (ch === ':' && depth === 0) {
+        colon = i;
+        break;
+      }
+    }
+    if (colon < 0) continue;
+    const key = part.slice(0, colon).trim();
+    if (IDENTIFIER.test(key)) map.set(key, part.slice(colon + 1).trim());
+  }
+  return map;
+};
+
+const PHYSICS_BODIES = new Set(['dynamic', 'fixed', 'kinematic']);
+const PHYSICS_COLLIDERS = new Set(['box', 'sphere', 'capsule', 'mesh', 'convex']);
+const TWEEN_PROPERTIES = new Set(['position', 'rotation', 'scale']);
+const TWEEN_EASINGS = new Set(['linear', 'easeIn', 'easeOut', 'easeInOut']);
+const MOVEMENT_MODES = new Set(['walking', 'swimming', 'climbing', 'flying']);
+
 const dataForLiteral = (value: GraphValue | undefined, fallbackType: GraphValueType): Partial<NodeForgeNodeData> => {
   const type = value === undefined ? fallbackType : Array.isArray(value) ? 'vector3' : typeof value === 'boolean' ? 'boolean' : typeof value === 'string' ? 'string' : 'number';
   if (type === 'string') return { valueType: 'string', stringValue: String(value ?? '') };
@@ -349,15 +402,18 @@ class FeatherGraphBuilder {
   private currentRoot?: NodeForgeNode;
   /** Innermost-first loop variable bindings ("index"/"actor" → the loop node's value-out). */
   private readonly loopBindings: Array<{ name: string; ref: ValueRef }> = [];
+  private readonly knownFunctions = new Set<string>();
   private cursorY = 60;
 
   constructor(
     private readonly blueprint: ScriptBlueprint,
     variables: ProjectVariable[],
     blueprints?: ScriptBlueprint[],
+    functionNames: Iterable<string> = [],
   ) {
     this.projectVariableByName = new Map(variables.map((variable) => [sanitizeIdentifier(variable.name, variable.id), variable]));
     this.blueprints = blueprints ?? [];
+    for (const name of functionNames) this.knownFunctions.add(sanitizeIdentifier(name, name).toLowerCase());
   }
 
   /** Resolve a blueprint display name (as the printer quotes it) back to its id. */
@@ -584,6 +640,15 @@ class FeatherGraphBuilder {
     this.attachWiredValue(node, 'target', targetRaw, 'string');
   }
 
+  /** Named args win; a compact `{ key: value }` object (printer form of set_physics / Environment.set) fills the rest. */
+  private mergeCallProps(call: ParsedCall, objectIndex = 1): Map<string, string> {
+    const props = new Map(call.named);
+    for (const [key, value] of parseObjectLiteral(call.positional[objectIndex])) {
+      if (!props.has(key)) props.set(key, value);
+    }
+    return props;
+  }
+
   private compileReturn(statement: Extract<FeatherStatement, { kind: 'ReturnStatement' }>): CompiledChain {
     const node = this.addNode('logic.functionReturn', {}, 1);
     if (statement.value && statement.value.raw !== 'none') {
@@ -601,6 +666,12 @@ class FeatherGraphBuilder {
     if (statement.target === 'Time.scale') {
       const node = this.addNode('action.setTimeScale', {}, 1);
       this.attachValueOrLiteral(node, 'scale', statement.value.raw, 'number', 'numberValue');
+      return { first: node.id, exits: [out(node)] };
+    }
+
+    if (statement.target === 'Time.of_day') {
+      const node = this.addNode('action.setTimeOfDay', {}, 1);
+      this.attachValueOrLiteral(node, 'time', statement.value.raw, 'number', 'timeOfDay');
       return { first: node.id, exits: [out(node)] };
     }
 
@@ -628,7 +699,11 @@ class FeatherGraphBuilder {
     if (!call) return this.comment(expression, `Unsupported expression: ${expression.raw}`);
 
     const node = this.nodeForCall(call);
-    if (!node) return this.comment(expression, `Unsupported call: ${expression.raw}`);
+    if (!node) {
+      const last = this.diagnostics[this.diagnostics.length - 1];
+      if (last?.message.startsWith('Unknown function')) return { exits: [] };
+      return this.comment(expression, `Unsupported call: ${expression.raw}`);
+    }
     return { first: node.id, exits: [out(node)] };
   }
 
@@ -641,6 +716,11 @@ class FeatherGraphBuilder {
     };
 
     switch (call.callee) {
+      case 'node': {
+        const kind = (unquote(call.positional[0] ?? '') ?? '') as GraphNodeKind;
+        if (!kind.includes('.')) return undefined;
+        return this.addNode(kind, {}, 1);
+      }
       case 'print': {
         const node = this.addNode('action.print', {}, 1);
         this.attachValueOrLiteral(node, 'message', rawArg('message', 0) ?? '""', 'string', 'message');
@@ -787,6 +867,163 @@ class FeatherGraphBuilder {
         this.attachValueOrLiteral(node, 'on', rawArg('on', 1), 'boolean', 'booleanValue');
         return node;
       }
+      case 'set_physics': {
+        const props = this.mergeCallProps(call, 1);
+        const body = unquote(props.get('body') ?? '') ?? 'dynamic';
+        const collider = unquote(props.get('collider') ?? '') ?? 'box';
+        const node = this.addNode(
+          'action.setPhysics',
+          {
+            physicsBodyType: (PHYSICS_BODIES.has(body) ? body : 'dynamic') as NodeForgeNodeData['physicsBodyType'],
+            physicsCollider: (PHYSICS_COLLIDERS.has(collider) ? collider : 'box') as NodeForgeNodeData['physicsCollider'],
+          },
+          1,
+        );
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachValueOrLiteral(node, 'enabled', props.get('enabled'), 'boolean', 'physicsEnabled');
+        this.attachValueOrLiteral(node, 'mass', props.get('mass'), 'number', 'physicsMass');
+        return node;
+      }
+      case 'set_ragdoll': {
+        const node = this.addNode('action.setRagdoll', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachValueOrLiteral(node, 'on', rawArg('on', 1), 'boolean', 'booleanValue');
+        return node;
+      }
+      case 'tween': {
+        const property = unquote(call.named.get('property') ?? '') ?? 'position';
+        const easing = unquote(call.named.get('easing') ?? '') ?? 'easeInOut';
+        const node = this.addNode(
+          'action.tweenProperty',
+          {
+            tweenProperty: (TWEEN_PROPERTIES.has(property) ? property : 'position') as NodeForgeNodeData['tweenProperty'],
+            easing: (TWEEN_EASINGS.has(easing) ? easing : 'easeInOut') as NodeForgeNodeData['easing'],
+          },
+          1,
+        );
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachValueOrLiteral(node, 'to', call.named.get('to') ?? call.positional[1], 'vector3', 'vectorValue');
+        this.attachValueOrLiteral(node, 'duration', call.named.get('duration'), 'number', 'numberValue');
+        return node;
+      }
+      case 'fracture': {
+        const node = this.addNode('action.fractureObject', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        return node;
+      }
+      case 'burst_particles': {
+        const node = this.addNode('action.burstParticles', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachValueOrLiteral(node, 'count', rawArg('count', 1), 'number', 'numberValue');
+        return node;
+      }
+      case 'set_particles': {
+        const node = this.addNode('action.setParticlesEmitting', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachValueOrLiteral(node, 'on', rawArg('on', 1), 'boolean', 'booleanValue');
+        return node;
+      }
+      case 'spawn_particles': {
+        const node = this.addNode('action.spawnParticleSystem', { particleSystemId: stringArg('systemId', 0, '') || undefined }, 1);
+        this.attachWiredValue(node, 'location', call.named.get('location'), 'vector3');
+        const attach = parseLiteral(call.named.get('attach') ?? '');
+        if (typeof attach === 'boolean') node.data = { ...node.data, particleAttach: attach };
+        return node;
+      }
+      case 'play_animation':
+      case 'Animator.play': {
+        const node = this.addNode(
+          'action.playAnimation',
+          { animationId: stringArg('animationId', 0, '') || undefined },
+          1,
+        );
+        this.applyTargetArg(node, call.named.get('target'));
+        this.attachValueOrLiteral(node, 'speed', call.named.get('speed'), 'number', 'animationSpeed');
+        return node;
+      }
+      case 'set_movement_mode': {
+        const mode = unquote(rawArg('mode', 1) ?? '') ?? 'walking';
+        const node = this.addNode(
+          'action.setMovementMode',
+          { movementMode: (MOVEMENT_MODES.has(mode) ? mode : 'walking') as NodeForgeNodeData['movementMode'] },
+          1,
+        );
+        this.applyTargetArg(node, rawArg('target', 0));
+        return node;
+      }
+      case 'enter_vehicle': {
+        const node = this.addNode('action.enterVehicle', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        return node;
+      }
+      case 'exit_vehicle': {
+        const node = this.addNode('action.exitVehicle', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        const offset = call.named.get('offset') ?? call.positional[1];
+        const literal = parseLiteral(offset);
+        if (Array.isArray(literal)) node.data = { ...node.data, vectorValue: literal };
+        else if (offset) this.attachWiredValue(node, 'offset', offset, 'vector3');
+        return node;
+      }
+      case 'spawn_projectile': {
+        const node = this.addNode('action.spawnProjectile', {}, 1);
+        this.attachValueOrLiteral(node, 'speed', call.named.get('speed') ?? call.positional[0], 'number', 'projectileSpeed');
+        this.attachValueOrLiteral(node, 'damage', call.named.get('damage') ?? call.positional[1], 'number', 'projectileDamage');
+        return node;
+      }
+      case 'spawn_attached': {
+        const node = this.addNode(
+          'action.spawnAttached',
+          {
+            assetId: stringArg('assetId', 0, '') || undefined,
+            attachBoneName: unquote(call.named.get('bone') ?? '') || undefined,
+            attachSocketName: unquote(call.named.get('socket') ?? '') || undefined,
+          },
+          1,
+        );
+        this.applyTargetArg(node, call.named.get('target'));
+        return node;
+      }
+      case 'cut_cable': {
+        const node = this.addNode('action.cutCable', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        return node;
+      }
+      case 'set_cable_length': {
+        const node = this.addNode('action.setCableLength', {}, 1);
+        this.applyTargetArg(node, rawArg('target', 0));
+        this.attachValueOrLiteral(node, 'length', rawArg('length', 1), 'number', 'numberValue');
+        return node;
+      }
+      case 'Camera.set': {
+        const node = this.addNode('action.setCamera', {}, 1);
+        this.attachWiredValue(node, 'distance', call.named.get('distance') ?? call.positional[0], 'number');
+        this.attachWiredValue(node, 'height', call.named.get('height') ?? call.positional[1], 'number');
+        return node;
+      }
+      case 'Screen.fade': {
+        const color = unquote(call.named.get('color') ?? '');
+        const node = this.addNode('action.screenFade', color ? { fadeColor: color } : {}, 1);
+        this.attachValueOrLiteral(node, 'to', rawArg('to', 0), 'number', 'fadeTo');
+        this.attachValueOrLiteral(node, 'duration', call.named.get('duration'), 'number', 'numberValue');
+        return node;
+      }
+      case 'Replay.start': {
+        const node = this.addNode('action.startReplay', {}, 1);
+        this.attachValueOrLiteral(node, 'seconds', rawArg('seconds', 0), 'number', 'numberValue');
+        return node;
+      }
+      case 'Environment.set': {
+        const objectRaw = call.positional[0]?.trim().startsWith('{') ? call.positional[0] : undefined;
+        const props = objectRaw ? parseObjectLiteral(objectRaw) : call.named;
+        const envPatch: NonNullable<NodeForgeNodeData['envPatch']> = {};
+        for (const [key, value] of props) {
+          const lit = parseLiteral(value);
+          if (lit === undefined) continue;
+          (envPatch as Record<string, GraphValue>)[key] = lit;
+        }
+        return this.addNode('action.setEnvironment', { envPatch }, 1);
+      }
       case 'UI.show':
         return this.addNode('ui.show', { documentId: stringArg('documentId', 0, '') || undefined }, 1);
       case 'UI.hide':
@@ -851,8 +1088,17 @@ class FeatherGraphBuilder {
     }
   }
 
-  private buildCallFunction(call: ParsedCall, depth: number): NodeForgeNode {
-    const node = this.addNode('logic.callFunction', { functionName: sanitizeIdentifier(call.callee, 'MyFunction') }, depth);
+  private buildCallFunction(call: ParsedCall, depth: number): NodeForgeNode | undefined {
+    const name = sanitizeIdentifier(call.callee, 'MyFunction');
+    if (!this.knownFunctions.has(name.toLowerCase())) {
+      const hint = suggestIdentifier(call.callee, [...RESERVED_CALLEES, ...this.knownFunctions]);
+      this.warning(
+        { line: 1, column: 1, length: call.callee.length || 1 },
+        `Unknown function "${call.callee}"${hint ? ` — did you mean ${hint}()?` : '. Declare it with `function Name:` first, or use a built-in.'}`,
+      );
+      return undefined;
+    }
+    const node = this.addNode('logic.callFunction', { functionName: name }, depth);
     (['a', 'b', 'c'] as const).forEach((handle, index) => {
       const raw = call.named.get(handle) ?? call.positional[index];
       if (raw !== undefined) this.attachWiredValue(node, handle, raw, 'number');
@@ -941,6 +1187,7 @@ class FeatherGraphBuilder {
         const rootKind = this.currentRoot.data.nodeKind;
         if (trimmed === 'payload' && rootKind === 'event.custom') return { nodeId: this.currentRoot.id, sourceHandle: 'value-out' };
         if (trimmed === 'amount' && rootKind === 'event.receiveDamage') return { nodeId: this.currentRoot.id, sourceHandle: 'value-out' };
+        if (trimmed === 'speed' && rootKind === 'event.land') return { nodeId: this.currentRoot.id, sourceHandle: 'value-out' };
         if ((trimmed === 'a' || trimmed === 'b' || trimmed === 'c') && rootKind === 'event.functionEntry') {
           return { nodeId: this.currentRoot.id, sourceHandle: `arg-${trimmed}` };
         }
@@ -960,6 +1207,7 @@ class FeatherGraphBuilder {
     if (trimmed === 'self.is_grounded()') return ref(this.addNode('query.grounded', {}, depth));
     if (trimmed === 'self.vehicle_speed()') return ref(this.addNode('query.vehicleSpeed', {}, depth));
     if (trimmed === 'Player.location') return ref(this.addNode('ai.playerLocation', {}, depth));
+    if (trimmed === 'Time.of_day') return ref(this.addNode('query.getTimeOfDay', {}, depth));
     if (trimmed === 'AI.distance_to_player()') return ref(this.addNode('ai.distanceToPlayer', {}, depth));
     if (trimmed === 'AI.direction_to_player()') return ref(this.addNode('ai.directionToPlayer', {}, depth));
     if (trimmed === 'AI.has_line_of_sight()') return ref(this.addNode('ai.hasLineOfSight', {}, depth));
@@ -1097,7 +1345,8 @@ class FeatherGraphBuilder {
         }
         default:
           if (IDENTIFIER.test(call.callee) && !RESERVED_CALLEES.has(call.callee)) {
-            return ref(this.buildCallFunction(call, depth));
+            const fn = this.buildCallFunction(call, depth);
+            return fn ? ref(fn) : undefined;
           }
       }
     }
@@ -1189,6 +1438,8 @@ class FeatherGraphBuilder {
         return this.addNode('event.receiveDamage', {}, 0);
       case 'timer':
         return this.addNode('event.timer', { numberValue: Number(handler.args[0] ?? 1) || 1 }, 0);
+      case 'land':
+        return this.addNode('event.land', {}, 0);
       default:
         return this.addNode('event.custom', { eventName: sanitizeIdentifier(handler.eventName, 'CustomEvent') }, 0);
     }
@@ -1278,12 +1529,21 @@ export const compileFeatherScriptToGraph = (options: FeatherCompileOptions): Fea
   const errors = parsed.diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
   if (errors.length) return { ok: false, diagnostics: parsed.diagnostics };
 
-  const builder = new FeatherGraphBuilder(options.blueprint, options.variables, options.blueprints);
+  const builder = new FeatherGraphBuilder(
+    options.blueprint,
+    options.variables,
+    options.blueprints,
+    parsed.program.functions.map((fn) => fn.name),
+  );
   for (const handler of parsed.program.handlers) builder.compileHandler(handler);
   for (const fn of parsed.program.functions) builder.compileFunction(fn);
   if (parsed.program.detached) builder.compileDetached(parsed.program.detached.body);
 
   const diagnostics = [...parsed.diagnostics, ...builder.diagnosticsList()];
+  if (diagnostics.some(isBlockingFeatherWarning)) {
+    return { ok: false, diagnostics };
+  }
+
   const nextBlueprint: ScriptBlueprint = {
     ...options.blueprint,
     name: parsed.program.blueprint?.name ? parsed.program.blueprint.name.replace(/_/g, ' ') : options.blueprint.name,

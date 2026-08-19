@@ -52,6 +52,7 @@ import { valueTrace, setValueTraceEnabled, formatTraceValue } from '../runtime/v
 import { FEATHER_SIDEBAR_API, getFeatherCompletions, type FeatherApiEntry, type FeatherCompletion } from '../scripting/featherApi';
 import { compileFeatherScriptToGraph } from '../scripting/featherCompiler';
 import { parseFeatherScript, type FeatherDiagnostic } from '../scripting/featherParser';
+import { isBlockingFeatherWarning } from '../scripting/featherDiagnostics';
 import { graphToFeatherScript } from '../scripting/featherScript';
 import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { confirmAction } from '../store/confirmStore';
@@ -175,10 +176,6 @@ const essentialNodes: Array<{ label: string; category: GraphNodeCategory }> = [
   { label: 'Collision Enter', category: 'Events' },
   { label: 'Key Down', category: 'Events' },
 ];
-
-const isBlockingFeatherWarning = (diagnostic: FeatherDiagnostic) =>
-  diagnostic.severity === 'warning' &&
-  !diagnostic.message.startsWith('Add a blueprint declaration at the top');
 
 const handleTabListKeyDown = (
   event: ReactKeyboardEvent<HTMLDivElement>,

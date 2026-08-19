@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Bug } from 'lucide-react';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
+import { scanBlueprintGraphProblems } from '../store/editor/graphDiagnostics';
 import type { AssetItem, Prefab, ProjectGraph, ScriptBlueprint, SceneObject, UIDocument, ProjectVariable } from '../types';
 
 export interface Problem {
@@ -10,6 +11,8 @@ export interface Problem {
   objectId?: string;
   /** …or open this blueprint. */
   blueprintId?: string;
+  /** Select this graph node once the blueprint is open. */
+  nodeId?: string;
 }
 
 const SPAWN_KINDS = new Set(['action.spawnObject', 'action.spawnPrefab', 'action.spawnProjectile', 'action.spawnParticleSystem']);
@@ -143,6 +146,7 @@ export function scanProblems(
         }
       }
     }
+    problems.push(...scanBlueprintGraphProblems(blueprint, graph, variables));
   }
 
   // Prefab template health: refs captured INSIDE a prefab go stale silently and ship into every stamp.
@@ -220,6 +224,7 @@ export function ProblemsButton() {
   const prefabs = useEditorStore((state) => state.prefabs);
   const selectObject = useEditorStore((state) => state.selectObject);
   const setActiveBlueprint = useEditorStore((state) => state.setActiveBlueprint);
+  const selectGraphNode = useEditorStore((state) => state.selectGraphNode);
   const [open, setOpen] = useState(false);
   const frozen = useRef<Problem[]>([]);
 
@@ -258,6 +263,7 @@ export function ProblemsButton() {
                 onClick={() => {
                   if (problem.objectId) selectObject(problem.objectId);
                   if (problem.blueprintId) setActiveBlueprint(problem.blueprintId);
+                  if (problem.nodeId) selectGraphNode(problem.nodeId);
                   setOpen(false);
                 }}
               >

@@ -128,10 +128,12 @@ export const clearSaveSlot = (slot: string) => {
 export const hasSaveSlot = (slot: string): boolean => readSaveSlot(slot) !== null;
 
 export const toNumber = (value: GraphValue | undefined): number => {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'boolean') return value ? 1 : 0;
-  if (typeof value === 'string') return Number(value) || 0;
-  return Array.isArray(value) ? value[0] : 0;
+  let n: number;
+  if (typeof value === 'number') n = value;
+  else if (typeof value === 'boolean') n = value ? 1 : 0;
+  else if (typeof value === 'string') n = Number(value);
+  else n = Array.isArray(value) ? Number(value[0]) : 0;
+  return Number.isFinite(n) ? n : 0;
 };
 
 export const toBoolean = (value: GraphValue | undefined): boolean => {
@@ -142,7 +144,9 @@ export const toBoolean = (value: GraphValue | undefined): boolean => {
 };
 
 export const toVector3 = (value: GraphValue | undefined): Vector3Tuple =>
-  Array.isArray(value) ? ([value[0], value[1], value[2]] as Vector3Tuple) : [toNumber(value), 0, 0];
+  Array.isArray(value)
+    ? ([toNumber(value[0]), toNumber(value[1]), toNumber(value[2])] as Vector3Tuple)
+    : [toNumber(value), 0, 0];
 
 export const graphValueToString = (value: GraphValue | undefined): string => {
   if (value === undefined) return '';

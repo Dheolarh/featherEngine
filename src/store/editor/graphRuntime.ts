@@ -1,5 +1,6 @@
 import type { Edge } from '@xyflow/react';
 import type { NodeForgeNode, ProjectGraph } from '../../types';
+import { isStructuralGraphConnection } from './wireTypes';
 
 const LAYOUT_COL = 264;
 const LAYOUT_ROW = 152;
@@ -120,6 +121,10 @@ export const buildGraphRuntime = (graph: ProjectGraph): GraphRuntime => {
   const incomingValueByHandle = new Map<string, Map<string, Edge>>();
 
   graph.edges.forEach((edge) => {
+    const sourceNode = nodesById.get(edge.source);
+    const targetNode = nodesById.get(edge.target);
+    if (!sourceNode || !targetNode || edge.source === edge.target) return;
+    if (!isStructuralGraphConnection(edge.sourceHandle, edge.targetHandle)) return;
     const isValueEdge = Boolean(edge.targetHandle && edge.targetHandle !== 'exec-in');
     if (isValueEdge) {
       const existing = incomingValues.get(edge.target);

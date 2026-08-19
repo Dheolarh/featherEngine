@@ -135,3 +135,28 @@ export const valueTypesCompatible = (
   if (source === 'any' || target === 'any') return true;
   return source === target;
 };
+
+/** Exec and value pins must not mix. Type mismatches are allowed here — Play coerces the value. */
+export const isStructuralGraphConnection = (sourceHandle?: string | null, targetHandle?: string | null): boolean => {
+  const srcExec = (sourceHandle ?? 'exec-out').startsWith('exec');
+  const tgtExec = (targetHandle ?? 'exec-in').startsWith('exec');
+  return srcExec === tgtExec;
+};
+
+/** Same rules as the Blueprint editor's isValidConnection — used by store/AI so bad wires never land. */
+export const isGraphConnectionValid = (
+  sourceKind: GraphNodeKind,
+  targetKind: GraphNodeKind,
+  sourceHandle?: string | null,
+  targetHandle?: string | null,
+  sourceValueType?: GraphValueType,
+  targetValueType?: GraphValueType,
+): boolean => {
+  if (!isStructuralGraphConnection(sourceHandle, targetHandle)) return false;
+  const srcExec = (sourceHandle ?? 'exec-out').startsWith('exec');
+  if (srcExec) return true;
+  return valueTypesCompatible(
+    outputTypeForHandle(sourceKind, sourceHandle ?? 'value-out', sourceValueType),
+    inputTypeForHandle(targetKind, targetHandle, targetValueType),
+  );
+};

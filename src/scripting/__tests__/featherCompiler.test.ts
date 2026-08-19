@@ -100,4 +100,39 @@ describe('compileFeatherScriptToGraph', () => {
     expect(result.blueprint?.featherSource).toBe(source);
     expect(result.graph?.nodes.some((node) => node.data.nodeKind === 'action.jump')).toBe(true);
   });
+
+  it('refuses unsupported statements instead of compiling them into comment nodes', () => {
+    const result = compileFeatherScriptToGraph({
+      blueprint,
+      graph,
+      variables: [],
+      source: ['blueprint Player', '', 'on start:', '    for x in bananas:', '        print(x)'].join('\n'),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.some((diagnostic) => diagnostic.message.toLowerCase().includes('unsupported'))).toBe(true);
+  });
+
+  it('refuses unknown function calls, with a typo hint', () => {
+    const result = compileFeatherScriptToGraph({
+      blueprint,
+      graph,
+      variables: [],
+      source: ['blueprint Player', '', 'on start:', '    prnt("Ready")'].join('\n'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes('did you mean print()'))).toBe(true);
+  });
+
+  it('still compiles a call when the function is declared in the same script', () => {
+    const result = compileFeatherScriptToGraph({
+      blueprint,
+      graph,
+      variables: [],
+      source: ['blueprint Player', '', 'on start:', '    Boost(1)', '', 'function Boost(a, b, c):', '    print(a)'].join('\n'),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.graph?.nodes.some((node) => node.data.nodeKind === 'logic.callFunction')).toBe(true);
+  });
 });

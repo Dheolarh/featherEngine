@@ -243,6 +243,8 @@ import {
   type ProjectileSetup,
 } from './editor/objectFactory';
 import { getGraphRuntimeMap, layoutGraphNodes } from './editor/graphRuntime';
+import { isGraphConnectionValid, inputTypeForHandle } from './editor/wireTypes';
+import { sanitizeGraph, scanBlueprintGraphProblems } from './editor/graphDiagnostics';
 import { buildContactIndex, contactMatches, contactOthers, contactTouches, firstContactEvent, firstContactOther, toIdSet, toLowerCaseSet } from './editor/runtimeIndexes';
 import { makeId, stripUndefined } from './editor/ids';
 import { compileFeatherScriptToGraph, type FeatherCompileResult } from '../scripting/featherCompiler';
@@ -5528,6 +5530,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const blueprint = state.blueprints.find((item) => item.id === blueprintId);
       if (!blueprint) return state;
+      const graph = state.graphs.find((item) => item.id === blueprint.graphId);
+      const sourceNode = graph?.nodes.find((node) => node.id === sourceId);
+      const targetNode = graph?.nodes.find((node) => node.id === targetId);
+      if (!sourceNode || !targetNode || sourceId === targetId) return state;
+      if (
+        !isGraphConnectionValid(
+          sourceNode.data.nodeKind,
+          targetNode.data.nodeKind,
+          sourceHandle,
+          targetHandle,
+          sourceNode.data.valueType,
+          targetNode.data.valueType,
+        )
+      ) {
+        return state;
+      }
       const isValueEdge = Boolean(targetHandle && targetHandle !== 'exec-in');
       return {
         blueprints: invalidateFeatherSourceForGraph(state.blueprints, blueprint.graphId),
@@ -5619,12 +5637,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               source: idMap.get(edge.source)!,
               target: idMap.get(edge.target)!,
             }));
-          return {
+          const next = {
             ...graph,
-            // The pasted set becomes the new selection (originals deselect) so repeat-paste cascades read clearly.
             nodes: [...graph.nodes.map((node) => (node.selected ? { ...node, selected: false } : node)), ...pasted],
             edges: [...graph.edges, ...pastedEdges],
           };
+          return sanitizeGraph(next);
         }),
         isDirty: true,
       };
@@ -5786,6 +5804,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         pendingPartRestores.clear();
         resetNavCache(); // rebake the Move To navmesh from this run's static colliders
         resetStreamingCache(); // fresh activation-streaming set for this run
+        const scriptIssues: string[] = [];
+        for (const blueprint of state.blueprints) {
+          const graph = state.graphs.find((item) => item.id === blueprint.graphId);
+          if (!graph) continue;
+          const attached = objects.some((object) => object.script?.blueprintId === blueprint.id);
+          if (!attached) continue;
+          for (const problem of scanBlueprintGraphProblems(blueprint, graph, state.variables)) {
+            if (problem.severity === 'error') scriptIssues.push(`⚠️ ${problem.message}`);
+          }
+        }
         return {
           isPlaying,
           isPlayPaused: false,
@@ -5855,7 +5883,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           runtimeScreenFade: undefined,
           runtimeSoundQueue: [],
           runtimeVehicleSound: null,
-          runtimeLog: [],
+          runtimeLog: scriptIssues.slice(-100),
           runtimeNodeErrors: {},
           // Show every screen HUD flagged visibleOnStart; world docs render whenever their object exists.
           runtimeVisibleUI: Object.fromEntries(
@@ -6899,7 +6927,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           // input degrades to the origin rather than throwing).
           const asVec3 = (value: GraphValue | undefined): Vector3Tuple =>
             Array.isArray(value)
-              ? [Number(value[0]) || 0, Number(value[1]) || 0, Number(value[2]) || 0]
+              ? [toNumber(value[0]), toNumber(value[1]), toNumber(value[2])]
               : [0, 0, 0];
           // ⚠️ The evaluator functions below are `const` arrows ON PURPOSE: `function` declarations are
           // instantiated at scope ENTRY, so every object in the scene — including the scriptless scenery
@@ -6914,10 +6942,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             // Pass which OUTPUT pin of the source we're reading, so multi-output value nodes (Raycast:
             // Hit/Actor/Point/Distance) can return a different value per handle.
             const resolved = evaluateValue(link.source, valueVisited, link.sourceHandle);
-            // Live value trace (no-op unless a graph editor is open in Play): record the value flowing
-            // out of the source node so the editor can show it on the node.
-            recordValue(link.source, resolved);
-            return resolved;
+            const expected = inputTypeForHandle(node.data.nodeKind, handle, node.data.valueType);
+            const value =
+              resolved === undefined || expected === 'any' || expected === 'exec'
+                ? resolved
+                : coerceGraphValue(resolved, expected);
+            recordValue(link.source, value);
+            return value ?? fallback;
           }
 
           const evaluateValue = (nodeId: string, visited: Set<string>, sourceHandle = 'value-out'): GraphValue | undefined => {
@@ -7584,8 +7615,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             return undefined;
           }
 
+          let execSteps = 0;
           const executeFrom = (nodeId: string, visited: Set<string>) => {
             if (visited.has(nodeId)) return;
+            if (execSteps >= 8192) {
+              const stuck = runtime.compiledNodesById.get(nodeId)?.node;
+              if (recordNodeError(nodeId, 'Execution limit reached (possible infinite loop).')) {
+                prints.push(
+                  `⚠️ Node error in "${object.name}" → ${stuck?.data.label ?? stuck?.data.nodeKind ?? nodeId}: execution limit reached — check loops and Update chains.`,
+                );
+              }
+              return;
+            }
+            execSteps += 1;
             visited.add(nodeId);
             const compiled = runtime.compiledNodesById.get(nodeId);
             if (!compiled) return;
@@ -7670,7 +7712,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             // this node so the body re-runs every pass but can't re-enter the loop (no infinite recursion).
             if (node.data.nodeKind === 'logic.forLoop') {
               const raw = Math.floor(toNumber(valueInput(node, 'count', Number(node.data.loopCount ?? 4))));
-              const count = Math.max(0, Math.min(raw, 10000));
+              const count = Math.max(0, Math.min(raw, 256));
               const bodyTargets = execTargetsFromHandle(nodeId, 'exec-body');
               for (let i = 0; i < count; i += 1) {
                 loopIndex.set(nodeId, i);
@@ -12195,6 +12237,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const activeBlueprint = state.blueprints.find((item) => item.id === state.activeBlueprintId);
       if (!activeBlueprint) return state;
+      const graph = state.graphs.find((item) => item.id === activeBlueprint.graphId);
+      const sourceNode = graph?.nodes.find((node) => node.id === connection.source);
+      const targetNode = graph?.nodes.find((node) => node.id === connection.target);
+      if (!sourceNode || !targetNode || connection.source === connection.target) return state;
+      if (
+        !isGraphConnectionValid(
+          sourceNode.data.nodeKind,
+          targetNode.data.nodeKind,
+          connection.sourceHandle,
+          connection.targetHandle,
+          sourceNode.data.valueType,
+          targetNode.data.valueType,
+        )
+      ) {
+        return state;
+      }
       const isValueEdge = Boolean(connection.targetHandle && connection.targetHandle !== 'exec-in');
       return {
         blueprints: invalidateFeatherSourceForGraph(state.blueprints, activeBlueprint.graphId),
@@ -12328,7 +12386,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ...materials.map((material) => material.graphId),
         ].filter(Boolean) as string[],
       );
-      const normalizedGraphs = graphs.filter((graph) => referencedGraphIds.has(graph.id));
+      const normalizedGraphs = graphs.filter((graph) => referencedGraphIds.has(graph.id)).map(sanitizeGraph);
 
       return {
         scenes,

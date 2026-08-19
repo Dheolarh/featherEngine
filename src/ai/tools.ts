@@ -854,7 +854,7 @@ const rawEngineTools = {
 
   set_blueprint_script: tool({
     description:
-      'REPLACE a blueprint\'s entire logic by compiling FeatherScript source into its node graph (the fastest way to author behavior — one call instead of many add_graph_node/connect calls). See the FeatherScript section of the engine guide for the language. The source must be the COMPLETE script (start from get_blueprint_script when editing). Compile errors reject the change and are returned; warnings mean some lines became comment nodes — rewrite those lines onto the supported surface. Returns the resulting node/edge counts.',
+      'REPLACE a blueprint\'s entire logic by compiling FeatherScript source into its node graph (the fastest way to author behavior — one call instead of many add_graph_node/connect calls). See the FeatherScript section of the engine guide for the language. The source must be the COMPLETE script (start from get_blueprint_script when editing). Syntax errors AND unsupported lines reject the change and leave the previous graph intact — never applied as silent comment nodes. Returns the resulting node/edge counts.',
     inputSchema: z.object({
       blueprintId: z.string(),
       source: z.string().describe('Complete FeatherScript source, e.g. "blueprint Guard\\n\\non update(dt):\\n    if (AI.distance_to_player() < 5):\\n        self.jump()"'),
@@ -867,7 +867,7 @@ const rawEngineTools = {
         .join('\n');
       if (!result.ok) return `Script rejected — fix these and retry:\n${notes}`;
       const summary = `Applied script to blueprint ${blueprintId}: ${result.graph?.nodes.length ?? 0} nodes, ${result.graph?.edges.length ?? 0} edges.`;
-      return notes ? `${summary}\nWarnings (these lines were NOT compiled into behavior):\n${notes}` : summary;
+      return notes ? `${summary}\nNotes:\n${notes}` : summary;
     },
   }),
 
