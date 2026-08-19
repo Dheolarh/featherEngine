@@ -14,36 +14,28 @@
       "vegetation",
       "outdoor"
     ],
-    "createdAt": "2026-08-19T18:45:37.236Z",
+    "createdAt": "2026-08-19T19:28:03.557Z",
     "engineVersion": "0.7.0"
   },
   "content": {
     "prefabs": [],
     "blueprints": [
       {
-        "id": "bp-87f5d9e9-e270-42ad-820c-681754cffcbf",
+        "id": "bp-fce45b6f-32c4-4c4b-b1ac-ecb465bf4f8c",
         "name": "UAL1 Controller",
         "description": "Third-person character logic — edit these nodes to change movement, jump, abilities.",
-        "graphId": "graph-493276f5-94a9-4a9f-a395-9c888f2a0120",
+        "graphId": "graph-7935e8b3-b634-4e02-add2-07367e50b02e",
         "color": "#5b8cff",
-        "createdAt": 1787165136559
-      },
-      {
-        "id": "bp-ef553716-054e-4d8a-8842-34181852a2c8",
-        "name": "UAL1 Controller",
-        "description": "Third-person character logic — edit these nodes to change movement, jump, abilities.",
-        "graphId": "graph-5d108587-5fed-4c47-bd5f-26f176b22826",
-        "color": "#5b8cff",
-        "createdAt": 1787165136708
+        "createdAt": 1787167683248
       }
     ],
     "graphs": [
       {
-        "id": "graph-493276f5-94a9-4a9f-a395-9c888f2a0120",
+        "id": "graph-7935e8b3-b634-4e02-add2-07367e50b02e",
         "name": "UAL1 Controller",
         "nodes": [
           {
-            "id": "node-71d9e05d-e116-4c31-bccd-073b7671b463",
+            "id": "node-9e5424c4-e02d-4796-a838-7367a2de39bc",
             "type": "nodeforge",
             "position": {
               "x": 40,
@@ -60,7 +52,7 @@
             }
           },
           {
-            "id": "node-2014ccf1-d3b4-406c-a9f9-0b7b7486d6d6",
+            "id": "node-9211dded-ffb8-4fe3-8f25-b6e327bd659b",
             "type": "nodeforge",
             "position": {
               "x": 40,
@@ -77,7 +69,7 @@
             }
           },
           {
-            "id": "node-313a0bb0-50ac-4575-b3f1-9e1390a98737",
+            "id": "node-2a9f947c-baf7-48e3-b021-4b1f9421d5c4",
             "type": "nodeforge",
             "position": {
               "x": 360,
@@ -94,7 +86,7 @@
             }
           },
           {
-            "id": "node-7543cb7d-b0d1-426c-8494-26075793ffbe",
+            "id": "node-cbdf3938-54c3-4c70-9cd8-c18490df28c7",
             "type": "nodeforge",
             "position": {
               "x": 40,
@@ -112,7 +104,7 @@
             }
           },
           {
-            "id": "node-f62c8ecf-7c95-438a-be1d-dfcd2264cf74",
+            "id": "node-957d1b0a-009a-4775-b287-d8125302142a",
             "type": "nodeforge",
             "position": {
               "x": 360,
@@ -131,18 +123,18 @@
         ],
         "edges": [
           {
-            "id": "edge-3ac1d3c7-b97d-4c38-9d5d-9780ce1e031f",
-            "source": "node-71d9e05d-e116-4c31-bccd-073b7671b463",
-            "target": "node-313a0bb0-50ac-4575-b3f1-9e1390a98737",
+            "id": "edge-bf22da65-bbbd-40c8-a602-295eb0ff9019",
+            "source": "node-9e5424c4-e02d-4796-a838-7367a2de39bc",
+            "target": "node-2a9f947c-baf7-48e3-b021-4b1f9421d5c4",
             "sourceHandle": "exec-out",
             "targetHandle": "exec-in",
             "animated": true,
             "type": "smoothstep"
           },
           {
-            "id": "edge-ac35270d-d84d-41e1-889b-d5ffd0ee494b",
-            "source": "node-2014ccf1-d3b4-406c-a9f9-0b7b7486d6d6",
-            "target": "node-313a0bb0-50ac-4575-b3f1-9e1390a98737",
+            "id": "edge-7206b07e-b982-4ad8-a73d-85247497785a",
+            "source": "node-9211dded-ffb8-4fe3-8f25-b6e327bd659b",
+            "target": "node-2a9f947c-baf7-48e3-b021-4b1f9421d5c4",
             "sourceHandle": "value-out",
             "targetHandle": "vector",
             "type": "smoothstep",
@@ -152,133 +144,9 @@
             }
           },
           {
-            "id": "edge-afcbf911-0713-48a1-9977-65a698a9860c",
-            "source": "node-7543cb7d-b0d1-426c-8494-26075793ffbe",
-            "target": "node-f62c8ecf-7c95-438a-be1d-dfcd2264cf74",
-            "sourceHandle": "exec-out",
-            "targetHandle": "exec-in",
-            "animated": true,
-            "type": "smoothstep"
-          }
-        ]
-      },
-      {
-        "id": "graph-5d108587-5fed-4c47-bd5f-26f176b22826",
-        "name": "UAL1 Controller",
-        "nodes": [
-          {
-            "id": "node-46abdf37-7f61-4783-8767-0caab659b56b",
-            "type": "nodeforge",
-            "position": {
-              "x": 40,
-              "y": 60
-            },
-            "data": {
-              "label": "Update",
-              "category": "Events",
-              "nodeKind": "event.update",
-              "hasInput": false,
-              "description": "Runs every preview frame while Play is active. Set Interval above 0 to throttle it.",
-              "tone": "event",
-              "hasOutput": true
-            }
-          },
-          {
-            "id": "node-f7a8a752-b19a-42d4-91e2-860621a392d4",
-            "type": "nodeforge",
-            "position": {
-              "x": 40,
-              "y": 200
-            },
-            "data": {
-              "label": "Get Move Input",
-              "category": "Runtime",
-              "nodeKind": "input.move",
-              "description": "WASD / arrows → a world move direction.",
-              "tone": "runtime",
-              "hasInput": false,
-              "hasOutput": true
-            }
-          },
-          {
-            "id": "node-14b2816f-c07b-49e3-9727-6436f96e9d76",
-            "type": "nodeforge",
-            "position": {
-              "x": 360,
-              "y": 90
-            },
-            "data": {
-              "label": "Move",
-              "category": "Runtime",
-              "nodeKind": "action.move",
-              "description": "Moves + turns the owner along a direction at a speed.",
-              "tone": "runtime",
-              "hasInput": true,
-              "hasOutput": true
-            }
-          },
-          {
-            "id": "node-14df0b39-e8ee-40a0-aec7-28931d235031",
-            "type": "nodeforge",
-            "position": {
-              "x": 40,
-              "y": 360
-            },
-            "data": {
-              "label": "Key Down: Space",
-              "category": "Events",
-              "nodeKind": "event.keyDown",
-              "keyCode": "Space",
-              "hasInput": false,
-              "description": "Fires while Space is pressed during preview.",
-              "tone": "event",
-              "hasOutput": true
-            }
-          },
-          {
-            "id": "node-94472c3f-00f9-4cb5-8d75-ab869f8f5a7b",
-            "type": "nodeforge",
-            "position": {
-              "x": 360,
-              "y": 360
-            },
-            "data": {
-              "label": "Jump",
-              "category": "Runtime",
-              "nodeKind": "action.jump",
-              "description": "Makes the owning character jump.",
-              "tone": "runtime",
-              "hasInput": true,
-              "hasOutput": true
-            }
-          }
-        ],
-        "edges": [
-          {
-            "id": "edge-1ad2a07a-7b43-4859-97a9-4001330f3213",
-            "source": "node-46abdf37-7f61-4783-8767-0caab659b56b",
-            "target": "node-14b2816f-c07b-49e3-9727-6436f96e9d76",
-            "sourceHandle": "exec-out",
-            "targetHandle": "exec-in",
-            "animated": true,
-            "type": "smoothstep"
-          },
-          {
-            "id": "edge-ac2a016c-5d05-4b62-9c43-31b9623ca927",
-            "source": "node-f7a8a752-b19a-42d4-91e2-860621a392d4",
-            "target": "node-14b2816f-c07b-49e3-9727-6436f96e9d76",
-            "sourceHandle": "value-out",
-            "targetHandle": "vector",
-            "type": "smoothstep",
-            "style": {
-              "stroke": "#3DD0DC",
-              "strokeWidth": 2
-            }
-          },
-          {
-            "id": "edge-bc019de7-73ad-4f27-b9a3-2f0999c160b2",
-            "source": "node-14df0b39-e8ee-40a0-aec7-28931d235031",
-            "target": "node-94472c3f-00f9-4cb5-8d75-ab869f8f5a7b",
+            "id": "edge-858637ae-3cd3-4cc7-9094-2b59c874e131",
+            "source": "node-cbdf3938-54c3-4c70-9cd8-c18490df28c7",
+            "target": "node-957d1b0a-009a-4775-b287-d8125302142a",
             "sourceHandle": "exec-out",
             "targetHandle": "exec-in",
             "animated": true,
@@ -291,9 +159,9 @@
     "particleSystems": [],
     "skeletons": [
       {
-        "id": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "id": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "name": "UAL1 Skeleton",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "boneNames": [
           "root",
           "pelvis",
@@ -363,265 +231,265 @@
         ],
         "signature": "4bfddc63",
         "rootBone": "root",
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       }
     ],
     "skeletalMeshes": [],
     "animations": [
       {
-        "id": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
+        "id": "anim-4472b3e1-4bd6-4560-ba29-fffc4d135b76",
         "name": "Climb_Idle_Loop",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Climb_Idle_Loop",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 2.933333396911621,
         "loop": true,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-591fd0ad-fd36-4aeb-826a-2d19c66d22d7",
+        "id": "anim-1997b492-78f0-4078-b4a3-03f70fb42a4e",
         "name": "Crawl_Fwd_Loop",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Crawl_Fwd_Loop",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 2.1666667461395264,
         "loop": true,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-c98e1984-a130-4acb-a39b-b25898d30881",
+        "id": "anim-9f1f1a35-7990-4922-8d47-94b0d16e24e4",
         "name": "Crawl_Idle_Loop",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Crawl_Idle_Loop",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 2.3333332538604736,
         "loop": true,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-259b6f37-5ce4-4d83-8417-acf6aaf725c1",
+        "id": "anim-d1b48979-46c0-4a4d-ba9f-080a7ba3ae4b",
         "name": "Crouch_Fwd_L_Loop",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Crouch_Fwd_L_Loop",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 2,
         "loop": true,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
+        "id": "anim-613ea1bf-71ec-4a1f-a9a5-99dfeeac160a",
         "name": "Crouch_Idle_Loop",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Crouch_Idle_Loop",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 2.933333396911621,
         "loop": true,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
+        "id": "anim-ba84d927-5132-4158-9dff-da6710bad89c",
         "name": "Idle_Loop",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Idle_Loop",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 2.5,
         "loop": true,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-8cf600ac-14a5-463a-8ea9-b54a4adf2b1f",
+        "id": "anim-9ac10a19-3e12-4a6e-b3d2-62e5cb8643f2",
         "name": "Jump_Land",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Jump_Land",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 1.2666666507720947,
         "loop": false,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-dff94c99-1381-4a76-9c7b-b197f42e2843",
+        "id": "anim-8c3abd78-54cc-41a0-bbd3-ffdcdc09f060",
         "name": "Jump_Loop",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Jump_Loop",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 2.5,
         "loop": true,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-d3c13ebb-7348-421c-a3d3-d4ac51deb7b4",
+        "id": "anim-74af00c8-6e11-4cb1-8095-00ee85e39afc",
         "name": "Jump_Start",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Jump_Start",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 1.3333333730697632,
         "loop": false,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-2e993eda-229b-431c-929d-08aa6b14ef1c",
+        "id": "anim-af56ccb5-4e74-480c-920f-60766aabdb5f",
         "name": "Kick",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Kick",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 1.100000023841858,
         "loop": false,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-8e580385-f173-4166-a226-c07806e53683",
+        "id": "anim-51ca2dd5-c79b-48f4-8b15-47d672912332",
         "name": "Punch_Cross",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Punch_Cross",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 1,
         "loop": false,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
+        "id": "anim-e30859b1-20cc-4e91-bb9e-b604ed5a3102",
         "name": "Roll",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Roll",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 1.4666666984558105,
         "loop": false,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
+        "id": "anim-ce0b5dd3-94d4-4303-832c-27685aa90e53",
         "name": "Swim_Idle_Loop",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Swim_Idle_Loop",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 3.3333332538604736,
         "loop": true,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       },
       {
-        "id": "anim-e601e68e-26e1-4d27-995b-13f6aef25bce",
+        "id": "anim-ef019ac6-0630-484e-8d57-904390c1207b",
         "name": "Sword_Attack",
-        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "sourceAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936",
         "clipName": "Sword_Attack",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "duration": 1.5333333015441895,
         "loop": false,
-        "createdAt": 1787165136555
+        "createdAt": 1787167683244
       }
     ],
     "animatorControllers": [
       {
-        "id": "animctl-c4f0f7bf-ce77-46c4-844a-d247104d4fd1",
+        "id": "animctl-60d7ff39-1b7d-49a4-8547-4b0aeebdfaf5",
         "name": "UAL1 Locomotion",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "skeletonId": "skeleton-fba0ddab-ca19-46f8-9592-86ed6cbe0a12",
         "parameters": [
           {
-            "id": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+            "id": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
             "name": "Speed",
             "type": "float",
             "source": "speed",
             "defaultValue": 0
           },
           {
-            "id": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+            "id": "param-8bd11e5f-4bdb-4ad9-9ee5-99b15db6483d",
             "name": "VerticalSpeed",
             "type": "float",
             "source": "verticalSpeed",
             "defaultValue": 0
           },
           {
-            "id": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+            "id": "param-ea6ab3f7-a9b6-41f1-8f91-084346f81638",
             "name": "Crouching",
             "type": "bool",
             "source": "crouching",
             "defaultValue": false
           },
           {
-            "id": "param-46ed2698-31f2-49d8-8da1-611efce5db6e",
+            "id": "param-f2b3d463-866e-4eee-b9bb-509eb4d22c8e",
             "name": "Grounded",
             "type": "bool",
             "source": "grounded",
             "defaultValue": true
           },
           {
-            "id": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+            "id": "param-3e86f45c-bb62-41c6-be5f-a2ea645cb27b",
             "name": "Rolling",
             "type": "bool",
             "source": "rolling",
             "defaultValue": false
           },
           {
-            "id": "param-e38759b8-6b3c-4a63-b9bf-24097418f947",
+            "id": "param-7ae885fa-60fe-4c22-9e73-75853f59db16",
             "name": "Mantling",
             "type": "bool",
             "source": "mantling",
             "defaultValue": false
           },
           {
-            "id": "param-a2ef45c6-7a39-4b38-a3d4-37694990d080",
+            "id": "param-efa2b79b-3962-420e-842b-55802d1a920a",
             "name": "Turning",
             "type": "bool",
             "source": "turning",
             "defaultValue": false
           },
           {
-            "id": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+            "id": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
             "name": "Attacking",
             "type": "bool",
             "source": "attacking",
             "defaultValue": false
           },
           {
-            "id": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+            "id": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
             "name": "WeaponEquipped",
             "type": "bool",
             "source": "weaponEquipped",
             "defaultValue": false
           },
           {
-            "id": "param-45bffd3f-3a17-4947-96c0-086458464835",
+            "id": "param-aaa00676-0d8f-4c6e-ab8d-7406cbd78c31",
             "name": "MoveX",
             "type": "float",
             "source": "moveX",
             "defaultValue": 0
           },
           {
-            "id": "param-eb997ec7-e4c6-4073-bd15-1b080b5848ab",
+            "id": "param-8b44ee81-b7ad-40b4-808d-2fce66f0408f",
             "name": "MoveY",
             "type": "float",
             "source": "moveY",
             "defaultValue": 0
           },
           {
-            "id": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+            "id": "param-8d26c9fc-d04c-42c9-a6bc-f96f852e13c8",
             "name": "Crawling",
             "type": "bool",
             "source": "crawling",
             "defaultValue": false
           },
           {
-            "id": "param-36972af9-bd3f-4459-b6ff-2815c0bb5515",
+            "id": "param-ff4d3c51-0d41-46d9-b200-d8dc60e68e44",
             "name": "Swimming",
             "type": "bool",
             "source": "swimming",
             "defaultValue": false
           },
           {
-            "id": "param-cff0666d-5221-41e2-99bf-ba46dc4013ae",
+            "id": "param-1b4f4744-f204-4b10-b87f-ada83da7be62",
             "name": "Climbing",
             "type": "bool",
             "source": "climbing",
             "defaultValue": false
           },
           {
-            "id": "param-87cf6ae2-3313-43d2-abdc-2212bb0b932d",
+            "id": "param-c963b4dd-610c-45b6-80ec-0226e9847e6a",
             "name": "RollX",
             "type": "float",
             "source": "rollX",
             "defaultValue": 0
           },
           {
-            "id": "param-814dae47-3933-490e-936c-075080862416",
+            "id": "param-638d648c-1128-42bf-b41c-89b0fb6dcc92",
             "name": "Sliding",
             "type": "bool",
             "source": "sliding",
@@ -630,69 +498,69 @@
         ],
         "states": [
           {
-            "id": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "name": "Locomotion",
-            "animationId": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
+            "animationId": "anim-ba84d927-5132-4158-9dff-da6710bad89c",
             "speed": 1,
             "loop": true,
             "position": {
               "x": 60,
               "y": 40
             },
-            "blendParameterId": "param-45bffd3f-3a17-4947-96c0-086458464835",
-            "blendParameterIdY": "param-eb997ec7-e4c6-4073-bd15-1b080b5848ab",
+            "blendParameterId": "param-aaa00676-0d8f-4c6e-ab8d-7406cbd78c31",
+            "blendParameterIdY": "param-8b44ee81-b7ad-40b4-808d-2fce66f0408f",
             "blendSamples": [
               {
-                "animationId": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
+                "animationId": "anim-ba84d927-5132-4158-9dff-da6710bad89c",
                 "value": 0,
                 "y": 0
               },
               {
-                "animationId": "anim-082ba7d1-f7b9-4a97-b730-f1e3d2e4347d",
+                "animationId": "anim-1b89b5ab-b5b9-4681-835d-83ba444a44ae",
                 "value": 0,
                 "y": 1
               },
               {
-                "animationId": "anim-5514b774-4195-4d74-abf4-e8b2a3715f30",
+                "animationId": "anim-e53ea561-4bad-49b9-9f7c-4516fd6bd04e",
                 "value": 0,
                 "y": -1
               },
               {
-                "animationId": "anim-b49484cb-1f5b-43d1-bf04-2921b892322a",
+                "animationId": "anim-c595bae1-b413-4efb-87d7-0d19aa929788",
                 "value": -1,
                 "y": 0
               },
               {
-                "animationId": "anim-617c74ad-22ae-4e6e-9183-c2e3b1fe6637",
+                "animationId": "anim-d4e5f82e-71cc-4141-8760-f9a25f86f0e1",
                 "value": 1,
                 "y": 0
               },
               {
-                "animationId": "anim-b86b9031-e486-47b4-89a9-6f27b8c6dcff",
+                "animationId": "anim-046386b2-4210-4196-a3a9-3ebaf93d6677",
                 "value": -0.7,
                 "y": 0.7
               },
               {
-                "animationId": "anim-6bc98e34-7096-4d96-881f-b0ed7f29f80d",
+                "animationId": "anim-c85bf9eb-7368-443d-bd3a-472ce9b4b4f5",
                 "value": 0.7,
                 "y": 0.7
               },
               {
-                "animationId": "anim-4e140fba-6f28-4bdd-8bd4-885b80287d63",
+                "animationId": "anim-4379c504-dda9-42bc-a8ff-89d2011d3be1",
                 "value": -0.7,
                 "y": -0.7
               },
               {
-                "animationId": "anim-600d2d16-6858-4f10-892c-10a7ba90f1af",
+                "animationId": "anim-e8e0c61c-fe89-48f2-b374-2c3bba845afb",
                 "value": 0.7,
                 "y": -0.7
               }
             ]
           },
           {
-            "id": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "id": "state-8aeabb55-ba0d-4a3c-b50f-d687e85a78bb",
             "name": "Jump Start",
-            "animationId": "anim-d3c13ebb-7348-421c-a3d3-d4ac51deb7b4",
+            "animationId": "anim-74af00c8-6e11-4cb1-8095-00ee85e39afc",
             "speed": 1,
             "loop": false,
             "position": {
@@ -701,9 +569,9 @@
             }
           },
           {
-            "id": "state-9e6dad19-e8ba-407f-ad1f-d89b002f3381",
+            "id": "state-1ce6d5ec-d29f-48e6-8d09-d131275a1d8e",
             "name": "Jump Loop",
-            "animationId": "anim-dff94c99-1381-4a76-9c7b-b197f42e2843",
+            "animationId": "anim-8c3abd78-54cc-41a0-bbd3-ffdcdc09f060",
             "speed": 1,
             "loop": true,
             "position": {
@@ -712,9 +580,9 @@
             }
           },
           {
-            "id": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
+            "id": "state-caaa8350-517b-430f-a66c-ae107e68c7b9",
             "name": "Jump Land",
-            "animationId": "anim-8cf600ac-14a5-463a-8ea9-b54a4adf2b1f",
+            "animationId": "anim-9ac10a19-3e12-4a6e-b3d2-62e5cb8643f2",
             "speed": 1,
             "loop": false,
             "position": {
@@ -723,9 +591,9 @@
             }
           },
           {
-            "id": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "id": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
             "name": "Crouch Idle",
-            "animationId": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
+            "animationId": "anim-613ea1bf-71ec-4a1f-a9a5-99dfeeac160a",
             "speed": 1,
             "loop": true,
             "position": {
@@ -734,9 +602,9 @@
             }
           },
           {
-            "id": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "id": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
             "name": "Crouch Walk",
-            "animationId": "anim-259b6f37-5ce4-4d83-8417-acf6aaf725c1",
+            "animationId": "anim-d1b48979-46c0-4a4d-ba9f-080a7ba3ae4b",
             "speed": 1,
             "loop": true,
             "position": {
@@ -745,9 +613,9 @@
             }
           },
           {
-            "id": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
+            "id": "state-07a51102-eaae-4604-a1ab-96b0eeff54cb",
             "name": "Crawl Idle",
-            "animationId": "anim-c98e1984-a130-4acb-a39b-b25898d30881",
+            "animationId": "anim-9f1f1a35-7990-4922-8d47-94b0d16e24e4",
             "speed": 1,
             "loop": true,
             "position": {
@@ -756,9 +624,9 @@
             }
           },
           {
-            "id": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
+            "id": "state-226b1685-a250-4c3c-bf7f-0267cf996dbf",
             "name": "Crawl",
-            "animationId": "anim-591fd0ad-fd36-4aeb-826a-2d19c66d22d7",
+            "animationId": "anim-1997b492-78f0-4078-b4a3-03f70fb42a4e",
             "speed": 1,
             "loop": true,
             "position": {
@@ -767,83 +635,83 @@
             }
           },
           {
-            "id": "state-e7f031fc-54d7-4ea7-b37e-597bd93d20dd",
+            "id": "state-bd85c3af-01fa-49e5-ae4d-85e005bf0824",
             "name": "Swim",
-            "animationId": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
+            "animationId": "anim-ce0b5dd3-94d4-4303-832c-27685aa90e53",
             "speed": 1,
             "loop": true,
             "position": {
               "x": 840,
               "y": 380
             },
-            "blendParameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+            "blendParameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
             "blendSamples": [
               {
-                "animationId": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
+                "animationId": "anim-ce0b5dd3-94d4-4303-832c-27685aa90e53",
                 "value": 0
               },
               {
-                "animationId": "anim-34606694-ad3e-48d4-aa55-723b26215b66",
+                "animationId": "anim-c2363c0d-87e0-4e97-9aa1-7677dc72979a",
                 "value": 3
               }
             ]
           },
           {
-            "id": "state-08c66896-208a-4c7b-95d3-9f1a9e955cc3",
+            "id": "state-90a32e2d-9982-4934-8c99-6ddb3b7012cc",
             "name": "Climb",
-            "animationId": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
+            "animationId": "anim-4472b3e1-4bd6-4560-ba29-fffc4d135b76",
             "speed": 1,
             "loop": true,
             "position": {
               "x": 840,
               "y": 540
             },
-            "blendParameterId": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+            "blendParameterId": "param-8bd11e5f-4bdb-4ad9-9ee5-99b15db6483d",
             "blendSamples": [
               {
-                "animationId": "anim-fddee64b-409e-4fd2-a52e-bdad5ee3fc38",
+                "animationId": "anim-cb5a0b75-03b6-4ff1-931e-74bc56aec824",
                 "value": -1.5
               },
               {
-                "animationId": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
+                "animationId": "anim-4472b3e1-4bd6-4560-ba29-fffc4d135b76",
                 "value": 0
               },
               {
-                "animationId": "anim-b520aa48-e761-4532-b1a6-4a3f78603a4a",
+                "animationId": "anim-6d0d1558-70ff-4ae8-a83b-d41053b8809f",
                 "value": 1.5
               }
             ]
           },
           {
-            "id": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "id": "state-5661cee8-cfc9-46e1-8b8e-56f7422c49f4",
             "name": "Roll",
-            "animationId": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
+            "animationId": "anim-e30859b1-20cc-4e91-bb9e-b604ed5a3102",
             "speed": 1,
             "loop": false,
             "position": {
               "x": 580,
               "y": 380
             },
-            "blendParameterId": "param-87cf6ae2-3313-43d2-abdc-2212bb0b932d",
+            "blendParameterId": "param-c963b4dd-610c-45b6-80ec-0226e9847e6a",
             "blendSamples": [
               {
-                "animationId": "anim-0447d7b1-d1e8-4d78-8926-85e122e60a19",
+                "animationId": "anim-1c5eef07-6ee1-4b99-90f9-20964f4989a7",
                 "value": -1
               },
               {
-                "animationId": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
+                "animationId": "anim-e30859b1-20cc-4e91-bb9e-b604ed5a3102",
                 "value": 0
               },
               {
-                "animationId": "anim-79bb68bf-65a3-4279-9220-6c6216889e19",
+                "animationId": "anim-7772fd94-c5ee-4c62-97dd-f6a213a2082b",
                 "value": 1
               }
             ]
           },
           {
-            "id": "state-8734f286-179e-4d59-bcde-f917ba660516",
+            "id": "state-ecec7035-4532-493c-8d31-ff5259479263",
             "name": "Slide",
-            "animationId": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
+            "animationId": "anim-613ea1bf-71ec-4a1f-a9a5-99dfeeac160a",
             "speed": 1,
             "loop": true,
             "position": {
@@ -852,9 +720,9 @@
             }
           },
           {
-            "id": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "id": "state-3d7a6b58-c7e1-4a72-91c1-24dec5672577",
             "name": "Punch",
-            "animationId": "anim-8e580385-f173-4166-a226-c07806e53683",
+            "animationId": "anim-51ca2dd5-c79b-48f4-8b15-47d672912332",
             "speed": 1,
             "loop": false,
             "position": {
@@ -863,9 +731,9 @@
             }
           },
           {
-            "id": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "id": "state-b6ebf376-83e2-4eeb-b14d-8245051dab3f",
             "name": "Kick",
-            "animationId": "anim-2e993eda-229b-431c-929d-08aa6b14ef1c",
+            "animationId": "anim-af56ccb5-4e74-480c-920f-60766aabdb5f",
             "speed": 1,
             "loop": false,
             "position": {
@@ -874,9 +742,9 @@
             }
           },
           {
-            "id": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "id": "state-07dc51c4-1594-4c52-98c2-b34aa6d1967b",
             "name": "Sword Attack",
-            "animationId": "anim-e601e68e-26e1-4d27-995b-13f6aef25bce",
+            "animationId": "anim-ef019ac6-0630-484e-8d57-904390c1207b",
             "speed": 1,
             "loop": false,
             "position": {
@@ -885,15 +753,15 @@
             }
           }
         ],
-        "defaultStateId": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+        "defaultStateId": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
         "transitions": [
           {
-            "id": "xition-835361f4-e836-45ec-be2e-9627897f6a88",
-            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
-            "to": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "id": "xition-88b1037d-d5fa-4696-8b8a-6885ebb37e84",
+            "from": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
+            "to": "state-8aeabb55-ba0d-4a3c-b50f-d687e85a78bb",
             "conditions": [
               {
-                "parameterId": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+                "parameterId": "param-8bd11e5f-4bdb-4ad9-9ee5-99b15db6483d",
                 "op": ">",
                 "value": 1
               }
@@ -901,12 +769,12 @@
             "duration": 0.08
           },
           {
-            "id": "xition-a60e0b05-c74f-4601-bccb-980ca1049a6f",
-            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
-            "to": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "id": "xition-2fc9ca3e-3985-4282-a237-b4aebf3af3a7",
+            "from": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
+            "to": "state-8aeabb55-ba0d-4a3c-b50f-d687e85a78bb",
             "conditions": [
               {
-                "parameterId": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+                "parameterId": "param-8bd11e5f-4bdb-4ad9-9ee5-99b15db6483d",
                 "op": ">",
                 "value": 1
               }
@@ -914,12 +782,12 @@
             "duration": 0.08
           },
           {
-            "id": "xition-ee00e0c3-c840-4fa6-a091-30e74605b14d",
-            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
-            "to": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "id": "xition-5fa2498f-6bb2-445d-a7b7-78a0069133ff",
+            "from": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
+            "to": "state-8aeabb55-ba0d-4a3c-b50f-d687e85a78bb",
             "conditions": [
               {
-                "parameterId": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+                "parameterId": "param-8bd11e5f-4bdb-4ad9-9ee5-99b15db6483d",
                 "op": ">",
                 "value": 1
               }
@@ -927,21 +795,21 @@
             "duration": 0.08
           },
           {
-            "id": "xition-da07d4c5-3a9b-485a-9b78-ec99af1c916b",
-            "from": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
-            "to": "state-9e6dad19-e8ba-407f-ad1f-d89b002f3381",
+            "id": "xition-de4cc91d-bc61-4a95-8d80-081f8c9db0b0",
+            "from": "state-8aeabb55-ba0d-4a3c-b50f-d687e85a78bb",
+            "to": "state-1ce6d5ec-d29f-48e6-8d09-d131275a1d8e",
             "conditions": [],
             "duration": 0.12,
             "hasExitTime": true,
             "exitTime": 0.5
           },
           {
-            "id": "xition-4b5d8b3e-7218-4ac3-8e00-de724c10c490",
-            "from": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
-            "to": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
+            "id": "xition-ff979f6d-7b12-46a8-82cf-660c45f75cff",
+            "from": "state-8aeabb55-ba0d-4a3c-b50f-d687e85a78bb",
+            "to": "state-caaa8350-517b-430f-a66c-ae107e68c7b9",
             "conditions": [
               {
-                "parameterId": "param-46ed2698-31f2-49d8-8da1-611efce5db6e",
+                "parameterId": "param-f2b3d463-866e-4eee-b9bb-509eb4d22c8e",
                 "op": "==",
                 "value": true
               }
@@ -949,17 +817,17 @@
             "duration": 0.1
           },
           {
-            "id": "xition-d6d6a6ca-89c7-4e8b-97e7-3d6de06c95ce",
-            "from": "state-9e6dad19-e8ba-407f-ad1f-d89b002f3381",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-65e1649e-2e39-42bc-a887-9326dd74e0a0",
+            "from": "state-1ce6d5ec-d29f-48e6-8d09-d131275a1d8e",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-46ed2698-31f2-49d8-8da1-611efce5db6e",
+                "parameterId": "param-f2b3d463-866e-4eee-b9bb-509eb4d22c8e",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 0.1
               }
@@ -967,12 +835,12 @@
             "duration": 0.12
           },
           {
-            "id": "xition-8347cfbd-8ec7-4837-8de3-e8f00cbd21f0",
-            "from": "state-9e6dad19-e8ba-407f-ad1f-d89b002f3381",
-            "to": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
+            "id": "xition-00f016b7-7f2c-4e21-a81e-1257f4ccd7dd",
+            "from": "state-1ce6d5ec-d29f-48e6-8d09-d131275a1d8e",
+            "to": "state-caaa8350-517b-430f-a66c-ae107e68c7b9",
             "conditions": [
               {
-                "parameterId": "param-46ed2698-31f2-49d8-8da1-611efce5db6e",
+                "parameterId": "param-f2b3d463-866e-4eee-b9bb-509eb4d22c8e",
                 "op": "==",
                 "value": true
               }
@@ -980,12 +848,12 @@
             "duration": 0.1
           },
           {
-            "id": "xition-a5e128bf-3416-404f-a2f9-3dc930881803",
-            "from": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-5e91d7e0-4016-47f6-adfb-f793950926a0",
+            "from": "state-caaa8350-517b-430f-a66c-ae107e68c7b9",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 0.1
               }
@@ -993,21 +861,21 @@
             "duration": 0.18
           },
           {
-            "id": "xition-e7b67a89-f8ca-4f26-b726-ee15a2b4b820",
-            "from": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-2397d4bd-354f-4145-9814-f3443b17323e",
+            "from": "state-caaa8350-517b-430f-a66c-ae107e68c7b9",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [],
             "duration": 0.12,
             "hasExitTime": true,
             "exitTime": 0.45
           },
           {
-            "id": "xition-ca3e80f5-b818-4d4d-a193-fb0f194c4c9a",
-            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
-            "to": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "id": "xition-72a36754-eb6c-4bfe-8462-2824ca88b9f0",
+            "from": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
+            "to": "state-5661cee8-cfc9-46e1-8b8e-56f7422c49f4",
             "conditions": [
               {
-                "parameterId": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+                "parameterId": "param-3e86f45c-bb62-41c6-be5f-a2ea645cb27b",
                 "op": "==",
                 "value": true
               }
@@ -1015,12 +883,12 @@
             "duration": 0.08
           },
           {
-            "id": "xition-83cc5ef0-cc30-4b35-bbdb-f0885d8e0a30",
-            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
-            "to": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "id": "xition-fbaf1536-b25a-4ff6-9096-455bbbce42fc",
+            "from": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
+            "to": "state-5661cee8-cfc9-46e1-8b8e-56f7422c49f4",
             "conditions": [
               {
-                "parameterId": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+                "parameterId": "param-3e86f45c-bb62-41c6-be5f-a2ea645cb27b",
                 "op": "==",
                 "value": true
               }
@@ -1028,12 +896,12 @@
             "duration": 0.08
           },
           {
-            "id": "xition-53b50459-2a5a-4b5b-bee6-95c29ca4ab7c",
-            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
-            "to": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "id": "xition-c3b8fc85-3449-4cc8-9bd9-ddba8bbc1891",
+            "from": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
+            "to": "state-5661cee8-cfc9-46e1-8b8e-56f7422c49f4",
             "conditions": [
               {
-                "parameterId": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+                "parameterId": "param-3e86f45c-bb62-41c6-be5f-a2ea645cb27b",
                 "op": "==",
                 "value": true
               }
@@ -1041,12 +909,12 @@
             "duration": 0.08
           },
           {
-            "id": "xition-22a9a832-251c-4bd3-8021-2fb465d4eacc",
-            "from": "state-f156edc8-7cce-4179-8242-396db41e049a",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-dc05f34c-6415-4420-a278-1e3893f6cbfa",
+            "from": "state-5661cee8-cfc9-46e1-8b8e-56f7422c49f4",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+                "parameterId": "param-3e86f45c-bb62-41c6-be5f-a2ea645cb27b",
                 "op": "==",
                 "value": false
               }
@@ -1054,17 +922,17 @@
             "duration": 0.18
           },
           {
-            "id": "xition-2a2d8bac-2660-4da8-ac49-fc801daddd82",
-            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
-            "to": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "id": "xition-6f36636c-54c8-49c7-8987-5c3100b32773",
+            "from": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
+            "to": "state-07dc51c4-1594-4c52-98c2-b34aa6d1967b",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": true
               }
@@ -1072,17 +940,17 @@
             "duration": 0.08
           },
           {
-            "id": "xition-6eb93dc0-4811-4f64-a3e2-b804802b3241",
-            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
-            "to": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "id": "xition-1f80a84f-c7f7-4dd7-a2a5-4b71c4160410",
+            "from": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
+            "to": "state-07dc51c4-1594-4c52-98c2-b34aa6d1967b",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": true
               }
@@ -1090,17 +958,17 @@
             "duration": 0.08
           },
           {
-            "id": "xition-c1268af8-987e-43e9-816c-c40b108dc034",
-            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
-            "to": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "id": "xition-3f1c03b1-1476-499c-a958-8a7024ece1da",
+            "from": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
+            "to": "state-07dc51c4-1594-4c52-98c2-b34aa6d1967b",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": true
               }
@@ -1108,31 +976,31 @@
             "duration": 0.08
           },
           {
-            "id": "xition-bfdea9f5-9728-416c-a308-451cdac101a2",
-            "from": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-c9cee461-ea2f-48ec-8380-426f304de24c",
+            "from": "state-07dc51c4-1594-4c52-98c2-b34aa6d1967b",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [],
             "duration": 0.12,
             "hasExitTime": true,
             "exitTime": 1
           },
           {
-            "id": "xition-396afb3c-afef-4d50-83d4-cc296bd23c39",
-            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
-            "to": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "id": "xition-259a6e82-91c0-4221-84b9-a6d73356aad7",
+            "from": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
+            "to": "state-b6ebf376-83e2-4eeb-b14d-8245051dab3f",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 4
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": false
               }
@@ -1140,22 +1008,22 @@
             "duration": 0.08
           },
           {
-            "id": "xition-3a94905f-6ecb-4730-a094-7c4318d635e0",
-            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
-            "to": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "id": "xition-9e779264-105a-46de-973c-c698e15db316",
+            "from": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
+            "to": "state-b6ebf376-83e2-4eeb-b14d-8245051dab3f",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 4
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": false
               }
@@ -1163,22 +1031,22 @@
             "duration": 0.08
           },
           {
-            "id": "xition-b9b68192-0287-4a53-b620-d83ef1aa822f",
-            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
-            "to": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "id": "xition-b5ee3be4-b84c-4471-91cd-030f735b2039",
+            "from": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
+            "to": "state-b6ebf376-83e2-4eeb-b14d-8245051dab3f",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 4
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": false
               }
@@ -1186,26 +1054,26 @@
             "duration": 0.08
           },
           {
-            "id": "xition-43dd132f-04bc-4c01-8abf-4cf48532a36d",
-            "from": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-eb1cdbc3-8f3a-4e4d-a4c5-7ace691751ad",
+            "from": "state-b6ebf376-83e2-4eeb-b14d-8245051dab3f",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [],
             "duration": 0.12,
             "hasExitTime": true,
             "exitTime": 1
           },
           {
-            "id": "xition-7050a4c6-5116-4447-ba8b-8f7e13143c17",
-            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
-            "to": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "id": "xition-e1b98a23-a3f2-472c-83ba-473ae89613e7",
+            "from": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
+            "to": "state-3d7a6b58-c7e1-4a72-91c1-24dec5672577",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": false
               }
@@ -1213,17 +1081,17 @@
             "duration": 0.08
           },
           {
-            "id": "xition-cfb2f39b-c3f7-4e87-b3d3-218e46dfbc7f",
-            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
-            "to": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "id": "xition-e6b64106-4144-48a5-8cab-0dca3f94173f",
+            "from": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
+            "to": "state-3d7a6b58-c7e1-4a72-91c1-24dec5672577",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": false
               }
@@ -1231,17 +1099,17 @@
             "duration": 0.08
           },
           {
-            "id": "xition-23e8120d-6311-4a74-8ff3-efeec6c0df55",
-            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
-            "to": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "id": "xition-6033d5dd-2389-4a05-b0ea-c41cafadcf8f",
+            "from": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
+            "to": "state-3d7a6b58-c7e1-4a72-91c1-24dec5672577",
             "conditions": [
               {
-                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "parameterId": "param-a2ece2cb-a226-42e6-bfc2-a5fef9752c09",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "parameterId": "param-331f71cf-c739-4c0f-85a2-5005a5d54444",
                 "op": "==",
                 "value": false
               }
@@ -1249,21 +1117,21 @@
             "duration": 0.08
           },
           {
-            "id": "xition-27d43528-7353-4583-942d-82055651e347",
-            "from": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-8d36ff81-136a-4819-b88b-c9ef4c19d710",
+            "from": "state-3d7a6b58-c7e1-4a72-91c1-24dec5672577",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [],
             "duration": 0.12,
             "hasExitTime": true,
             "exitTime": 1
           },
           {
-            "id": "xition-ef778e56-2096-4849-bfc4-f68409161f08",
+            "id": "xition-f9f4f37d-a162-4c50-a974-42e2ba5cc747",
             "from": "any",
-            "to": "state-8734f286-179e-4d59-bcde-f917ba660516",
+            "to": "state-ecec7035-4532-493c-8d31-ff5259479263",
             "conditions": [
               {
-                "parameterId": "param-814dae47-3933-490e-936c-075080862416",
+                "parameterId": "param-638d648c-1128-42bf-b41c-89b0fb6dcc92",
                 "op": "==",
                 "value": true
               }
@@ -1271,12 +1139,12 @@
             "duration": 0.1
           },
           {
-            "id": "xition-2edd4c28-4d91-4b21-8c48-f6498c632f8b",
-            "from": "state-8734f286-179e-4d59-bcde-f917ba660516",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-e5c744e6-9799-4086-868b-1929cde89e8d",
+            "from": "state-ecec7035-4532-493c-8d31-ff5259479263",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-814dae47-3933-490e-936c-075080862416",
+                "parameterId": "param-638d648c-1128-42bf-b41c-89b0fb6dcc92",
                 "op": "==",
                 "value": false
               }
@@ -1284,17 +1152,17 @@
             "duration": 0.16
           },
           {
-            "id": "xition-0d5f89e1-eec2-4c1c-8e36-23d515c3b757",
+            "id": "xition-5eef55df-7ca7-42ef-8c3b-6c7fd714de13",
             "from": "any",
-            "to": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "to": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
             "conditions": [
               {
-                "parameterId": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+                "parameterId": "param-ea6ab3f7-a9b6-41f1-8f91-084346f81638",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 0.1
               }
@@ -1302,17 +1170,17 @@
             "duration": 0.12
           },
           {
-            "id": "xition-35fe2dce-60ed-4c87-91d0-c315ab0af35e",
+            "id": "xition-52ad197d-4727-4d24-acb6-b09352fc059f",
             "from": "any",
-            "to": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "to": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
             "conditions": [
               {
-                "parameterId": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+                "parameterId": "param-ea6ab3f7-a9b6-41f1-8f91-084346f81638",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": "<",
                 "value": 0.1
               }
@@ -1320,12 +1188,12 @@
             "duration": 0.12
           },
           {
-            "id": "xition-e2338c26-8acc-4247-bcaf-1421cfd89bc0",
-            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
-            "to": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "id": "xition-a091ceec-9acb-43c4-9d23-a78fcf46e7e9",
+            "from": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
+            "to": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
             "conditions": [
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 0.1
               }
@@ -1333,12 +1201,12 @@
             "duration": 0.18
           },
           {
-            "id": "xition-971913ac-6ea4-4567-9e7a-21d8555e1996",
-            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
-            "to": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "id": "xition-4546a30a-a6e7-4d97-b482-860a1451fefe",
+            "from": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
+            "to": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
             "conditions": [
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": "<",
                 "value": 0.1
               }
@@ -1346,12 +1214,12 @@
             "duration": 0.18
           },
           {
-            "id": "xition-185f97f0-2703-46b1-b1d1-1940cc2a3c4b",
-            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-9e4a115a-f439-4ffe-9029-e640df987cfb",
+            "from": "state-fb37dc64-6b93-46c9-8b3d-ea7da57a75df",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+                "parameterId": "param-ea6ab3f7-a9b6-41f1-8f91-084346f81638",
                 "op": "==",
                 "value": false
               }
@@ -1359,12 +1227,12 @@
             "duration": 0.18
           },
           {
-            "id": "xition-e4db9335-8943-4762-8cb0-0fecb3a0594c",
-            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-8884896f-784d-4526-9fae-288b6e6f05a4",
+            "from": "state-92a860ca-c8f8-4d09-a8cd-8c1949aab136",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+                "parameterId": "param-ea6ab3f7-a9b6-41f1-8f91-084346f81638",
                 "op": "==",
                 "value": false
               }
@@ -1372,17 +1240,17 @@
             "duration": 0.18
           },
           {
-            "id": "xition-7ad54b26-5c97-45ca-9d16-605db69acc2f",
+            "id": "xition-1d43c323-b074-4baa-91ee-1569bade9601",
             "from": "any",
-            "to": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
+            "to": "state-226b1685-a250-4c3c-bf7f-0267cf996dbf",
             "conditions": [
               {
-                "parameterId": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+                "parameterId": "param-8d26c9fc-d04c-42c9-a6bc-f96f852e13c8",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 0.1
               }
@@ -1390,17 +1258,17 @@
             "duration": 0.12
           },
           {
-            "id": "xition-a6e61da1-210e-462f-a29f-7ae234322aa0",
+            "id": "xition-34118bd9-2aa0-40f3-864f-8940d5c224b7",
             "from": "any",
-            "to": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
+            "to": "state-07a51102-eaae-4604-a1ab-96b0eeff54cb",
             "conditions": [
               {
-                "parameterId": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+                "parameterId": "param-8d26c9fc-d04c-42c9-a6bc-f96f852e13c8",
                 "op": "==",
                 "value": true
               },
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": "<",
                 "value": 0.1
               }
@@ -1408,12 +1276,12 @@
             "duration": 0.12
           },
           {
-            "id": "xition-4fa5a700-a6e2-4d99-a7f2-8b7a4d965399",
-            "from": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
-            "to": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
+            "id": "xition-7768eca9-8cd6-42e3-a488-b9cabbc11936",
+            "from": "state-07a51102-eaae-4604-a1ab-96b0eeff54cb",
+            "to": "state-226b1685-a250-4c3c-bf7f-0267cf996dbf",
             "conditions": [
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": ">",
                 "value": 0.1
               }
@@ -1421,12 +1289,12 @@
             "duration": 0.18
           },
           {
-            "id": "xition-c392213a-4443-4ae5-b193-f877c790db7a",
-            "from": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
-            "to": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
+            "id": "xition-71a250a1-273e-4c25-a3b4-bea1bfc82df4",
+            "from": "state-226b1685-a250-4c3c-bf7f-0267cf996dbf",
+            "to": "state-07a51102-eaae-4604-a1ab-96b0eeff54cb",
             "conditions": [
               {
-                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "parameterId": "param-971d9bd7-b446-4239-a6b5-ba59211d364d",
                 "op": "<",
                 "value": 0.1
               }
@@ -1434,12 +1302,12 @@
             "duration": 0.18
           },
           {
-            "id": "xition-8cfb44e9-c97b-4909-8395-7cfb0495cb8d",
-            "from": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-a45d5f4e-c328-4322-a845-36c9428f8119",
+            "from": "state-07a51102-eaae-4604-a1ab-96b0eeff54cb",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+                "parameterId": "param-8d26c9fc-d04c-42c9-a6bc-f96f852e13c8",
                 "op": "==",
                 "value": false
               }
@@ -1447,12 +1315,12 @@
             "duration": 0.18
           },
           {
-            "id": "xition-12b53718-0bbb-4695-825e-4e75b59f5863",
-            "from": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-e462fa0f-03ec-483b-808b-0f8cc7bcdb68",
+            "from": "state-226b1685-a250-4c3c-bf7f-0267cf996dbf",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+                "parameterId": "param-8d26c9fc-d04c-42c9-a6bc-f96f852e13c8",
                 "op": "==",
                 "value": false
               }
@@ -1460,12 +1328,12 @@
             "duration": 0.18
           },
           {
-            "id": "xition-c5dcb743-5624-487c-8db1-44797c5a1fb3",
+            "id": "xition-296abca6-2093-4d7d-9b26-f6f54d612c08",
             "from": "any",
-            "to": "state-e7f031fc-54d7-4ea7-b37e-597bd93d20dd",
+            "to": "state-bd85c3af-01fa-49e5-ae4d-85e005bf0824",
             "conditions": [
               {
-                "parameterId": "param-36972af9-bd3f-4459-b6ff-2815c0bb5515",
+                "parameterId": "param-ff4d3c51-0d41-46d9-b200-d8dc60e68e44",
                 "op": "==",
                 "value": true
               }
@@ -1473,12 +1341,12 @@
             "duration": 0.15
           },
           {
-            "id": "xition-42964e6b-db0e-4e81-8ad9-f6fa8c2bf9ae",
-            "from": "state-e7f031fc-54d7-4ea7-b37e-597bd93d20dd",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-34b3ee36-447e-47e1-88cd-af0949008b8e",
+            "from": "state-bd85c3af-01fa-49e5-ae4d-85e005bf0824",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-36972af9-bd3f-4459-b6ff-2815c0bb5515",
+                "parameterId": "param-ff4d3c51-0d41-46d9-b200-d8dc60e68e44",
                 "op": "==",
                 "value": false
               }
@@ -1486,12 +1354,12 @@
             "duration": 0.15
           },
           {
-            "id": "xition-55b9a927-b0d5-474b-af3a-86e816eb3b22",
+            "id": "xition-38112dd7-78c4-46e1-afdf-2f22265ce74b",
             "from": "any",
-            "to": "state-08c66896-208a-4c7b-95d3-9f1a9e955cc3",
+            "to": "state-90a32e2d-9982-4934-8c99-6ddb3b7012cc",
             "conditions": [
               {
-                "parameterId": "param-cff0666d-5221-41e2-99bf-ba46dc4013ae",
+                "parameterId": "param-1b4f4744-f204-4b10-b87f-ada83da7be62",
                 "op": "==",
                 "value": true
               }
@@ -1499,1016 +1367,12 @@
             "duration": 0.15
           },
           {
-            "id": "xition-8b90b6e6-6b70-46a4-be93-1f28a838acfd",
-            "from": "state-08c66896-208a-4c7b-95d3-9f1a9e955cc3",
-            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "id": "xition-e7db2fb3-578c-454c-a359-912e5032ec9c",
+            "from": "state-90a32e2d-9982-4934-8c99-6ddb3b7012cc",
+            "to": "state-c1287555-23b0-4b8e-920d-a3b89a3ae0a9",
             "conditions": [
               {
-                "parameterId": "param-cff0666d-5221-41e2-99bf-ba46dc4013ae",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.15
-          }
-        ],
-        "createdAt": 1787165136559
-      },
-      {
-        "id": "animctl-0058e759-3613-4b9f-8978-bbacc2ba0799",
-        "name": "UAL1 Locomotion",
-        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
-        "parameters": [
-          {
-            "id": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-            "name": "Speed",
-            "type": "float",
-            "source": "speed",
-            "defaultValue": 0
-          },
-          {
-            "id": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
-            "name": "VerticalSpeed",
-            "type": "float",
-            "source": "verticalSpeed",
-            "defaultValue": 0
-          },
-          {
-            "id": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
-            "name": "Crouching",
-            "type": "bool",
-            "source": "crouching",
-            "defaultValue": false
-          },
-          {
-            "id": "param-92fe1544-a8ae-4725-bf68-80bc3b96bd65",
-            "name": "Grounded",
-            "type": "bool",
-            "source": "grounded",
-            "defaultValue": true
-          },
-          {
-            "id": "param-811bc448-f036-4216-922e-74edf4997c74",
-            "name": "Rolling",
-            "type": "bool",
-            "source": "rolling",
-            "defaultValue": false
-          },
-          {
-            "id": "param-2fd2710a-d04c-4774-a234-ba7ceec576dd",
-            "name": "Mantling",
-            "type": "bool",
-            "source": "mantling",
-            "defaultValue": false
-          },
-          {
-            "id": "param-beade890-3013-4cb5-a10b-649887af4c91",
-            "name": "Turning",
-            "type": "bool",
-            "source": "turning",
-            "defaultValue": false
-          },
-          {
-            "id": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-            "name": "Attacking",
-            "type": "bool",
-            "source": "attacking",
-            "defaultValue": false
-          },
-          {
-            "id": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-            "name": "WeaponEquipped",
-            "type": "bool",
-            "source": "weaponEquipped",
-            "defaultValue": false
-          },
-          {
-            "id": "param-02888275-15cb-4c18-b989-ac9068397b7a",
-            "name": "MoveX",
-            "type": "float",
-            "source": "moveX",
-            "defaultValue": 0
-          },
-          {
-            "id": "param-7ee258bc-794b-4380-8eed-36285d3cffbd",
-            "name": "MoveY",
-            "type": "float",
-            "source": "moveY",
-            "defaultValue": 0
-          },
-          {
-            "id": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
-            "name": "Crawling",
-            "type": "bool",
-            "source": "crawling",
-            "defaultValue": false
-          },
-          {
-            "id": "param-468a8045-fd47-4b81-a542-9e1c4cf7596c",
-            "name": "Swimming",
-            "type": "bool",
-            "source": "swimming",
-            "defaultValue": false
-          },
-          {
-            "id": "param-1639059f-4d44-4077-819e-24220c4073fd",
-            "name": "Climbing",
-            "type": "bool",
-            "source": "climbing",
-            "defaultValue": false
-          },
-          {
-            "id": "param-99beb7a6-865b-4818-9f86-ab5a23690d54",
-            "name": "RollX",
-            "type": "float",
-            "source": "rollX",
-            "defaultValue": 0
-          },
-          {
-            "id": "param-d9dc3887-fd2e-4dc3-b334-e2f32c9b652c",
-            "name": "Sliding",
-            "type": "bool",
-            "source": "sliding",
-            "defaultValue": false
-          }
-        ],
-        "states": [
-          {
-            "id": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "name": "Locomotion",
-            "animationId": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 60,
-              "y": 40
-            },
-            "blendParameterId": "param-02888275-15cb-4c18-b989-ac9068397b7a",
-            "blendParameterIdY": "param-7ee258bc-794b-4380-8eed-36285d3cffbd",
-            "blendSamples": [
-              {
-                "animationId": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
-                "value": 0,
-                "y": 0
-              },
-              {
-                "animationId": "anim-082ba7d1-f7b9-4a97-b730-f1e3d2e4347d",
-                "value": 0,
-                "y": 1
-              },
-              {
-                "animationId": "anim-5514b774-4195-4d74-abf4-e8b2a3715f30",
-                "value": 0,
-                "y": -1
-              },
-              {
-                "animationId": "anim-b49484cb-1f5b-43d1-bf04-2921b892322a",
-                "value": -1,
-                "y": 0
-              },
-              {
-                "animationId": "anim-617c74ad-22ae-4e6e-9183-c2e3b1fe6637",
-                "value": 1,
-                "y": 0
-              },
-              {
-                "animationId": "anim-b86b9031-e486-47b4-89a9-6f27b8c6dcff",
-                "value": -0.7,
-                "y": 0.7
-              },
-              {
-                "animationId": "anim-6bc98e34-7096-4d96-881f-b0ed7f29f80d",
-                "value": 0.7,
-                "y": 0.7
-              },
-              {
-                "animationId": "anim-4e140fba-6f28-4bdd-8bd4-885b80287d63",
-                "value": -0.7,
-                "y": -0.7
-              },
-              {
-                "animationId": "anim-600d2d16-6858-4f10-892c-10a7ba90f1af",
-                "value": 0.7,
-                "y": -0.7
-              }
-            ]
-          },
-          {
-            "id": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
-            "name": "Jump Start",
-            "animationId": "anim-d3c13ebb-7348-421c-a3d3-d4ac51deb7b4",
-            "speed": 1,
-            "loop": false,
-            "position": {
-              "x": 320,
-              "y": 220
-            }
-          },
-          {
-            "id": "state-6074b7f2-3b2b-4da4-9849-ca85e75de594",
-            "name": "Jump Loop",
-            "animationId": "anim-dff94c99-1381-4a76-9c7b-b197f42e2843",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 540,
-              "y": 220
-            }
-          },
-          {
-            "id": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
-            "name": "Jump Land",
-            "animationId": "anim-8cf600ac-14a5-463a-8ea9-b54a4adf2b1f",
-            "speed": 1,
-            "loop": false,
-            "position": {
-              "x": 760,
-              "y": 220
-            }
-          },
-          {
-            "id": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "name": "Crouch Idle",
-            "animationId": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 60,
-              "y": 380
-            }
-          },
-          {
-            "id": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "name": "Crouch Walk",
-            "animationId": "anim-259b6f37-5ce4-4d83-8417-acf6aaf725c1",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 320,
-              "y": 380
-            }
-          },
-          {
-            "id": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
-            "name": "Crawl Idle",
-            "animationId": "anim-c98e1984-a130-4acb-a39b-b25898d30881",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 60,
-              "y": 580
-            }
-          },
-          {
-            "id": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
-            "name": "Crawl",
-            "animationId": "anim-591fd0ad-fd36-4aeb-826a-2d19c66d22d7",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 60,
-              "y": 670
-            }
-          },
-          {
-            "id": "state-c689d008-fe65-4000-87c8-6c937cbe5860",
-            "name": "Swim",
-            "animationId": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 840,
-              "y": 380
-            },
-            "blendParameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-            "blendSamples": [
-              {
-                "animationId": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
-                "value": 0
-              },
-              {
-                "animationId": "anim-34606694-ad3e-48d4-aa55-723b26215b66",
-                "value": 3
-              }
-            ]
-          },
-          {
-            "id": "state-19248cdb-edf8-4f43-af53-1ce3fc7606aa",
-            "name": "Climb",
-            "animationId": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 840,
-              "y": 540
-            },
-            "blendParameterId": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
-            "blendSamples": [
-              {
-                "animationId": "anim-fddee64b-409e-4fd2-a52e-bdad5ee3fc38",
-                "value": -1.5
-              },
-              {
-                "animationId": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
-                "value": 0
-              },
-              {
-                "animationId": "anim-b520aa48-e761-4532-b1a6-4a3f78603a4a",
-                "value": 1.5
-              }
-            ]
-          },
-          {
-            "id": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
-            "name": "Roll",
-            "animationId": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
-            "speed": 1,
-            "loop": false,
-            "position": {
-              "x": 580,
-              "y": 380
-            },
-            "blendParameterId": "param-99beb7a6-865b-4818-9f86-ab5a23690d54",
-            "blendSamples": [
-              {
-                "animationId": "anim-0447d7b1-d1e8-4d78-8926-85e122e60a19",
-                "value": -1
-              },
-              {
-                "animationId": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
-                "value": 0
-              },
-              {
-                "animationId": "anim-79bb68bf-65a3-4279-9220-6c6216889e19",
-                "value": 1
-              }
-            ]
-          },
-          {
-            "id": "state-a9f397f5-1b67-4d5b-8467-2c7d7eefeebc",
-            "name": "Slide",
-            "animationId": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
-            "speed": 1,
-            "loop": true,
-            "position": {
-              "x": 60,
-              "y": 1030
-            }
-          },
-          {
-            "id": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
-            "name": "Punch",
-            "animationId": "anim-8e580385-f173-4166-a226-c07806e53683",
-            "speed": 1,
-            "loop": false,
-            "position": {
-              "x": 60,
-              "y": 540
-            }
-          },
-          {
-            "id": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
-            "name": "Kick",
-            "animationId": "anim-2e993eda-229b-431c-929d-08aa6b14ef1c",
-            "speed": 1,
-            "loop": false,
-            "position": {
-              "x": 60,
-              "y": 700
-            }
-          },
-          {
-            "id": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
-            "name": "Sword Attack",
-            "animationId": "anim-e601e68e-26e1-4d27-995b-13f6aef25bce",
-            "speed": 1,
-            "loop": false,
-            "position": {
-              "x": 320,
-              "y": 540
-            }
-          }
-        ],
-        "defaultStateId": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-        "transitions": [
-          {
-            "id": "xition-c0924a8c-8ddf-4eac-92d2-9cf665ea5261",
-            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "to": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
-            "conditions": [
-              {
-                "parameterId": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
-                "op": ">",
-                "value": 1
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-32169e4d-2988-4107-8c3e-b849dca0c24e",
-            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "to": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
-            "conditions": [
-              {
-                "parameterId": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
-                "op": ">",
-                "value": 1
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-d46558b9-8014-4e21-b02e-77cb6890ee57",
-            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "to": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
-            "conditions": [
-              {
-                "parameterId": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
-                "op": ">",
-                "value": 1
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-97ad326f-fcbf-47cc-92e3-c96b20cd6e5a",
-            "from": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
-            "to": "state-6074b7f2-3b2b-4da4-9849-ca85e75de594",
-            "conditions": [],
-            "duration": 0.12,
-            "hasExitTime": true,
-            "exitTime": 0.5
-          },
-          {
-            "id": "xition-81dc8608-7f35-4bb3-baf9-6bec0309048f",
-            "from": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
-            "to": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
-            "conditions": [
-              {
-                "parameterId": "param-92fe1544-a8ae-4725-bf68-80bc3b96bd65",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.1
-          },
-          {
-            "id": "xition-c04791fe-2646-415e-8c37-7c24cf3e4e30",
-            "from": "state-6074b7f2-3b2b-4da4-9849-ca85e75de594",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-92fe1544-a8ae-4725-bf68-80bc3b96bd65",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.12
-          },
-          {
-            "id": "xition-64eca1b0-6f8c-4f4d-be69-5ab58240615f",
-            "from": "state-6074b7f2-3b2b-4da4-9849-ca85e75de594",
-            "to": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
-            "conditions": [
-              {
-                "parameterId": "param-92fe1544-a8ae-4725-bf68-80bc3b96bd65",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.1
-          },
-          {
-            "id": "xition-357e9550-4755-4c74-83a8-f18a288f8cde",
-            "from": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-057f288c-844f-4286-9639-b4bd6f202d36",
-            "from": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [],
-            "duration": 0.12,
-            "hasExitTime": true,
-            "exitTime": 0.45
-          },
-          {
-            "id": "xition-1d30e951-ff36-463d-b701-8d6a64b74873",
-            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "to": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
-            "conditions": [
-              {
-                "parameterId": "param-811bc448-f036-4216-922e-74edf4997c74",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-e4d2a381-af4f-42a8-8245-2f88734a3100",
-            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "to": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
-            "conditions": [
-              {
-                "parameterId": "param-811bc448-f036-4216-922e-74edf4997c74",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-0b124c36-77a5-4d69-a470-02cc84f89826",
-            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "to": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
-            "conditions": [
-              {
-                "parameterId": "param-811bc448-f036-4216-922e-74edf4997c74",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-6de7c778-067a-4298-9dd0-4fe3ccadf14f",
-            "from": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-811bc448-f036-4216-922e-74edf4997c74",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-7927e298-7552-4f7e-a75f-0b314909b11d",
-            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "to": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-9587045c-c4f2-4874-a76d-0db9bb6633b7",
-            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "to": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-f62fe989-1556-4ea2-8d3d-c7feb3d5f526",
-            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "to": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-ca0e9d6f-153f-4508-b018-2fc1ab2095da",
-            "from": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [],
-            "duration": 0.12,
-            "hasExitTime": true,
-            "exitTime": 1
-          },
-          {
-            "id": "xition-54323421-be95-4cc3-8fef-6c413eb3c637",
-            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "to": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 4
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-f323e2a8-8665-4978-a1be-7dc5bc050be8",
-            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "to": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 4
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-1df252d0-5667-4b05-8a32-ea6af9b60f65",
-            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "to": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 4
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-a2cef906-0452-493f-b28e-743a272d567a",
-            "from": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [],
-            "duration": 0.12,
-            "hasExitTime": true,
-            "exitTime": 1
-          },
-          {
-            "id": "xition-050f3c64-6381-4970-9929-0ac6463282c9",
-            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "to": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-47f2fe5b-b869-43c6-b8eb-5fa9db735186",
-            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "to": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-bf18ac22-54b8-490a-a2d1-c85d0b214d7e",
-            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "to": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
-            "conditions": [
-              {
-                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.08
-          },
-          {
-            "id": "xition-673a0cab-3c69-49fb-aa49-9c6902d96457",
-            "from": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [],
-            "duration": 0.12,
-            "hasExitTime": true,
-            "exitTime": 1
-          },
-          {
-            "id": "xition-6431fd8d-d5b7-4295-a169-860301a23875",
-            "from": "any",
-            "to": "state-a9f397f5-1b67-4d5b-8467-2c7d7eefeebc",
-            "conditions": [
-              {
-                "parameterId": "param-d9dc3887-fd2e-4dc3-b334-e2f32c9b652c",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.1
-          },
-          {
-            "id": "xition-fffe5aca-efee-4989-8c3c-f7cd80a92520",
-            "from": "state-a9f397f5-1b67-4d5b-8467-2c7d7eefeebc",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-d9dc3887-fd2e-4dc3-b334-e2f32c9b652c",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.16
-          },
-          {
-            "id": "xition-66a3e4e3-54f8-4b91-8f85-d15eb43c3ea8",
-            "from": "any",
-            "to": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "conditions": [
-              {
-                "parameterId": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.12
-          },
-          {
-            "id": "xition-16b5c255-e37a-48de-9cc0-f560a24deaf5",
-            "from": "any",
-            "to": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "conditions": [
-              {
-                "parameterId": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": "<",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.12
-          },
-          {
-            "id": "xition-4001024a-2b2e-4d52-ac18-d40688aef836",
-            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "to": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "conditions": [
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-2e360e4d-30a5-4307-b4f4-7115fe5e62b3",
-            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "to": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "conditions": [
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": "<",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-8cdd81a8-1a53-430a-a727-3806df4cac07",
-            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-6e470fb0-005e-4170-aaad-cf800f536d0b",
-            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-88af53b6-95dc-4513-8982-35b2134c9fe9",
-            "from": "any",
-            "to": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
-            "conditions": [
-              {
-                "parameterId": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.12
-          },
-          {
-            "id": "xition-c61c24a0-1765-481f-90c4-f563cc4ac610",
-            "from": "any",
-            "to": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
-            "conditions": [
-              {
-                "parameterId": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
-                "op": "==",
-                "value": true
-              },
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": "<",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.12
-          },
-          {
-            "id": "xition-8c1c99cc-9e4c-450e-80d4-4d935231cf8b",
-            "from": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
-            "to": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
-            "conditions": [
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": ">",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-4e83cb7d-91f0-4893-a433-79c2003ad525",
-            "from": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
-            "to": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
-            "conditions": [
-              {
-                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
-                "op": "<",
-                "value": 0.1
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-6d6ee0b2-0e5c-4583-aac1-cfb9f3f8e681",
-            "from": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-3ca675fb-d46f-43c4-96bd-6b9c4f7fe43b",
-            "from": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.18
-          },
-          {
-            "id": "xition-2f8eff4b-5e28-4468-8921-fafb5bcbb43f",
-            "from": "any",
-            "to": "state-c689d008-fe65-4000-87c8-6c937cbe5860",
-            "conditions": [
-              {
-                "parameterId": "param-468a8045-fd47-4b81-a542-9e1c4cf7596c",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.15
-          },
-          {
-            "id": "xition-6fe79a5e-8977-44cc-84d8-092e56836f6f",
-            "from": "state-c689d008-fe65-4000-87c8-6c937cbe5860",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-468a8045-fd47-4b81-a542-9e1c4cf7596c",
-                "op": "==",
-                "value": false
-              }
-            ],
-            "duration": 0.15
-          },
-          {
-            "id": "xition-0af374b0-af60-496f-81de-959b1200dc52",
-            "from": "any",
-            "to": "state-19248cdb-edf8-4f43-af53-1ce3fc7606aa",
-            "conditions": [
-              {
-                "parameterId": "param-1639059f-4d44-4077-819e-24220c4073fd",
-                "op": "==",
-                "value": true
-              }
-            ],
-            "duration": 0.15
-          },
-          {
-            "id": "xition-f5e81ad6-5c65-47ef-8ce0-bd24c2e3b4af",
-            "from": "state-19248cdb-edf8-4f43-af53-1ce3fc7606aa",
-            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
-            "conditions": [
-              {
-                "parameterId": "param-1639059f-4d44-4077-819e-24220c4073fd",
+                "parameterId": "param-1b4f4744-f204-4b10-b87f-ada83da7be62",
                 "op": "==",
                 "value": false
               }
@@ -2516,7 +1380,7 @@
             "duration": 0.15
           }
         ],
-        "createdAt": 1787165136707
+        "createdAt": 1787167683248
       }
     ],
     "dataAssets": [],
@@ -2528,7 +1392,7 @@
         "name": "Main",
         "objects": [
           {
-            "id": "obj-4500fb69-5596-4258-bb06-2366d48391f7",
+            "id": "obj-97f02b14-7279-4e4c-9fb7-1a655def0579",
             "name": "Meadow",
             "kind": "terrain",
             "transform": {
@@ -2648,7 +1512,7 @@
             }
           },
           {
-            "id": "obj-d41d68ab-5403-4269-a95a-6a5ad16d0633",
+            "id": "obj-b5acd4bd-74a7-4db3-ba71-a19952183225",
             "name": "Boulder",
             "kind": "sphere",
             "transform": {
@@ -2693,7 +1557,7 @@
             }
           },
           {
-            "id": "obj-cba018d1-4f2f-42c2-8fb1-a8b1c8c93561",
+            "id": "obj-19bc409e-e9c5-4b84-8f5d-d665b028c129",
             "name": "Boulder",
             "kind": "sphere",
             "transform": {
@@ -2738,7 +1602,7 @@
             }
           },
           {
-            "id": "obj-3b178871-eccc-48cf-b775-781c4d88df15",
+            "id": "obj-55580c26-87a1-4ce7-98d8-3fad188cca98",
             "name": "Boulder",
             "kind": "sphere",
             "transform": {
@@ -2783,7 +1647,7 @@
             }
           },
           {
-            "id": "obj-c0166f4c-c304-47bf-8053-3458fac28808",
+            "id": "obj-718b5b69-7a99-4f5b-8cb5-1b071565d07d",
             "name": "Boulder",
             "kind": "sphere",
             "transform": {
@@ -2828,7 +1692,7 @@
             }
           },
           {
-            "id": "obj-55919b80-78e7-4f23-bf28-273cd6145736",
+            "id": "obj-9d975175-d08c-4d8e-9fc2-298f9bcad558",
             "name": "Loose Boulder",
             "kind": "sphere",
             "transform": {
@@ -2873,7 +1737,7 @@
             }
           },
           {
-            "id": "obj-97640801-a034-40a0-a228-f65c22c78121",
+            "id": "obj-7923befd-62c4-4f47-aa87-6e356625b448",
             "name": "Loose Boulder",
             "kind": "sphere",
             "transform": {
@@ -2918,7 +1782,7 @@
             }
           },
           {
-            "id": "obj-ff8016a7-1f95-42df-b1a4-cdb35c700f86",
+            "id": "obj-855bf005-7751-4220-95c7-40a637bc6f49",
             "name": "Loose Boulder",
             "kind": "sphere",
             "transform": {
@@ -2963,7 +1827,7 @@
             }
           },
           {
-            "id": "obj-4cc00e8c-6fb1-4658-9ece-cf3e32be9a72",
+            "id": "obj-fd1b5707-cfde-42be-b693-52be3ac2554c",
             "name": "Player",
             "kind": "cube",
             "transform": {
@@ -2989,11 +1853,11 @@
               "color": "#5B8CFF",
               "metalness": 0.1,
               "roughness": 0.65,
-              "modelAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a"
+              "modelAssetId": "asset-e1debd80-5366-43b0-910c-f495a915d936"
             },
             "animator": {
               "enabled": true,
-              "controllerId": "animctl-c4f0f7bf-ce77-46c4-844a-d247104d4fd1",
+              "controllerId": "animctl-60d7ff39-1b7d-49a4-8547-4b0aeebdfaf5",
               "speed": 1,
               "loop": true
             },
@@ -3076,562 +1940,8 @@
               "cameraRelativeMovement": true
             },
             "script": {
-              "blueprintId": "bp-87f5d9e9-e270-42ad-820c-681754cffcbf",
-              "graphId": "graph-493276f5-94a9-4a9f-a395-9c888f2a0120",
-              "enabled": true
-            }
-          },
-          {
-            "id": "obj-f65ca418-10d4-4321-beb4-7d6db181df42",
-            "name": "Meadow",
-            "kind": "terrain",
-            "transform": {
-              "position": [
-                0,
-                0,
-                0
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                1,
-                1,
-                1
-              ]
-            },
-            "terrain": {
-              "enabled": true,
-              "size": 600,
-              "chunkSize": 32,
-              "resolution": 18,
-              "streamRadius": 4,
-              "physicsRadius": 2,
-              "seed": 1337,
-              "heightScale": 7,
-              "frequency": 0.03,
-              "octaves": 4,
-              "persistence": 0.5,
-              "lacunarity": 2,
-              "editSpacing": 2,
-              "lowColor": "#496f38",
-              "midColor": "#6f8f4f",
-              "highColor": "#b6b09a",
-              "materialLayers": [
-                {
-                  "id": "terrain-grass",
-                  "name": "Grass",
-                  "color": "#5aa848"
-                },
-                {
-                  "id": "terrain-meadow",
-                  "name": "Meadow",
-                  "color": "#71ba52"
-                },
-                {
-                  "id": "terrain-rock",
-                  "name": "Rock",
-                  "color": "#9a9482"
-                }
-              ],
-              "heightOverrides": {},
-              "paintOverrides": {},
-              "foliageOverrides": {},
-              "foliage": {
-                "enabled": true,
-                "mode": "mixed",
-                "density": 1,
-                "treeDensity": 0.18,
-                "minScale": 0.85,
-                "maxScale": 1.4,
-                "slopeLimit": 0.68,
-                "grassMesh": "blade",
-                "treeMesh": "fir",
-                "grassSource": "builtin",
-                "treeSource": "builtin",
-                "grassColor": "#46a03c",
-                "trunkColor": "#5b3f2b",
-                "treeColor": "#3f9a4e",
-                "windStrength": 1,
-                "interactStrength": 1,
-                "flowerDensity": 0.28,
-                "usePaintMask": false,
-                "stylizedGrass": {
-                  "gradientTop": "#f0f2d4",
-                  "gradientBottom": "#4a4f3e",
-                  "gradientOffset": 0.05,
-                  "gradientContrast": 0.45,
-                  "colorNoiseScale": 0.045,
-                  "colorNoiseStrength": 0.35,
-                  "colorNoiseLow": "#eef1c8",
-                  "colorNoiseHigh": "#8fb257",
-                  "windSpeed": 0.35,
-                  "windNoiseScale": 0.06,
-                  "bendPivot": 0.25,
-                  "perspectiveCorrection": 0.55,
-                  "perspectiveHeightStart": 0.3,
-                  "interactionStrength": 0.55,
-                  "pushDownAmount": 0.35,
-                  "trailTint": "#c9d98f",
-                  "normalLift": 0.75,
-                  "fadeMode": "dither",
-                  "fadeStart": 45,
-                  "fadeEnd": 70
-                },
-                "treeSpecId": "tree-pine"
-              },
-              "editVersion": 0
-            },
-            "physics": {
-              "enabled": true,
-              "bodyType": "fixed",
-              "collider": "mesh",
-              "materialPreset": "default",
-              "isTrigger": false,
-              "collisionLayer": 0,
-              "collisionMask": 65535,
-              "mass": 1,
-              "gravityScale": 1,
-              "friction": 0.6,
-              "restitution": 0.05,
-              "linearDamping": 0,
-              "angularDamping": 0.05,
-              "windInfluence": 0
-            }
-          },
-          {
-            "id": "obj-b067e206-dfad-4994-8deb-516fa5e34d0c",
-            "name": "Boulder",
-            "kind": "sphere",
-            "transform": {
-              "position": [
-                15,
-                -0.2411052259284307,
-                -11
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                2,
-                1.4,
-                1.7
-              ]
-            },
-            "renderer": {
-              "enabled": true,
-              "mesh": "sphere",
-              "color": "#8d877a",
-              "metalness": 0.1,
-              "roughness": 0.65
-            },
-            "physics": {
-              "enabled": true,
-              "bodyType": "fixed",
-              "collider": "sphere",
-              "materialPreset": "default",
-              "isTrigger": false,
-              "collisionLayer": 0,
-              "collisionMask": 65535,
-              "mass": 1,
-              "gravityScale": 1,
-              "friction": 0.6,
-              "restitution": 0.05,
-              "linearDamping": 0,
-              "angularDamping": 0.05,
-              "windInfluence": 0
-            }
-          },
-          {
-            "id": "obj-3dc3b035-b42f-421b-a8c1-20fa1d3f2f4d",
-            "name": "Boulder",
-            "kind": "sphere",
-            "transform": {
-              "position": [
-                -19,
-                -0.6689928623587581,
-                9
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                2.6,
-                1.8,
-                2.2
-              ]
-            },
-            "renderer": {
-              "enabled": true,
-              "mesh": "sphere",
-              "color": "#8d877a",
-              "metalness": 0.1,
-              "roughness": 0.65
-            },
-            "physics": {
-              "enabled": true,
-              "bodyType": "fixed",
-              "collider": "sphere",
-              "materialPreset": "default",
-              "isTrigger": false,
-              "collisionLayer": 0,
-              "collisionMask": 65535,
-              "mass": 1,
-              "gravityScale": 1,
-              "friction": 0.6,
-              "restitution": 0.05,
-              "linearDamping": 0,
-              "angularDamping": 0.05,
-              "windInfluence": 0
-            }
-          },
-          {
-            "id": "obj-44d231fb-6d62-449c-a2ab-2aee100dce2e",
-            "name": "Boulder",
-            "kind": "sphere",
-            "transform": {
-              "position": [
-                7,
-                -1.6276571785242708,
-                23
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                1.6,
-                1.1,
-                1.5
-              ]
-            },
-            "renderer": {
-              "enabled": true,
-              "mesh": "sphere",
-              "color": "#8d877a",
-              "metalness": 0.1,
-              "roughness": 0.65
-            },
-            "physics": {
-              "enabled": true,
-              "bodyType": "fixed",
-              "collider": "sphere",
-              "materialPreset": "default",
-              "isTrigger": false,
-              "collisionLayer": 0,
-              "collisionMask": 65535,
-              "mass": 1,
-              "gravityScale": 1,
-              "friction": 0.6,
-              "restitution": 0.05,
-              "linearDamping": 0,
-              "angularDamping": 0.05,
-              "windInfluence": 0
-            }
-          },
-          {
-            "id": "obj-a04e798b-6a97-4be9-a6c6-1b0ecf156150",
-            "name": "Boulder",
-            "kind": "sphere",
-            "transform": {
-              "position": [
-                -10,
-                -0.09169031864699428,
-                -22
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                2.2,
-                1.5,
-                1.9
-              ]
-            },
-            "renderer": {
-              "enabled": true,
-              "mesh": "sphere",
-              "color": "#8d877a",
-              "metalness": 0.1,
-              "roughness": 0.65
-            },
-            "physics": {
-              "enabled": true,
-              "bodyType": "fixed",
-              "collider": "sphere",
-              "materialPreset": "default",
-              "isTrigger": false,
-              "collisionLayer": 0,
-              "collisionMask": 65535,
-              "mass": 1,
-              "gravityScale": 1,
-              "friction": 0.6,
-              "restitution": 0.05,
-              "linearDamping": 0,
-              "angularDamping": 0.05,
-              "windInfluence": 0
-            }
-          },
-          {
-            "id": "obj-328da865-773c-4357-a8e6-da38a78b0c68",
-            "name": "Loose Boulder",
-            "kind": "sphere",
-            "transform": {
-              "position": [
-                3,
-                1.0676113275246868,
-                6
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                1.2,
-                1.2,
-                1.2
-              ]
-            },
-            "renderer": {
-              "enabled": true,
-              "mesh": "sphere",
-              "color": "#b7a98f",
-              "metalness": 0.1,
-              "roughness": 0.65
-            },
-            "physics": {
-              "enabled": true,
-              "bodyType": "dynamic",
-              "collider": "sphere",
-              "materialPreset": "default",
-              "isTrigger": false,
-              "collisionLayer": 0,
-              "collisionMask": 65535,
-              "mass": 5,
-              "gravityScale": 1,
-              "friction": 0.6,
-              "restitution": 0.05,
-              "linearDamping": 0,
-              "angularDamping": 0.05,
-              "windInfluence": 0
-            }
-          },
-          {
-            "id": "obj-1cfc110c-dbae-41ca-b6c5-7394844b97f1",
-            "name": "Loose Boulder",
-            "kind": "sphere",
-            "transform": {
-              "position": [
-                -4,
-                0.4798388752742776,
-                7.5
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                1.2,
-                1.2,
-                1.2
-              ]
-            },
-            "renderer": {
-              "enabled": true,
-              "mesh": "sphere",
-              "color": "#b7a98f",
-              "metalness": 0.1,
-              "roughness": 0.65
-            },
-            "physics": {
-              "enabled": true,
-              "bodyType": "dynamic",
-              "collider": "sphere",
-              "materialPreset": "default",
-              "isTrigger": false,
-              "collisionLayer": 0,
-              "collisionMask": 65535,
-              "mass": 5,
-              "gravityScale": 1,
-              "friction": 0.6,
-              "restitution": 0.05,
-              "linearDamping": 0,
-              "angularDamping": 0.05,
-              "windInfluence": 0
-            }
-          },
-          {
-            "id": "obj-664840b6-e435-4c71-83bc-3b51cc9d53ea",
-            "name": "Loose Boulder",
-            "kind": "sphere",
-            "transform": {
-              "position": [
-                1,
-                0.6912099444774408,
-                10
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                1.2,
-                1.2,
-                1.2
-              ]
-            },
-            "renderer": {
-              "enabled": true,
-              "mesh": "sphere",
-              "color": "#b7a98f",
-              "metalness": 0.1,
-              "roughness": 0.65
-            },
-            "physics": {
-              "enabled": true,
-              "bodyType": "dynamic",
-              "collider": "sphere",
-              "materialPreset": "default",
-              "isTrigger": false,
-              "collisionLayer": 0,
-              "collisionMask": 65535,
-              "mass": 5,
-              "gravityScale": 1,
-              "friction": 0.6,
-              "restitution": 0.05,
-              "linearDamping": 0,
-              "angularDamping": 0.05,
-              "windInfluence": 0
-            }
-          },
-          {
-            "id": "obj-a20c35f7-5b26-4b69-8553-a4b5c30b90b6",
-            "name": "Player",
-            "kind": "cube",
-            "transform": {
-              "position": [
-                0,
-                -0.20880207383899702,
-                0
-              ],
-              "rotation": [
-                0,
-                0,
-                0
-              ],
-              "scale": [
-                1,
-                1,
-                1
-              ]
-            },
-            "renderer": {
-              "enabled": true,
-              "mesh": "cube",
-              "color": "#5B8CFF",
-              "metalness": 0.1,
-              "roughness": 0.65,
-              "modelAssetId": "asset-e045f9b1-df72-4a78-80a7-12c09af9ceb8"
-            },
-            "animator": {
-              "enabled": true,
-              "controllerId": "animctl-0058e759-3613-4b9f-8978-bbacc2ba0799",
-              "speed": 1,
-              "loop": true
-            },
-            "character": {
-              "enabled": true,
-              "moveSpeed": 3.4,
-              "sprintMultiplier": 2,
-              "crouchMultiplier": 0.45,
-              "jumpStrength": 6,
-              "gravity": 16,
-              "fallMultiplier": 1.9,
-              "jumpCutMultiplier": 0.45,
-              "coyoteTime": 0.12,
-              "jumpBufferTime": 0.15,
-              "landingRecovery": 0.4,
-              "apexHang": 0.65,
-              "sprintTurnFactor": 0.55,
-              "slideEnabled": true,
-              "slideDuration": 0.9,
-              "slideSpeedBoost": 1.2,
-              "acceleration": 60,
-              "deceleration": 70,
-              "airControl": 0.35,
-              "turnSpeed": 12,
-              "turnInPlace": true,
-              "turnInPlaceThreshold": 0.45,
-              "turnInPlaceSpeed": 10,
-              "mantleEnabled": true,
-              "keyMantle": "",
-              "mantleRange": 1.35,
-              "mantleMaxHeight": 1.45,
-              "vaultMaxHeight": 0.9,
-              "mantleDuration": 0.38,
-              "modelYawOffset": 0,
-              "groundLevel": 0,
-              "keyForward": "KeyW",
-              "keyBackward": "KeyS",
-              "keyLeft": "KeyA",
-              "keyRight": "KeyD",
-              "keyJump": "Space",
-              "keySprint": "ShiftLeft",
-              "keyCrouch": "KeyC",
-              "keyCrawl": "KeyZ",
-              "crawlMultiplier": 0.4,
-              "strafe": true,
-              "keyRoll": "KeyQ",
-              "rollSpeed": 3.4,
-              "rollDuration": 1.4666666984558105,
-              "keyAttack": "Mouse0",
-              "keyAim": "Mouse1",
-              "keyReload": "KeyR",
-              "keyInteract": "KeyE",
-              "keyEmote": "KeyF",
-              "keyRagdoll": "KeyP",
-              "lockOnEnabled": true,
-              "keyLockOn": "KeyT",
-              "lockOnRange": 16,
-              "lockOnBreakDistance": 22,
-              "meleeDamage": 34,
-              "meleeRange": 2.4,
-              "meleeComboCount": 1,
-              "meleeComboWindow": 0.35,
-              "meleeHitstop": 0,
-              "meleeHitstopScale": 0.05,
-              "rollIFrameStart": 0,
-              "rollIFrameEnd": 0,
-              "keySwapShoulder": "KeyV",
-              "cameraMode": "thirdPerson",
-              "cameraFollow": true,
-              "cameraOffset": [
-                0,
-                3,
-                -7
-              ],
-              "mouseLook": true,
-              "mouseSensitivity": 0.0025,
-              "cameraPitch": 0.12,
-              "cameraMinPitch": -0.2,
-              "cameraMaxPitch": 1.2,
-              "cameraRelativeMovement": true
-            },
-            "script": {
-              "blueprintId": "bp-ef553716-054e-4d8a-8842-34181852a2c8",
-              "graphId": "graph-5d108587-5fed-4c47-bd5f-26f176b22826",
+              "blueprintId": "bp-fce45b6f-32c4-4c4b-b1ac-ecb465bf4f8c",
+              "graphId": "graph-7935e8b3-b634-4e02-add2-07367e50b02e",
               "enabled": true
             }
           }
@@ -3689,25 +1999,12 @@
   },
   "assets": [
     {
-      "id": "asset-e045f9b1-df72-4a78-80a7-12c09af9ceb8",
+      "id": "asset-e1debd80-5366-43b0-910c-f495a915d936",
       "name": "UAL1.glb",
       "type": "model",
       "size": 23108672,
       "hash": "bccd7586a5b6b088397965dd69d431d2209bc07fb3a602bafca9492a7dca69da",
-      "createdAt": 1787165136453,
-      "source": {
-        "url": "templates/UAL1.glb",
-        "sha256": "bccd7586a5b6b088397965dd69d431d2209bc07fb3a602bafca9492a7dca69da",
-        "bytes": 23108672
-      }
-    },
-    {
-      "id": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
-      "name": "UAL1.glb",
-      "type": "model",
-      "size": 23108672,
-      "hash": "bccd7586a5b6b088397965dd69d431d2209bc07fb3a602bafca9492a7dca69da",
-      "createdAt": 1787165136462,
+      "createdAt": 1787167683143,
       "source": {
         "url": "templates/UAL1.glb",
         "sha256": "bccd7586a5b6b088397965dd69d431d2209bc07fb3a602bafca9492a7dca69da",

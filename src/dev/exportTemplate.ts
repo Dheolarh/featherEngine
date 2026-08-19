@@ -182,8 +182,18 @@ async function run(key: TemplateKey) {
   }
 }
 
+/**
+ * Guard against a second run. React StrictMode double-invokes effects in dev, which started two
+ * builders concurrently against the SAME store: they interleaved, so the captured project could
+ * contain both runs' objects (a doubled world, and the same model imported twice) depending on
+ * which POST landed last. Exports must be deterministic — they become shipped content.
+ */
+let started = false;
+
 /** Wired from App when `?exportTemplate=<key>` is present (DEV builds only). */
 export function runTemplateExport(key: string) {
+  if (started) return;
+  started = true;
   void run(key as TemplateKey).catch((error) => {
     console.error('[template-export] failed', error);
     document.body.dataset.templateExportError = String(error);

@@ -200,8 +200,8 @@ describe('externally-referenced package assets', () => {
   });
 
   it('collapses duplicate bytes shipped twice inside ONE package', async () => {
-    // Real templates do this: the third-person starter imports its 22 MB character twice, so the
-    // package lists it under two ids. The install must fetch and store it once.
+    // A publisher can legitimately reference the same bytes under two asset ids (e.g. a shared
+    // model reached by two different components). The install must fetch and store it once.
     const bytes = await readFile(join(PUBLIC, 'templates', 'Sword.glb'));
     const hash = sha256(bytes);
     const common = { url: 'templates/Sword.glb', sha256: hash, bytes: bytes.length, name: 'Dup.glb' };

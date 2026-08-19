@@ -224,8 +224,10 @@ export function collectPackage(
     scene: addTo(ids.scene),
   };
 
-  /** Scene-level references: its audio bed and everything its cinematics drive. */
+  /** Scene-level references: its sky/lighting maps, audio bed, and everything its cinematics drive. */
   const scanScene = (scene: Scene) => {
+    add.asset(scene.environment?.skyTextureAssetId);
+    add.asset(scene.environment?.environmentMapAssetId);
     add.asset(scene.ambientSoundId);
     add.asset(scene.musicSoundId);
     for (const sequence of scene.cinematics ?? []) {
@@ -266,6 +268,9 @@ export function collectPackage(
     }
     add.asset(object.terrain?.foliage?.grassModelAssetId);
     add.asset(object.terrain?.foliage?.treeModelAssetId);
+    // Billboard foliage uses images rather than models — missing these shipped untextured grass.
+    add.asset(object.terrain?.foliage?.grassImageAssetId);
+    add.asset(object.terrain?.foliage?.treeImageAssetId);
     for (const slot of object.inventory?.slots ?? []) {
       add.asset(slot.weaponAssetId);
       add.animation(slot.equipAnimId);
@@ -535,6 +540,8 @@ export function remapPackageForImport(
       if (o.terrain.foliage) {
         o.terrain.foliage.grassModelAssetId = remap(maps.asset, o.terrain.foliage.grassModelAssetId);
         o.terrain.foliage.treeModelAssetId = remap(maps.asset, o.terrain.foliage.treeModelAssetId);
+        o.terrain.foliage.grassImageAssetId = remap(maps.asset, o.terrain.foliage.grassImageAssetId);
+        o.terrain.foliage.treeImageAssetId = remap(maps.asset, o.terrain.foliage.treeImageAssetId);
       }
     }
     if (o.inventory) {
@@ -584,6 +591,10 @@ export function remapPackageForImport(
   for (const scene of c.scenes ?? []) {
     scene.id = remap(maps.scene, scene.id)!;
     scene.objects = scene.objects.map(rewriteObject);
+    if (scene.environment) {
+      scene.environment.skyTextureAssetId = remap(maps.asset, scene.environment.skyTextureAssetId);
+      scene.environment.environmentMapAssetId = remap(maps.asset, scene.environment.environmentMapAssetId);
+    }
     scene.ambientSoundId = remap(maps.asset, scene.ambientSoundId);
     scene.musicSoundId = remap(maps.asset, scene.musicSoundId);
     for (const sequence of scene.cinematics ?? []) {

@@ -441,8 +441,8 @@ const TEMPLATE_THUMBNAILS = {
 
 /**
  * Total install footprint: the manifest plus the bytes actually fetched. Deduplicated by content
- * hash — a template that imports the same 22 MB model twice downloads it once, so counting both
- * entries would roughly double the advertised size.
+ * hash, because an install downloads identical bytes once no matter how many entries reference
+ * them — counting every entry would overstate the download.
  */
 function installFootprint(pkg, json) {
   const unique = new Map();
