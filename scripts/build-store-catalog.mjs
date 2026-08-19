@@ -453,6 +453,35 @@ function installFootprint(pkg, json) {
   return Buffer.byteLength(json, 'utf8') + [...unique.values()].reduce((sum, bytes) => sum + bytes, 0);
 }
 
+/**
+ * Refuse to list a package built from a doubled project.
+ *
+ * Template packages come out of a browser run, and a re-entrant export once merged two builds into
+ * one file: every object duplicated at an identical transform, every model imported twice. It
+ * installed fine and looked plausible. Identical name + parent + FULL transform is the fingerprint
+ * (a name can legitimately repeat at one position with a different scale, so the whole transform
+ * has to be in the key). Returns a list of problems; empty means clean.
+ */
+function detectDoubling(pkg) {
+  const problems = [];
+  for (const scene of pkg.content.scenes ?? []) {
+    const seen = new Map();
+    for (const object of scene.objects) {
+      const key = `${object.name}|${object.parentId ?? '-'}|${JSON.stringify(object.transform)}`;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    const dupes = [...seen.values()].filter((count) => count > 1).length;
+    if (dupes) problems.push(`scene "${scene.name}" has ${dupes} duplicated object(s)`);
+  }
+  const byHash = new Map();
+  for (const asset of pkg.assets) {
+    if (asset.hash) byHash.set(asset.hash, (byHash.get(asset.hash) ?? 0) + 1);
+  }
+  const repeated = [...byHash.values()].filter((count) => count > 1).length;
+  if (repeated) problems.push(`${repeated} asset(s) shipped under more than one id`);
+  return problems;
+}
+
 /** The catalog row for a package, whether authored here or exported from the running editor. */
 function catalogEntry({ pkg, slug, file, json, thumbnail }) {
   return {
@@ -502,9 +531,12 @@ async function main() {
   const exported = (await readdir(PACKAGES_DIR))
     .filter((file) => file.startsWith('template-') && file.endsWith('.nfpack'))
     .sort();
+  const doubled = [];
   for (const file of exported) {
     const json = await readFile(join(PACKAGES_DIR, file), 'utf8');
     const pkg = JSON.parse(json);
+    const problems = detectDoubling(pkg);
+    if (problems.length) doubled.push(`  ${file}: ${problems.join('; ')}`);
     const slug = file.replace(/\.nfpack$/, '');
     const [from, to, glyph] = TEMPLATE_THUMBNAILS[slug] ?? ['#5B8CFF', '#1B2C63', '\u{1F5FA}'];
     entries.push(catalogEntry({ pkg, slug, file, json, thumbnail: thumbnail(from, to, glyph) }));
@@ -513,6 +545,13 @@ async function main() {
       `  ${file} — manifest ${(Buffer.byteLength(json, 'utf8') / 1024).toFixed(0)} KB, ` +
         `install ${(entry.sizeBytes / 1048576).toFixed(1)} MB (exported from the editor)`,
     );
+  }
+
+  if (doubled.length) {
+    console.error('\nRefusing to write the catalog — these exports look doubled:');
+    console.error(doubled.join('\n'));
+    console.error('\nRe-export them (`?exportTemplate=<key>`) and run this again.');
+    process.exit(1);
   }
 
   const catalog = {

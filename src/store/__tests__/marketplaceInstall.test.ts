@@ -233,6 +233,42 @@ describe('shipped package integrity', () => {
       expect(bodiless.map((asset) => asset.name), `${file} has assets with no bytes`).toEqual([]);
     }
   });
+
+  /**
+   * Catches a package built from a doubled project.
+   *
+   * The template packages are produced by running a builder in a browser, and a re-entrant run
+   * (React StrictMode double-invoking the export effect) once merged two builds into one package:
+   * every object appeared twice at an identical transform and every model was imported twice. It
+   * installed fine and looked plausible, so nothing flagged it. These two signatures do.
+   *
+   * Identical name + parent + FULL transform is the fingerprint — templates legitimately reuse a
+   * name at one position (e.g. two pedestal rings crossed at 90°, distinguished by scale), so the
+   * whole transform has to be part of the key or this false-positives.
+   */
+  it('contains no duplicated objects or duplicated asset bytes', async () => {
+    const dir = join(PUBLIC_STORE, 'packages');
+    for (const file of (await readdir(dir)).filter((entry) => entry.endsWith('.nfpack'))) {
+      const pkg = JSON.parse(await readFile(join(dir, file), 'utf8')) as NodeForgePackage;
+
+      for (const scene of pkg.content.scenes ?? []) {
+        const seen = new Map<string, number>();
+        for (const object of scene.objects) {
+          const key = `${object.name}|${object.parentId ?? '-'}|${JSON.stringify(object.transform)}`;
+          seen.set(key, (seen.get(key) ?? 0) + 1);
+        }
+        const duplicated = [...seen.entries()].filter(([, count]) => count > 1).map(([key]) => key.split('|')[0]);
+        expect(duplicated, `${file} scene "${scene.name}" looks doubled`).toEqual([]);
+      }
+
+      const byHash = new Map<string, number>();
+      for (const asset of pkg.assets) {
+        if (asset.hash) byHash.set(asset.hash, (byHash.get(asset.hash) ?? 0) + 1);
+      }
+      const repeated = [...byHash.entries()].filter(([, count]) => count > 1).length;
+      expect(repeated, `${file} ships the same bytes under multiple asset ids`).toBe(0);
+    }
+  });
 });
 
 describe('catalog filters', () => {
