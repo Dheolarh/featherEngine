@@ -7,7 +7,7 @@ import { useProjectStore } from '../store/projectStore';
 import { useEditorPrefs, type ThemeMode } from '../store/editorPrefsStore';
 import { undo, redo } from '../store/history';
 import { applyWorkspaceLayout, type WorkspaceLayoutId } from './Workspace';
-import { focusWorkspacePanel } from './workspacePanels';
+import { focusWorkspacePanel, openWorkspacePanel } from './workspacePanels';
 import { OPEN_SHORTCUTS_EVENT } from './ShortcutsOverlay';
 import { captureViewportScreenshot } from '../runtime/viewportCaptureBridge';
 import type { SceneObjectKind } from '../types';
@@ -136,6 +136,20 @@ export function CommandPalette() {
     for (const [id, label] of panels) {
       cmds.push({ id: `panel-${id}`, label: `Go to ${label}`, group: 'Panels', keywords: 'open focus show view', run: () => focusWorkspacePanel(id) });
     }
+    // Opens rather than focuses, so it still works for anyone whose saved layout predates the panel.
+    cmds.push({
+      id: 'panel-store',
+      label: 'Go to Asset Store',
+      group: 'Panels',
+      keywords: 'store marketplace assets packages browse download install free',
+      run: () => {
+        openWorkspacePanel({
+          id: 'store',
+          title: 'Asset Store',
+          placement: { referencePanel: 'project', direction: 'within' },
+        });
+      },
+    });
 
     const layouts: Array<[WorkspaceLayoutId, string]> = [
       ['default', 'Default'], ['modeling', 'Modeling'], ['scripting', 'Scripting'], ['animation', 'Animation'], ['cinematic', 'Cinematic'],

@@ -1,0 +1,209 @@
+{
+  "format": "nodeforge-package",
+  "formatVersion": "1.0.0",
+  "kind": "module",
+  "meta": {
+    "id": "pkg-feather-physics-playground",
+    "name": "Physics Playground",
+    "description": "A ramp, a launch platform and a heavy ball — a ready-made rig for testing collisions, mass and restitution.",
+    "author": "Feather",
+    "version": "1.0.0",
+    "tags": [
+      "physics",
+      "prototyping",
+      "kit"
+    ],
+    "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjM0Q3QkZGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMTUzQThBIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPuKavTwvdGV4dD48L3N2Zz4=",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "engineVersion": "0.7.0"
+  },
+  "content": {
+    "prefabs": [
+      {
+        "id": "prefab-store-ramp",
+        "name": "Test Ramp",
+        "objects": [
+          {
+            "id": "obj-ramp",
+            "name": "Test Ramp",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                -0.32
+              ],
+              "scale": [
+                6,
+                0.25,
+                2.4
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#8A8A85",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-stone"
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          }
+        ],
+        "rootId": "obj-ramp",
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "prefab-store-platform",
+        "name": "Launch Platform",
+        "objects": [
+          {
+            "id": "obj-platform",
+            "name": "Launch Platform",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                3,
+                0.4,
+                3
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#8A8A85",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-stone"
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          }
+        ],
+        "rootId": "obj-platform",
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "prefab-store-ball",
+        "name": "Heavy Ball",
+        "objects": [
+          {
+            "id": "obj-ball",
+            "name": "Heavy Ball",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#D8452F",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 40,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          }
+        ],
+        "rootId": "obj-ball",
+        "createdAt": 1767225600000
+      }
+    ],
+    "blueprints": [],
+    "graphs": [],
+    "materials": [
+      {
+        "id": "mat-store-stone",
+        "name": "Quarry Stone",
+        "description": "Reusable material asset.",
+        "color": "#8A8A85",
+        "metalness": 0,
+        "roughness": 0.95,
+        "emissiveColor": "#000000",
+        "emissiveIntensity": 0,
+        "createdAt": 1767225600000
+      }
+    ],
+    "particleSystems": [],
+    "skeletons": [],
+    "skeletalMeshes": [],
+    "animations": [],
+    "animatorControllers": [],
+    "dataAssets": [],
+    "uiDocuments": [],
+    "variables": []
+  },
+  "assets": []
+}

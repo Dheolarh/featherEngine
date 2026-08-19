@@ -134,7 +134,7 @@ import { highestTerrainWorldHeight } from '../terrain/terrain';
 import { GRASS_PRESETS, applyTerrainFoliagePaint, applyTerrainPaint, applyTerrainSculpt, createTerrainHeightSampler, defaultStylizedGrass, terrainLocalPointFromWorld, withTerrainDefaults, type GrassPresetId } from '../terrain/terrain';
 import { worldTransformOf, worldToLocalUnderParent } from '../utils/transformHierarchy';
 import type { ModelInspection } from '../three/inspectModel';
-import { collectPackage, collectPrefabPackage, type PackageContent, type PackageSeeds, type PackageSource } from '../project/package';
+import { collectPackage, collectPrefabPackage, collectProjectPackage, type PackageContent, type PackageSeeds, type PackageSource } from '../project/package';
 import {
   cinematicActionsAt,
   cinematicCameraAt,
@@ -1043,8 +1043,16 @@ interface EditorState {
   buildPrefabPackage: (prefabId: string) => { content: PackageContent; assetIds: string[] } | null;
   /** Collect everything in a folder (and its subfolders) + dependencies, like Unreal's Migrate. */
   buildFolderPackage: (folderId: string) => { content: PackageContent; assetIds: string[]; name: string } | null;
+  /** Collect every scene + its dependency closure — the content of a `kind: 'project'` package. */
+  buildProjectPackage: () => { content: PackageContent; assetIds: string[] };
   /** Additively merge already-remapped package content + resolved assets into the project. */
   mergePackage: (content: PackageContent, assets: AssetItem[]) => void;
+  /**
+   * Merge a `kind: 'project'` package and switch to its world: the package's scenes REPLACE the
+   * current ones. Only valid on a freshly-created project — installing a template over work in
+   * progress would discard it, so the caller is responsible for starting from a blank project.
+   */
+  mergeProjectPackage: (content: PackageContent, assets: AssetItem[]) => void;
 }
 
 const deleteWithChildren = (objects: SceneObject[], id: string) => {
@@ -12410,6 +12418,52 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
     return { ...collectPackage(src, seeds), name: folder.name };
   },
+
+  buildProjectPackage: () => {
+    const state = get();
+    const src: PackageSource = {
+      // Never ship the transient prefab-editing scene — it isn't part of the project.
+      scenes: state.scenes.filter((scene) => scene.id !== PREFAB_EDIT_SCENE_ID),
+      prefabs: state.prefabs,
+      blueprints: state.blueprints,
+      graphs: state.graphs,
+      materials: state.materials,
+      particleSystems: state.particleSystems,
+      skeletons: state.skeletons,
+      skeletalMeshes: state.skeletalMeshes,
+      animations: state.animations,
+      animatorControllers: state.animatorControllers,
+      dataAssets: state.dataAssets,
+      uiDocuments: state.uiDocuments,
+      variables: state.variables,
+      assets: state.assets,
+    };
+    return collectProjectPackage(src);
+  },
+
+  mergeProjectPackage: (content, assets) =>
+    set((state) => {
+      const scenes = content.scenes ?? [];
+      return {
+        assets: [...state.assets, ...assets],
+        prefabs: [...state.prefabs, ...content.prefabs],
+        blueprints: [...state.blueprints, ...content.blueprints],
+        graphs: [...state.graphs, ...content.graphs],
+        materials: [...state.materials, ...content.materials],
+        particleSystems: [...state.particleSystems, ...content.particleSystems],
+        skeletons: [...state.skeletons, ...content.skeletons],
+        skeletalMeshes: [...state.skeletalMeshes, ...content.skeletalMeshes],
+        animations: [...state.animations, ...content.animations],
+        animatorControllers: [...state.animatorControllers, ...content.animatorControllers],
+        dataAssets: [...state.dataAssets, ...content.dataAssets],
+        uiDocuments: [...state.uiDocuments, ...content.uiDocuments],
+        variables: [...state.variables, ...content.variables],
+        prefabThumbnailQueue: [...state.prefabThumbnailQueue, ...content.prefabs.map((p) => p.id)],
+        // The package's world replaces the blank starter scene rather than sitting beside it.
+        ...(scenes.length ? { scenes, activeSceneId: scenes[0].id, selectedIds: [] } : {}),
+        isDirty: true,
+      };
+    }),
 
   mergePackage: (content, assets) =>
     set((state) => ({

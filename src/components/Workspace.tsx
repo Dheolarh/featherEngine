@@ -23,6 +23,7 @@ import { AnimatorEditorPanel } from './AnimatorEditorPanel';
 import { UIEditorPanel } from './UIEditorPanel';
 import { TerrainEditorPanel } from './TerrainEditorPanel';
 import { TreeBuilderPanel } from './TreeBuilderPanel';
+import { AssetStorePanel } from './AssetStorePanel';
 import { SceneSettingsPanel } from './SceneSettingsPanel';
 import { CinematicPanel } from './CinematicPanel';
 import { getWorkspaceApi, setWorkspaceApi } from './workspacePanels';
@@ -33,7 +34,8 @@ import { useExtensionSnapshot } from '../extensions/react';
 import { ExtensionPanelBoundary } from '../extensions/ExtensionPanelBoundary';
 
 const LAYOUT_KEY = 'nodeforge.layout';
-const LAYOUT_VERSION = 11;
+// Bumped to 12 to add the Asset Store panel — a stale saved layout is discarded so it shows up.
+const LAYOUT_VERSION = 12;
 
 // Where each panel sits when (re)added to the dock — used to restore a panel after
 // its popped-out window closes.
@@ -48,6 +50,8 @@ const PANEL_DEFS: Record<string, PanelDef> = {
   materials: { component: 'materials', title: 'Material', ref: 'inspector', direction: 'below' },
   terrain: { component: 'terrain', title: 'Terrain', ref: 'materials', direction: 'within' },
   trees: { component: 'trees', title: 'Tree Builder', ref: 'materials', direction: 'within' },
+  // The store is where content comes from, so it tabs alongside the Project browser.
+  store: { component: 'store', title: 'Asset Store', ref: 'project', direction: 'within' },
   particles: { component: 'particles', title: 'Particle System', ref: 'materials', direction: 'within' },
   animator: { component: 'animator', title: 'Animator', ref: 'inspector', direction: 'below' },
   ui: { component: 'ui', title: 'UI', ref: 'inspector', direction: 'below' },
@@ -75,6 +79,7 @@ const builtInComponents = {
   materials: () => profiled('materials', <MaterialEditorPanel />),
   terrain: () => profiled('terrain', <TerrainEditorPanel />),
   trees: () => profiled('trees', <TreeBuilderPanel />),
+  store: () => profiled('store', <AssetStorePanel />),
   particles: () => profiled('particles', <ParticleSystemEditorPanel />),
   animator: () => profiled('animator', <AnimatorEditorPanel />),
   ui: () => profiled('ui', <UIEditorPanel />),
@@ -158,6 +163,9 @@ function buildDefaultLayout(api: DockviewApi) {
   api.addPanel({ id: 'materials', component: 'materials', title: 'Material', position: { referencePanel: 'inspector', direction: 'below' } });
   api.addPanel({ id: 'terrain', component: 'terrain', title: 'Terrain', position: { referencePanel: 'materials', direction: 'within' } });
   api.addPanel({ id: 'trees', component: 'trees', title: 'Tree Builder', position: { referencePanel: 'materials', direction: 'within' } });
+  api.addPanel({ id: 'store', component: 'store', title: 'Asset Store', position: { referencePanel: 'project', direction: 'within' } });
+  // Adding a tab activates it — hand the group back to Project so the store doesn't hijack the default view.
+  api.getPanel('project')?.api.setActive();
   // Animator shares the Material group as a tab (both author reusable assets next to the Inspector).
   api.addPanel({ id: 'animator', component: 'animator', title: 'Animator', position: { referencePanel: 'materials', direction: 'within' } });
   // UI editor joins the same group as another tab.

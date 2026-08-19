@@ -1,0 +1,199 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { useEditorStore } from '../editorStore';
+import { useProjectStore } from '../projectStore';
+import { useMarketplaceStore } from '../marketplaceStore';
+
+/**
+ * End-to-end coverage for the bundled store: load the REAL catalog and install the REAL `.nfpack`
+ * files from `public/store/`, through the real install pipeline.
+ *
+ * This is deliberately not a mock of the seed content — it is the seed content. If
+ * `scripts/build-store-catalog.mjs` ever emits something the engine can't import, this fails.
+ */
+
+const PUBLIC_STORE = join(process.cwd(), 'public', 'store');
+
+/** Serve `public/store/**` off disk, routed by URL path, so no network is involved. */
+function serveBundledStore() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL) => {
+      const path = new URL(String(input), document.baseURI).pathname;
+      const relative = path.slice(path.indexOf('/store/') + '/store/'.length);
+      try {
+        const body = await readFile(join(PUBLIC_STORE, relative), 'utf8');
+        return { ok: true, status: 200, statusText: 'OK', json: async () => JSON.parse(body) };
+      } catch {
+        return { ok: false, status: 404, statusText: 'Not Found', json: async () => ({}) };
+      }
+    }),
+  );
+}
+
+const resetMarketplace = () =>
+  useMarketplaceStore.setState({
+    status: 'idle',
+    error: null,
+    packages: [],
+    query: '',
+    tag: null,
+    installingId: null,
+    installedIds: [],
+  });
+
+describe('bundled asset store — catalog to installed content', () => {
+  beforeEach(() => {
+    useProjectStore.getState().useDemo();
+    useProjectStore.setState({ toast: null, error: null });
+    resetMarketplace();
+    serveBundledStore();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('loads the shipped catalog', async () => {
+    await useMarketplaceStore.getState().load();
+    const state = useMarketplaceStore.getState();
+    expect(state.status).toBe('ready');
+    expect(state.packages.length).toBeGreaterThan(0);
+    // Every listing must be installable: a resolvable URL and something actually in it.
+    for (const listing of state.packages) {
+      expect(listing.downloadUrl).toMatch(/^https?:/);
+      expect(listing.title.length).toBeGreaterThan(0);
+      expect(listing.contents.prefabs + listing.contents.materials).toBeGreaterThan(0);
+    }
+  });
+
+  it('installs every shipped module package into a real project', async () => {
+    await useMarketplaceStore.getState().load();
+    // Templates are excluded on purpose: a kind:project package REPLACES the world, so mixing it in
+    // here would wipe the very prefabs this test is counting.
+    const listings = useMarketplaceStore.getState().packages.filter((entry) => entry.kind === 'module');
+    expect(listings.length).toBeGreaterThan(0);
+
+    const prefabsBefore = useEditorStore.getState().prefabs.length;
+    const materialsBefore = useEditorStore.getState().materials.length;
+    let expectedPrefabs = 0;
+    let expectedMaterials = 0;
+
+    for (const listing of listings) {
+      await useMarketplaceStore.getState().install(listing);
+      expectedPrefabs += listing.contents.prefabs;
+      expectedMaterials += listing.contents.materials;
+    }
+
+    const editor = useEditorStore.getState();
+    // The catalog's advertised counts must match what actually landed, or the store lies to users.
+    expect(editor.prefabs).toHaveLength(prefabsBefore + expectedPrefabs);
+    expect(editor.materials).toHaveLength(materialsBefore + expectedMaterials);
+    expect(useMarketplaceStore.getState().installedIds).toEqual(listings.map((entry) => entry.id));
+    expect(useMarketplaceStore.getState().installingId).toBeNull();
+  });
+
+  it('creates a new project with its own world from a shipped template', async () => {
+    await useMarketplaceStore.getState().load();
+    const template = useMarketplaceStore.getState().packages.find((entry) => entry.kind === 'project');
+    expect(template).toBeDefined();
+
+    await useMarketplaceStore.getState().install(template!);
+
+    const editor = useEditorStore.getState();
+    expect(useProjectStore.getState().projectName).toBe(template!.title);
+    // The template's scenes ARE the project now, not extras appended to a blank one.
+    expect(editor.scenes).toHaveLength(template!.contents.scenes);
+    expect(editor.activeSceneId).toBe(editor.scenes[0].id);
+    expect(editor.scenes[0].objects.length).toBeGreaterThan(0);
+    // Materials the scene objects reference came along and resolve.
+    const materialIds = new Set(editor.materials.map((material) => material.id));
+    const referenced = editor.scenes[0].objects
+      .map((object) => object.renderer?.materialId)
+      .filter((id): id is string => !!id);
+    expect(referenced.length).toBeGreaterThan(0);
+    for (const id of referenced) expect(materialIds.has(id)).toBe(true);
+  });
+
+  it('keeps every material reference inside an installed prefab resolvable', async () => {
+    await useMarketplaceStore.getState().load();
+    const [listing] = useMarketplaceStore.getState().packages;
+    await useMarketplaceStore.getState().install(listing);
+
+    const editor = useEditorStore.getState();
+    const materialIds = new Set(editor.materials.map((material) => material.id));
+    const installedPrefabs = editor.prefabs.slice(-listing.contents.prefabs);
+    expect(installedPrefabs.length).toBe(listing.contents.prefabs);
+
+    // A dangling materialId after re-id'ing would render the prefab untextured — check every one.
+    const referenced = installedPrefabs
+      .flatMap((prefab) => prefab.objects)
+      .map((object) => object.renderer?.materialId)
+      .filter((id): id is string => !!id);
+    expect(referenced.length).toBeGreaterThan(0);
+    for (const id of referenced) expect(materialIds.has(id)).toBe(true);
+  });
+
+  it('installs a second, independent copy when the same package is installed twice', async () => {
+    await useMarketplaceStore.getState().load();
+    const [listing] = useMarketplaceStore.getState().packages;
+
+    await useMarketplaceStore.getState().install(listing);
+    const afterFirst = useEditorStore.getState().prefabs.map((prefab) => prefab.id);
+    await useMarketplaceStore.getState().install(listing);
+    const afterSecond = useEditorStore.getState().prefabs.map((prefab) => prefab.id);
+
+    expect(afterSecond).toHaveLength(afterFirst.length + listing.contents.prefabs);
+    // No id is reused, so editing one copy can never mutate the other.
+    expect(new Set(afterSecond).size).toBe(afterSecond.length);
+  });
+
+  it('refuses to install with no project open, and says why', async () => {
+    await useMarketplaceStore.getState().load();
+    const [listing] = useMarketplaceStore.getState().packages;
+    useProjectStore.getState().closeProject();
+
+    await useMarketplaceStore.getState().install(listing);
+
+    expect(useProjectStore.getState().toast?.kind).toBe('error');
+    expect(useProjectStore.getState().toast?.message).toContain('project');
+    expect(useMarketplaceStore.getState().installedIds).toEqual([]);
+  });
+
+  it('surfaces a missing package file without marking it installed', async () => {
+    await useMarketplaceStore.getState().load();
+    const listing = useMarketplaceStore.getState().packages[0];
+
+    await useMarketplaceStore
+      .getState()
+      .install({ ...listing, downloadUrl: new URL('store/packages/nope.nfpack', document.baseURI).toString() });
+
+    expect(useProjectStore.getState().toast?.kind).toBe('error');
+    expect(useMarketplaceStore.getState().installedIds).toEqual([]);
+    expect(useMarketplaceStore.getState().installingId).toBeNull();
+  });
+});
+
+describe('catalog filters', () => {
+  beforeEach(async () => {
+    resetMarketplace();
+    serveBundledStore();
+    await useMarketplaceStore.getState().load();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('filters the shipped catalog by tag and search', () => {
+    const store = useMarketplaceStore.getState();
+    const tags = store.availableTags();
+    expect(tags).toContain('physics');
+
+    store.setTag('physics');
+    const tagged = useMarketplaceStore.getState().visiblePackages();
+    expect(tagged.length).toBeGreaterThan(0);
+    expect(tagged.every((listing) => listing.tags.includes('physics'))).toBe(true);
+
+    useMarketplaceStore.getState().setTag(null);
+    useMarketplaceStore.getState().setQuery('zzz-no-such-package');
+    expect(useMarketplaceStore.getState().visiblePackages()).toEqual([]);
+  });
+});

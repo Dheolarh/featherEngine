@@ -1,0 +1,349 @@
+{
+  "format": "nodeforge-package",
+  "formatVersion": "1.0.0",
+  "kind": "module",
+  "meta": {
+    "id": "pkg-feather-starter-props",
+    "name": "Starter Props",
+    "description": "Crates, a barrel and a stone block to dress a level with. Physics is switched on, so they tumble the moment you press Play.",
+    "author": "Feather",
+    "version": "1.0.0",
+    "tags": [
+      "props",
+      "environment",
+      "physics"
+    ],
+    "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjQjQ3NjJGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjNkU0MzE4Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfk6Y8L3RleHQ+PC9zdmc+",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "engineVersion": "0.7.0"
+  },
+  "content": {
+    "prefabs": [
+      {
+        "id": "prefab-store-crate",
+        "name": "Wooden Crate",
+        "objects": [
+          {
+            "id": "obj-crate",
+            "name": "Wooden Crate",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#A9743B",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-wood"
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 12,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          }
+        ],
+        "rootId": "obj-crate",
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "prefab-store-barrel",
+        "name": "Metal Barrel",
+        "objects": [
+          {
+            "id": "obj-barrel",
+            "name": "Metal Barrel",
+            "kind": "capsule",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                0.8,
+                0.7,
+                0.8
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "capsule",
+              "color": "#8C8F96",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-metal"
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "capsule",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 22,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          }
+        ],
+        "rootId": "obj-barrel",
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "prefab-store-crate-stack",
+        "name": "Crate Stack",
+        "objects": [
+          {
+            "id": "obj-stack-root",
+            "name": "Crate Stack",
+            "kind": "empty",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "obj-stack-a",
+            "name": "Crate A",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#A9743B",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-wood"
+            },
+            "parentId": "obj-stack-root",
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 12,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-stack-b",
+            "name": "Crate B",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0.12,
+                1.02,
+                -0.08
+              ],
+              "rotation": [
+                0,
+                0.35,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#A9743B",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-wood"
+            },
+            "parentId": "obj-stack-root",
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 12,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-stack-c",
+            "name": "Capstone",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                -0.05,
+                2.04,
+                0.05
+              ],
+              "rotation": [
+                0,
+                -0.2,
+                0
+              ],
+              "scale": [
+                0.85,
+                0.85,
+                0.85
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#8A8A85",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-stone"
+            },
+            "parentId": "obj-stack-root",
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 30,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          }
+        ],
+        "rootId": "obj-stack-root",
+        "createdAt": 1767225600000
+      }
+    ],
+    "blueprints": [],
+    "graphs": [],
+    "materials": [
+      {
+        "id": "mat-store-wood",
+        "name": "Crate Wood",
+        "description": "Reusable material asset.",
+        "color": "#A9743B",
+        "metalness": 0,
+        "roughness": 0.85,
+        "emissiveColor": "#000000",
+        "emissiveIntensity": 0,
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "mat-store-metal",
+        "name": "Banded Metal",
+        "description": "Reusable material asset.",
+        "color": "#8C8F96",
+        "metalness": 0.9,
+        "roughness": 0.35,
+        "emissiveColor": "#000000",
+        "emissiveIntensity": 0,
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "mat-store-stone",
+        "name": "Quarry Stone",
+        "description": "Reusable material asset.",
+        "color": "#8A8A85",
+        "metalness": 0,
+        "roughness": 0.95,
+        "emissiveColor": "#000000",
+        "emissiveIntensity": 0,
+        "createdAt": 1767225600000
+      }
+    ],
+    "particleSystems": [],
+    "skeletons": [],
+    "skeletalMeshes": [],
+    "animations": [],
+    "animatorControllers": [],
+    "dataAssets": [],
+    "uiDocuments": [],
+    "variables": []
+  },
+  "assets": []
+}

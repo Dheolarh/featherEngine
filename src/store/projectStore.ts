@@ -9,10 +9,10 @@ import {
   buildPackage,
   parsePackage,
   remapPackageForImport,
-  type NodeForgePackage,
   type PackageMeta,
 } from '../project/package';
 import type { AssetItem } from '../types';
+import { contentAddressedName, dataUrlToBytes, sha256Hex } from '../utils/contentHash';
 import { useEditorStore } from './editorStore';
 import { setSaveNamespace } from './editor/objectFactory';
 import { clearHistory } from './history';
@@ -21,44 +21,162 @@ import { clearRecovery, type RecoverySnapshot } from './autosave';
 /** Caller-supplied package metadata; the rest (id, createdAt, engineVersion) is filled in. */
 export type PackageMetaInput = Partial<Omit<PackageMeta, 'engineVersion' | 'createdAt'>>;
 
-/** Decode a data URL into a File so it can be re-imported through the platform asset pipeline. */
-function dataUrlToFile(dataUrl: string, name: string): File {
-  const comma = dataUrl.indexOf(',');
-  const header = dataUrl.slice(0, comma);
-  const mime = /data:([^;]+)/.exec(header)?.[1] ?? 'application/octet-stream';
-  const binary = atob(dataUrl.slice(comma + 1));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return new File([bytes], name, { type: mime });
+const mimeFromDataUrl = (dataUrl: string) =>
+  /data:([^;,]+)/.exec(dataUrl.slice(0, dataUrl.indexOf(',')))?.[1] ?? 'application/octet-stream';
+
+/** Refuse absurd downloads outright rather than trying to buffer them. */
+const MAX_ASSET_BYTES = 512 * 1024 * 1024;
+
+/**
+ * Obtain an asset's bytes, either from the package's inlined data URL or by fetching its external
+ * `source`. External bytes are hash-verified: a mismatch means the file was swapped or truncated in
+ * transit, and installing it anyway would silently corrupt the project.
+ */
+async function loadPackageAssetBytes(asset: AssetItem): Promise<{ bytes: Uint8Array; mime: string; hash: string }> {
+  if (asset.data) {
+    const bytes = dataUrlToBytes(asset.data);
+    return { bytes, mime: mimeFromDataUrl(asset.data), hash: asset.hash ?? (await sha256Hex(bytes)) };
+  }
+  const source = asset.source;
+  if (!source?.url) throw new Error(`Asset "${asset.name}" has no bytes and no source URL.`);
+  if (source.bytes && source.bytes > MAX_ASSET_BYTES) {
+    throw new Error(`Asset "${asset.name}" is ${(source.bytes / 1048576).toFixed(0)} MB — refusing to download.`);
+  }
+
+  // Relative source URLs resolve against the app, which is what bundled packages want. A hosted
+  // store publishes absolute URLs, so both work without the package knowing where it was served from.
+  const url = new URL(source.url, document.baseURI).toString();
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Could not download "${asset.name}" (HTTP ${response.status}).`);
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > MAX_ASSET_BYTES) throw new Error(`Asset "${asset.name}" is too large to install.`);
+
+  const hash = await sha256Hex(buffer);
+  if (source.sha256 && hash !== source.sha256) {
+    throw new Error(`"${asset.name}" failed its integrity check — the downloaded file is not what the package declared.`);
+  }
+  return {
+    bytes: new Uint8Array(buffer),
+    mime: response.headers?.get?.('content-type') || 'application/octet-stream',
+    hash,
+  };
 }
 
 /**
- * Turn a package's embedded assets (data URLs) into project assets with a runtime url. On a saved
- * desktop project we write the bytes to disk (persistent `path`); otherwise we keep the data URL as
- * the url so it still renders and survives a web download (which retains `data`).
+ * Turn a package's assets into project assets with a runtime url. Bytes come from the inlined data
+ * URL or from an external `source`. On a saved desktop project we write them to disk under a
+ * content-addressed name (persistent `path`); otherwise we keep a data URL as the url so the asset
+ * still renders and survives a web download.
+ *
+ * Assets whose bytes are already on disk (same hash) reuse the existing file instead of writing a
+ * second copy — which is also what stops two different files that share a name from clobbering
+ * each other, since the name now includes the hash.
  */
 async function resolvePackageAssets(
   assets: AssetItem[],
   projectDir: string | null,
   platform: Awaited<ReturnType<typeof getPlatform>>,
+  existingAssets: AssetItem[] = [],
 ): Promise<AssetItem[]> {
   const onDisk = platform.isDesktop && !!projectDir && projectDir !== 'web';
-  return Promise.all(
-    assets.map(async (asset) => {
-      if (!asset.data) return { ...asset, unresolved: true };
-      if (onDisk) {
-        try {
-          const file = dataUrlToFile(asset.data, asset.name || `${asset.id}`);
-          const { path, url } = await platform.importAsset(projectDir as string, file);
-          return { ...asset, path, url, data: undefined };
-        } catch {
-          return { ...asset, url: asset.data };
-        }
-      }
-      return { ...asset, url: asset.data };
-    }),
+  const written = new Map<string, { path?: string; url?: string }>(
+    existingAssets.filter((a) => a.hash && a.path).map((a) => [a.hash as string, { path: a.path, url: a.url }]),
   );
+
+  const resolved: AssetItem[] = [];
+  for (const asset of assets) {
+    let loaded: { bytes: Uint8Array; mime: string; hash: string };
+    try {
+      loaded = await loadPackageAssetBytes(asset);
+    } catch {
+      resolved.push({ ...asset, unresolved: true });
+      continue;
+    }
+    const { bytes, mime, hash } = loaded;
+
+    const reuse = written.get(hash);
+    if (reuse) {
+      resolved.push({ ...asset, hash, path: reuse.path, url: reuse.url, data: undefined });
+      continue;
+    }
+
+    if (onDisk) {
+      try {
+        const name = contentAddressedName(asset.name || asset.id, hash);
+        const file = new File([bytes], name, { type: mime });
+        const { path, url } = await platform.importAsset(projectDir as string, file);
+        written.set(hash, { path, url });
+        resolved.push({ ...asset, hash, path, url, data: undefined });
+        continue;
+      } catch {
+        // Fall through to keeping the bytes in memory rather than losing the asset entirely.
+      }
+    }
+
+    const dataUrl = asset.data ?? `data:${mime};base64,${bytesToBase64(bytes)}`;
+    resolved.push({ ...asset, hash, data: dataUrl, url: dataUrl });
+  }
+  return resolved;
 }
+
+/** Base64-encode in chunks — a single spread over a multi-MB array blows the call stack. */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+/** What an install actually brought in, for the confirmation toast. */
+interface InstallSummary {
+  name: string;
+  prefabs: number;
+  assets: number;
+}
+
+/**
+ * Download a `.nfpack` over HTTP — the asset store's transport. Deliberately separate from the
+ * install so a network failure reads differently from a corrupt package, and so the only difference
+ * between "opened a file" and "installed from the store" is where the JSON came from.
+ */
+async function fetchPackage(url: string, signal?: AbortSignal): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(url, { signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    throw new Error(`Could not reach ${url}. Check your connection.`);
+  }
+  if (!response.ok) throw new Error(`Download failed (HTTP ${response.status} ${response.statusText}).`);
+  try {
+    return await response.json();
+  } catch {
+    throw new Error('That URL did not return a package file.');
+  }
+}
+
+/**
+ * The shared tail of every package install, whatever the source: validate → re-id everything so the
+ * merge is purely additive → materialise asset bytes → append into the project.
+ */
+async function installParsedPackage(
+  raw: unknown,
+  projectDir: string | null,
+  platform: Awaited<ReturnType<typeof getPlatform>>,
+): Promise<InstallSummary> {
+  const pkg = parsePackage(raw);
+  const editor = useEditorStore.getState();
+  const { content, assets } = remapPackageForImport(pkg, editor.skeletons, editor.assets);
+  const resolved = await resolvePackageAssets(assets, projectDir, platform, editor.assets);
+  editor.mergePackage(content, resolved);
+  return { name: pkg.meta?.name ?? 'package', prefabs: content.prefabs.length, assets: resolved.length };
+}
+
+const installedMessage = ({ name, prefabs, assets }: InstallSummary) =>
+  `Imported "${name}" (${prefabs} prefab${prefabs === 1 ? '' : 's'}` +
+  `${assets ? `, ${assets} asset${assets === 1 ? '' : 's'}` : ''}).`;
 
 interface RecentProject {
   dir: string;
@@ -101,8 +219,23 @@ interface ProjectState {
   exportPrefabPackage: (prefabId: string, meta?: PackageMetaInput) => Promise<void>;
   /** Export everything in a folder (and its subfolders) + dependencies as one `.nfpack`, like Unreal's Migrate. */
   exportFolderPackage: (folderId: string, meta?: PackageMetaInput) => Promise<void>;
+  /** Export the whole project (every scene + dependencies) as a `kind: 'project'` `.nfpack` —
+   *  a shareable template/world rather than a single reusable component. */
+  exportProjectPackage: (meta?: PackageMetaInput) => Promise<void>;
   /** Pick a `.nfpack` file and additively import its content into the current project. */
   importPackageFromFile: () => Promise<void>;
+  /**
+   * Create a new project from a `kind: 'project'` package at `url` — the store's "use this template"
+   * path. Unlike installing a module, this REPLACES the world, so it always starts from a new
+   * project rather than merging into whatever the user has open.
+   */
+  newProjectFromPackageUrl: (url: string, name: string) => Promise<boolean>;
+  /**
+   * Download a `.nfpack` from a URL and additively import it — the asset store's install path.
+   * Same trust model as importPackageFromFile: the caller is responsible for vouching for the URL.
+   * Resolves true when the package landed in the project, so a caller can update its own UI.
+   */
+  importPackageFromUrl: (url: string) => Promise<boolean>;
   useDemo: () => void;
   closeProject: () => void;
   /** Load an autosaved recovery snapshot back into the editor (from the Launcher's restore prompt). */
@@ -459,6 +592,74 @@ export const useProjectStore = create<ProjectState>()(
           }
         },
 
+        exportProjectPackage: async (meta) => {
+          if (!get().hasProject) return;
+          set({ busy: true, error: null });
+          try {
+            const editor = useEditorStore.getState();
+            const collected = editor.buildProjectPackage();
+            const name = meta?.name ?? get().projectName ?? 'Project';
+            const live = editor.assets.filter((asset) => collected.assetIds.includes(asset.id));
+            const embedded = await embedAssets(live);
+            const pkg = buildPackage('project', collected.content, embedded, {
+              id: crypto.randomUUID(),
+              name,
+              version: '1.0.0',
+              ...meta,
+            });
+            const platform = await getPlatform();
+            const destination = await platform.exportPackage(name, pkg);
+            if (destination) {
+              const scenes = collected.content.scenes?.length ?? 0;
+              set({
+                toast: {
+                  kind: 'success',
+                  message: `Project package "${name}" exported (${scenes} scene(s), ${embedded.length} asset(s)): ${destination}`,
+                },
+              });
+            }
+          } catch (error) {
+            const message = errorMessage(error);
+            set({ error: message, toast: { kind: 'error', message: `Package export failed: ${message}` } });
+          } finally {
+            set({ busy: false });
+          }
+        },
+
+        newProjectFromPackageUrl: async (url, name) => {
+          set({ busy: true, error: null });
+          try {
+            const raw = await fetchPackage(url);
+            const pkg = parsePackage(raw);
+            if (pkg.kind !== 'project' || !pkg.content.scenes?.length) {
+              throw new Error('That package is a module, not a project template. Install it into an open project instead.');
+            }
+            // Only create the project once we know the package is usable — otherwise a bad download
+            // would leave the user staring at an empty project they didn't ask for.
+            await get().newProject(name);
+            if (!get().hasProject) return false;
+
+            const platform = await getPlatform();
+            const editor = useEditorStore.getState();
+            const { content, assets } = remapPackageForImport(pkg, editor.skeletons, editor.assets);
+            const resolved = await resolvePackageAssets(assets, get().projectDir, platform, editor.assets);
+            useEditorStore.getState().mergeProjectPackage(content, resolved);
+            set({
+              toast: {
+                kind: 'success',
+                message: `Created "${name}" from "${pkg.meta?.name ?? 'template'}" (${content.scenes?.length ?? 0} scene(s)).`,
+              },
+            });
+            return true;
+          } catch (error) {
+            const message = errorMessage(error);
+            set({ error: message, toast: { kind: 'error', message: `Could not use that template: ${message}` } });
+            return false;
+          } finally {
+            set({ busy: false });
+          }
+        },
+
         importPackageFromFile: async () => {
           if (!get().hasProject) return;
           set({ busy: true, error: null });
@@ -466,22 +667,34 @@ export const useProjectStore = create<ProjectState>()(
             const platform = await getPlatform();
             const raw = await platform.openPackage();
             if (!raw) return;
-            const pkg = parsePackage(raw) as NodeForgePackage;
-            const editor = useEditorStore.getState();
-            // Re-id everything so the import is purely additive and can't overwrite existing content.
-            const { content, assets } = remapPackageForImport(pkg, editor.skeletons);
-            const resolved = await resolvePackageAssets(assets, get().projectDir, platform);
-            editor.mergePackage(content, resolved);
-            const count = content.prefabs.length;
+            const summary = await installParsedPackage(raw, get().projectDir, platform);
             set({
               toast: {
                 kind: 'success',
-                message: `Imported "${pkg.meta?.name ?? 'package'}" (${count} prefab${count === 1 ? '' : 's'}). Tip: back up your project before importing packages you don't trust.`,
+                message: `${installedMessage(summary)} Tip: back up your project before importing packages you don't trust.`,
               },
             });
           } catch (error) {
             const message = errorMessage(error);
             set({ error: message, toast: { kind: 'error', message: `Import failed: ${message}` } });
+          } finally {
+            set({ busy: false });
+          }
+        },
+
+        importPackageFromUrl: async (url) => {
+          if (!get().hasProject) return false;
+          set({ busy: true, error: null });
+          try {
+            const platform = await getPlatform();
+            const raw = await fetchPackage(url);
+            const summary = await installParsedPackage(raw, get().projectDir, platform);
+            set({ toast: { kind: 'success', message: installedMessage(summary) } });
+            return true;
+          } catch (error) {
+            const message = errorMessage(error);
+            set({ error: message, toast: { kind: 'error', message: `Install failed: ${message}` } });
+            return false;
           } finally {
             set({ busy: false });
           }

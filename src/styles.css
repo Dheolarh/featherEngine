@@ -10224,3 +10224,202 @@ body.is-scrubbing * {
 .terrain-editor-body.tree-builder-body {
   grid-template-columns: minmax(168px, 210px) minmax(0, 1fr) minmax(220px, 290px);
 }
+
+/* --- Asset Store -------------------------------------------------------------------------------
+   Card grid for the marketplace catalog. Cards are fixed-width tracks so a 1-column popped-out
+   window and a wide docked panel both stay readable without a media query. */
+@keyframes store-spin {
+  to { transform: rotate(360deg); }
+}
+
+.store-panel .spin {
+  animation: store-spin 0.9s linear infinite;
+}
+
+.store-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 14px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.store-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warning-border, rgba(240, 180, 90, 0.35));
+  border-radius: var(--radius-sm, 6px);
+  background: var(--warning-bg, rgba(240, 180, 90, 0.1));
+  color: var(--text-secondary, #d8d3c6);
+  font-size: var(--text-2xs);
+}
+
+.store-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.store-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.store-tags button {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-3xs);
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.store-tags button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.store-tags button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast, #0b0d12);
+}
+
+.store-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.store-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--panel-raised, rgba(255, 255, 255, 0.02));
+  overflow: hidden;
+}
+
+.store-card-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-sunken, rgba(0, 0, 0, 0.25));
+  color: var(--muted);
+}
+
+.store-card-art img {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+}
+
+.store-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px 10px;
+}
+
+.store-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.store-card-head h3 {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.store-card-price {
+  color: var(--success, #7ddc9a);
+  font-size: var(--text-3xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.store-card-author,
+.store-card-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-3xs);
+}
+
+.store-card-desc {
+  margin: 0;
+  flex: 1;
+  color: var(--text-secondary, #c9ccd4);
+  font-size: var(--text-3xs);
+  line-height: 1.45;
+}
+
+.store-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.store-card-tags li {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--chip-bg, rgba(255, 255, 255, 0.06));
+  color: var(--muted);
+  font-size: var(--text-3xs);
+  text-transform: capitalize;
+}
+
+.store-card-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: auto;
+}
+
+.store-install-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* Template badge — marks a `kind: 'project'` listing, which creates a new project rather than
+   merging into the open one. */
+.store-card-art {
+  position: relative;
+}
+
+.store-card-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast, #0b0d12);
+  font-size: var(--text-3xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

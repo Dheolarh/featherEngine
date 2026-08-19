@@ -23,6 +23,7 @@ import {
   Settings,
   SkipForward,
   Square,
+  Store,
   Trash2,
   TreePine,
   Undo2,
@@ -254,6 +255,20 @@ function ViewMenu({ onOpenPrefs }: { onOpenPrefs: () => void }) {
               ))}
             </>
           )}
+          <hr />
+          <div className="file-menu-section">Panels</div>
+          <button
+            onClick={run(() =>
+              openWorkspacePanel({
+                id: 'store',
+                title: 'Asset Store',
+                placement: { referencePanel: 'project', direction: 'within' },
+              }),
+            )}
+          >
+            <Store size={14} aria-hidden />
+            <span>Asset Store</span>
+          </button>
           {extensionPanels.length > 0 && (
             <>
               <hr />

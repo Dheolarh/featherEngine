@@ -1,4 +1,5 @@
 import { PROJECT_VERSION, type AssetItem, type NodeForgeProject } from '../types';
+import { sha256Hex } from '../utils/contentHash';
 
 /** Bundle format version, bumped independently of the project file format. */
 export const GAME_BUNDLE_VERSION = '1.0.0';
@@ -56,10 +57,14 @@ function mimeForAsset(asset: AssetItem): string | null {
   }
 }
 
-/** Read an asset's bytes (from its runtime `url`) into a self-contained data URL with a correct MIME. */
-async function toDataUrl(asset: AssetItem): Promise<string> {
+/**
+ * Read an asset's bytes (from its runtime `url`) into a self-contained data URL with a correct MIME,
+ * plus their SHA-256 so importers can content-address the asset.
+ */
+async function readAssetBytes(asset: AssetItem): Promise<{ dataUrl: string; hash: string }> {
   const response = await fetch(asset.url as string);
   const blob = await response.blob();
+  const hash = await sha256Hex(await blob.arrayBuffer());
   const raw = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -68,11 +73,9 @@ async function toDataUrl(asset: AssetItem): Promise<string> {
   });
   // Re-stamp the MIME from the extension when known — the source server may have mislabeled it.
   const mime = mimeForAsset(asset);
-  if (mime) {
-    const comma = raw.indexOf(',');
-    if (comma !== -1) return `data:${mime};base64,${raw.slice(comma + 1)}`;
-  }
-  return raw;
+  const comma = raw.indexOf(',');
+  if (mime && comma !== -1) return { dataUrl: `data:${mime};base64,${raw.slice(comma + 1)}`, hash };
+  return { dataUrl: raw, hash };
 }
 
 /**
@@ -85,7 +88,8 @@ export async function embedAssets(assets: AssetItem[]): Promise<AssetItem[]> {
     assets.map(async (asset) => {
       if (!asset.url) return { ...asset, unresolved: true };
       try {
-        return { ...asset, data: await toDataUrl(asset) };
+        const { dataUrl, hash } = await readAssetBytes(asset);
+        return { ...asset, data: dataUrl, hash };
       } catch {
         return { ...asset, unresolved: true };
       }

@@ -1,0 +1,142 @@
+{
+  "format": "feather-store-catalog",
+  "formatVersion": "1.0.0",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "packages": [
+    {
+      "id": "pkg-feather-starter-props",
+      "slug": "starter-props",
+      "title": "Starter Props",
+      "description": "Crates, a barrel and a stone block to dress a level with. Physics is switched on, so they tumble the moment you press Play.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "module",
+      "tags": [
+        "props",
+        "environment",
+        "physics"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjQjQ3NjJGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjNkU0MzE4Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfk6Y8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 9764,
+      "downloadUrl": "packages/starter-props.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 3,
+        "materials": 3,
+        "blueprints": 0,
+        "assets": 0,
+        "scenes": 0
+      }
+    },
+    {
+      "id": "pkg-feather-neon-signage",
+      "slug": "neon-signage",
+      "title": "Neon Signage Kit",
+      "description": "Emissive pillars and a hanging sign for night-time city scenes. Drops straight into a scene with bloom enabled.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "module",
+      "tags": [
+        "props",
+        "lighting",
+        "cyberpunk"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjRkYzRDhCIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjM0RFOEZGIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfjq48L3RleHQ+PC9zdmc+",
+      "sizeBytes": 6809,
+      "downloadUrl": "packages/neon-signage.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 2,
+        "materials": 3,
+        "blueprints": 0,
+        "assets": 0,
+        "scenes": 0
+      }
+    },
+    {
+      "id": "pkg-feather-physics-playground",
+      "slug": "physics-playground",
+      "title": "Physics Playground",
+      "description": "A ramp, a launch platform and a heavy ball — a ready-made rig for testing collisions, mass and restitution.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "module",
+      "tags": [
+        "physics",
+        "prototyping",
+        "kit"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjM0Q3QkZGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMTUzQThBIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPuKavTwvdGV4dD48L3N2Zz4=",
+      "sizeBytes": 5993,
+      "downloadUrl": "packages/physics-playground.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 3,
+        "materials": 1,
+        "blueprints": 0,
+        "assets": 0,
+        "scenes": 0
+      }
+    },
+    {
+      "id": "pkg-feather-blade-prop",
+      "slug": "blade-prop",
+      "title": "Blade Prop",
+      "description": "A sword model you can place, parent to a character, or attach to a weapon socket. The mesh downloads separately, so the package itself stays tiny.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "module",
+      "tags": [
+        "props",
+        "weapons",
+        "model"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNkU3QThGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMkIzMTQwIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfl6E8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 114650,
+      "downloadUrl": "packages/blade-prop.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 1,
+        "materials": 0,
+        "blueprints": 0,
+        "assets": 1,
+        "scenes": 0
+      }
+    },
+    {
+      "id": "pkg-feather-sandbox-world",
+      "slug": "sandbox-world",
+      "title": "Sandbox World",
+      "description": "A ready-to-play starter world: a ground plane, a stack of physics crates and a lit sky. Creates a new project you can build on.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "physics"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNEM5RjVBIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMUU1MjMwIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfj548L3RleHQ+PC9zdmc+",
+      "sizeBytes": 7600,
+      "downloadUrl": "packages/sandbox-world.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 2,
+        "blueprints": 0,
+        "assets": 0,
+        "scenes": 1
+      }
+    }
+  ]
+}

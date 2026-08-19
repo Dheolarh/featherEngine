@@ -27,18 +27,21 @@ import { initAutosave } from './store/autosave';
 import { initFeatherExternalSync } from './store/featherExternalStore';
 import { createMeadowTemplate } from './project/meadowTemplate';
 
-/** DEV-only: `?demo=meadows` auto-builds the Meadows template on load — used for headless screenshot QA
- *  of the vegetation look. No-op in production builds and when any other query is present. */
+/** DEV-only headless screenshot QA hooks. No-op in production builds and for any other query.
+ *  - `?demo=meadows` auto-builds the Meadows template and enters Play (vegetation look).
+ *  - `?demo=store` just opens a blank project, so the Asset Store has somewhere to install into. */
 function useDemoAutoload() {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    if (new URLSearchParams(window.location.search).get('demo') !== 'meadows') return;
+    const demo = new URLSearchParams(window.location.search).get('demo');
+    if (demo !== 'meadows' && demo !== 'store') return;
     let cancelled = false;
     void (async () => {
       const project = useProjectStore.getState();
       if (project.hasProject) return;
-      await project.newProject('Meadows Preview');
+      await project.newProject(demo === 'store' ? 'Store Preview' : 'Meadows Preview');
       if (cancelled || !useProjectStore.getState().hasProject) return;
+      if (demo === 'store') return;
       await createMeadowTemplate();
       // Auto-enter Play so a screenshot shows the eye-level third-person game camera (reference framing).
       setTimeout(() => {

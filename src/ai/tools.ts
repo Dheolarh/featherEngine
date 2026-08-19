@@ -5,6 +5,7 @@ import { type UITemplateKind, type UIThemeKind } from '../store/editor/ui';
 import { inputTypeForHandle, outputTypeForHandle, valueTypesCompatible } from '../store/editor/wireTypes';
 import { undo as undoHistory, redo as redoHistory } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
+import { useMarketplaceStore } from '../store/marketplaceStore';
 import { getPlatform } from '../platform';
 import { captureViewportScreenshot } from '../runtime/viewportCaptureBridge';
 import type {
@@ -49,6 +50,7 @@ import { applyPhysicsMaterialPreset, physicsMaterialPresetIds } from '../runtime
 
 const store = () => useEditorStore.getState();
 const projectStore = () => useProjectStore.getState();
+const marketplaceStore = () => useMarketplaceStore.getState();
 
 const vec3 = z.array(z.number()).length(3).describe('[x, y, z]');
 const asVec3 = (value: number[]) => value as Vector3Tuple;
@@ -3072,6 +3074,83 @@ const rawEngineTools = {
       return added > 0
         ? `Imported a package — ${added} new prefab(s) added to the Project browser. Use instantiate_prefab to place one in the scene.`
         : `Import dialog closed — no package was imported.`;
+    },
+  }),
+
+  browse_asset_store: tool({
+    description:
+      'List packages available in the Feather Asset Store. Optionally filter by a search term (matches title, description, author and tags) or by an exact tag. Returns each package id, title, author, tags and what it contains. Use install_store_package to install one. Everything in the store is free.',
+    inputSchema: z.object({
+      query: z.string().optional(),
+      tag: z.string().optional(),
+    }),
+    execute: async ({ query, tag }) => {
+      const marketplace = marketplaceStore();
+      await marketplace.load();
+      const state = useMarketplaceStore.getState();
+      if (state.status === 'error') return `The asset store is unavailable: ${state.error}`;
+      if (query !== undefined) state.setQuery(query);
+      if (tag !== undefined) state.setTag(tag);
+      const listings = useMarketplaceStore.getState().visiblePackages();
+      if (!listings.length) {
+        return `No store packages match that filter. Available tags: ${useMarketplaceStore.getState().availableTags().join(', ') || 'none'}.`;
+      }
+      const lines = listings.map(
+        (listing) =>
+          `- ${listing.id} — "${listing.title}" by ${listing.author} v${listing.version} [${listing.kind === 'project' ? 'TEMPLATE' : 'module'}; ${listing.tags.join(', ')}] — ${listing.contents.scenes} scene(s), ${listing.contents.prefabs} prefab(s), ${listing.contents.materials} material(s). ${listing.description}`,
+      );
+      return `${listings.length} store package(s):\n${lines.join('\n')}`;
+    },
+  }),
+
+  install_store_package: tool({
+    description:
+      'Install a package from the Feather Asset Store by its store id (from browse_asset_store). A MODULE package merges additively into the current project — every id is regenerated, so it can never overwrite or break existing content, and installing twice gives a second independent copy; afterwards use instantiate_prefab to place the new prefabs. A TEMPLATE package (kind: project) instead CREATES A NEW PROJECT and opens its world, discarding whatever is currently open — only use it when the user has clearly asked to start something new.',
+    inputSchema: z.object({ packageId: z.string() }),
+    execute: async ({ packageId }) => {
+      const marketplace = marketplaceStore();
+      await marketplace.load();
+      const listing = useMarketplaceStore
+        .getState()
+        .packages.find((entry) => entry.id === packageId || entry.slug === packageId);
+      if (!listing) return `No store package with id ${packageId}. Use browse_asset_store to list them.`;
+
+      if (listing.kind === 'project') {
+        const created = await projectStore().newProjectFromPackageUrl(listing.downloadUrl, listing.title);
+        if (!created) return `Could not start "${listing.title}": ${projectStore().error ?? 'unknown error'}.`;
+        const scenes = store().scenes.map((scene) => `${scene.name} (${scene.id})`).join(', ');
+        return `Created a new project from template "${listing.title}". Scenes: ${scenes}. The active scene is ${store().activeSceneId}.`;
+      }
+
+      if (!projectStore().hasProject) return 'Open or create a project before installing store packages.';
+      const before = store().prefabs.length;
+      await useMarketplaceStore.getState().install(listing);
+      const added = store().prefabs.length - before;
+      if (!added) return `Install of "${listing.title}" failed: ${projectStore().error ?? 'unknown error'}.`;
+      const names = store()
+        .prefabs.slice(-added)
+        .map((prefab) => `${prefab.name} (${prefab.id})`)
+        .join(', ');
+      return `Installed "${listing.title}" — ${added} new prefab(s): ${names}. Use instantiate_prefab to place one.`;
+    },
+  }),
+
+  export_project_package: tool({
+    description:
+      'Export the WHOLE project (every scene plus all referenced prefabs, blueprints, materials, animations and assets) as a portable kind:project .nfpack — a shareable template/world. The user chooses where to save it. Use export_prefab_package instead for a single reusable component.',
+    inputSchema: z.object({
+      name: z.string().optional(),
+      description: z.string().optional(),
+      author: z.string().optional(),
+      version: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    }),
+    execute: async ({ name, description, author, version, tags }) => {
+      if (!projectStore().hasProject) return 'No project is open to export.';
+      const collected = store().buildProjectPackage();
+      await projectStore().exportProjectPackage({ name, description, author, version, tags });
+      const scenes = collected.content.scenes?.length ?? 0;
+      return `Exporting project package "${name ?? projectStore().projectName}" — ${scenes} scene(s), ${collected.content.prefabs.length} prefab(s), ${collected.assetIds.length} asset(s). The user chooses where to save it.`;
     },
   }),
 

@@ -1,0 +1,272 @@
+{
+  "format": "nodeforge-package",
+  "formatVersion": "1.0.0",
+  "kind": "project",
+  "meta": {
+    "id": "pkg-feather-sandbox-world",
+    "name": "Sandbox World",
+    "description": "A ready-to-play starter world: a ground plane, a stack of physics crates and a lit sky. Creates a new project you can build on.",
+    "author": "Feather",
+    "version": "1.0.0",
+    "tags": [
+      "template",
+      "world",
+      "physics"
+    ],
+    "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNEM5RjVBIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMUU1MjMwIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfj548L3RleHQ+PC9zdmc+",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "engineVersion": "0.7.0"
+  },
+  "content": {
+    "prefabs": [],
+    "blueprints": [],
+    "graphs": [],
+    "materials": [
+      {
+        "id": "mat-store-wood",
+        "name": "Crate Wood",
+        "description": "Reusable material asset.",
+        "color": "#A9743B",
+        "metalness": 0,
+        "roughness": 0.85,
+        "emissiveColor": "#000000",
+        "emissiveIntensity": 0,
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "mat-store-stone",
+        "name": "Quarry Stone",
+        "description": "Reusable material asset.",
+        "color": "#8A8A85",
+        "metalness": 0,
+        "roughness": 0.95,
+        "emissiveColor": "#000000",
+        "emissiveIntensity": 0,
+        "createdAt": 1767225600000
+      }
+    ],
+    "particleSystems": [],
+    "skeletons": [],
+    "skeletalMeshes": [],
+    "animations": [],
+    "animatorControllers": [],
+    "dataAssets": [],
+    "uiDocuments": [],
+    "variables": [],
+    "scenes": [
+      {
+        "id": "scene-sandbox",
+        "name": "Sandbox",
+        "objects": [
+          {
+            "id": "obj-ground",
+            "name": "Ground",
+            "kind": "plane",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                40,
+                1,
+                40
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "plane",
+              "color": "#6F7A6A",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-stone"
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-sun",
+            "name": "Sun",
+            "kind": "empty",
+            "transform": {
+              "position": [
+                8,
+                12,
+                6
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "obj-crate-1",
+            "name": "Crate",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                1,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#A9743B",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-wood"
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 12,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-crate-2",
+            "name": "Crate",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0.2,
+                2.05,
+                -0.1
+              ],
+              "rotation": [
+                0,
+                0.3,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#A9743B",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-wood"
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 12,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-crate-3",
+            "name": "Crate",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                1.6,
+                1,
+                0.8
+              ],
+              "rotation": [
+                0,
+                -0.4,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#A9743B",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-wood"
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "box",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 12,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "assets": []
+}

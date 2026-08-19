@@ -69,6 +69,15 @@ export interface ProjectFolder {
   parentId?: string;
 }
 
+/** An asset's bytes held remotely, fetched and hash-verified at install time. */
+export interface AssetSource {
+  url: string;
+  /** Expected SHA-256, lowercase hex. Downloads that don't match are rejected. */
+  sha256: string;
+  /** Advertised byte length, for progress and for refusing oversized downloads. */
+  bytes?: number;
+}
+
 export interface AssetItem {
   id: string;
   name: string;
@@ -82,6 +91,12 @@ export interface AssetItem {
   url?: string;
   /** Embedded data URL of the asset's bytes. Present only in exported game bundles (self-contained). */
   data?: string;
+  /** SHA-256 of the asset's bytes, lowercase hex. The asset's content address: identical bytes
+   *  imported twice reuse one file on disk, and an install can skip assets the project already has. */
+  hash?: string;
+  /** Where to fetch the bytes from, for packages that reference assets instead of inlining them.
+   *  Store packages use this so a `.nfpack` stays a small manifest and big models stream separately. */
+  source?: AssetSource;
   /** True when the asset was loaded from a project that had no bytes on disk (e.g. migrated). */
   unresolved?: boolean;
   createdAt: number;

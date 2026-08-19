@@ -109,6 +109,12 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Exported folder package';
     case 'import_package':
       return 'Imported package';
+    case 'browse_asset_store':
+      return 'Browsed asset store';
+    case 'install_store_package':
+      return 'Installed store package';
+    case 'export_project_package':
+      return 'Exported project package';
     case 'instantiate_prefab':
       return 'Added prefab to scene';
     case 'open_prefab':

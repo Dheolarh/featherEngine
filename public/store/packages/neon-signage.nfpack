@@ -1,0 +1,254 @@
+{
+  "format": "nodeforge-package",
+  "formatVersion": "1.0.0",
+  "kind": "module",
+  "meta": {
+    "id": "pkg-feather-neon-signage",
+    "name": "Neon Signage Kit",
+    "description": "Emissive pillars and a hanging sign for night-time city scenes. Drops straight into a scene with bloom enabled.",
+    "author": "Feather",
+    "version": "1.0.0",
+    "tags": [
+      "props",
+      "lighting",
+      "cyberpunk"
+    ],
+    "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjRkYzRDhCIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjM0RFOEZGIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfjq48L3RleHQ+PC9zdmc+",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "engineVersion": "0.7.0"
+  },
+  "content": {
+    "prefabs": [
+      {
+        "id": "prefab-store-neon-pillar",
+        "name": "Neon Pillar",
+        "objects": [
+          {
+            "id": "obj-pillar-root",
+            "name": "Neon Pillar",
+            "kind": "empty",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "obj-pillar-post",
+            "name": "Post",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                1.6,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                0.18,
+                3.2,
+                0.18
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#23262E",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-dark-metal"
+            },
+            "parentId": "obj-pillar-root"
+          },
+          {
+            "id": "obj-pillar-tube",
+            "name": "Neon Tube",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                1.8,
+                0.12
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                0.06,
+                2.4,
+                0.06
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#FF3D8B",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-neon-pink"
+            },
+            "parentId": "obj-pillar-root"
+          }
+        ],
+        "rootId": "obj-pillar-root",
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "prefab-store-neon-sign",
+        "name": "Hanging Sign",
+        "objects": [
+          {
+            "id": "obj-sign-root",
+            "name": "Hanging Sign",
+            "kind": "empty",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "obj-sign-bracket",
+            "name": "Bracket",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                2.6,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.4,
+                0.08,
+                0.08
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#23262E",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-dark-metal"
+            },
+            "parentId": "obj-sign-root"
+          },
+          {
+            "id": "obj-sign-panel",
+            "name": "Panel",
+            "kind": "plane",
+            "transform": {
+              "position": [
+                0.5,
+                1.9,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.6,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "plane",
+              "color": "#3DE8FF",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "materialId": "mat-store-neon-cyan"
+            },
+            "parentId": "obj-sign-root"
+          }
+        ],
+        "rootId": "obj-sign-root",
+        "createdAt": 1767225600000
+      }
+    ],
+    "blueprints": [],
+    "graphs": [],
+    "materials": [
+      {
+        "id": "mat-store-neon-pink",
+        "name": "Neon Pink",
+        "description": "Reusable material asset.",
+        "color": "#FF3D8B",
+        "metalness": 0.1,
+        "roughness": 0.3,
+        "emissiveColor": "#FF3D8B",
+        "emissiveIntensity": 3.4,
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "mat-store-neon-cyan",
+        "name": "Neon Cyan",
+        "description": "Reusable material asset.",
+        "color": "#3DE8FF",
+        "metalness": 0.1,
+        "roughness": 0.3,
+        "emissiveColor": "#3DE8FF",
+        "emissiveIntensity": 3.4,
+        "createdAt": 1767225600000
+      },
+      {
+        "id": "mat-store-dark-metal",
+        "name": "Gantry Steel",
+        "description": "Reusable material asset.",
+        "color": "#23262E",
+        "metalness": 0.8,
+        "roughness": 0.45,
+        "emissiveColor": "#000000",
+        "emissiveIntensity": 0,
+        "createdAt": 1767225600000
+      }
+    ],
+    "particleSystems": [],
+    "skeletons": [],
+    "skeletalMeshes": [],
+    "animations": [],
+    "animatorControllers": [],
+    "dataAssets": [],
+    "uiDocuments": [],
+    "variables": []
+  },
+  "assets": []
+}

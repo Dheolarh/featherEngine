@@ -1,0 +1,88 @@
+{
+  "format": "nodeforge-package",
+  "formatVersion": "1.0.0",
+  "kind": "module",
+  "meta": {
+    "id": "pkg-feather-blade-prop",
+    "name": "Blade Prop",
+    "description": "A sword model you can place, parent to a character, or attach to a weapon socket. The mesh downloads separately, so the package itself stays tiny.",
+    "author": "Feather",
+    "version": "1.0.0",
+    "tags": [
+      "props",
+      "weapons",
+      "model"
+    ],
+    "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNkU3QThGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMkIzMTQwIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfl6E8L3RleHQ+PC9zdmc+",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "engineVersion": "0.7.0"
+  },
+  "content": {
+    "prefabs": [
+      {
+        "id": "prefab-store-sword",
+        "name": "Sword",
+        "objects": [
+          {
+            "id": "obj-sword",
+            "name": "Sword",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#5B8CFF",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "modelAssetId": "asset-store-sword"
+            }
+          }
+        ],
+        "rootId": "obj-sword",
+        "createdAt": 1767225600000
+      }
+    ],
+    "blueprints": [],
+    "graphs": [],
+    "materials": [],
+    "particleSystems": [],
+    "skeletons": [],
+    "skeletalMeshes": [],
+    "animations": [],
+    "animatorControllers": [],
+    "dataAssets": [],
+    "uiDocuments": [],
+    "variables": []
+  },
+  "assets": [
+    {
+      "id": "asset-store-sword",
+      "name": "Sword.glb",
+      "type": "model",
+      "size": 111864,
+      "hash": "ce2a759ba0b863b0a5059b92d1bdc42d7815068059931fe7b9c63d8de434272c",
+      "createdAt": 1767225600000,
+      "source": {
+        "url": "templates/Sword.glb",
+        "sha256": "ce2a759ba0b863b0a5059b92d1bdc42d7815068059931fe7b9c63d8de434272c",
+        "bytes": 111864
+      }
+    }
+  ]
+}

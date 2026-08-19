@@ -151,7 +151,21 @@ export type PackageSeeds = Partial<{
   dataAssets: string[];
   uiDocuments: string[];
   assets: string[];
+  /** Whole scenes — the seed for a `kind: 'project'` package (a playable world, not a component). */
+  scenes: string[];
 }>;
+
+/**
+ * Collect entire scenes plus their dependency closure — the basis of a `kind: 'project'` package,
+ * i.e. a shareable template/world rather than a single reusable component. Defaults to every scene.
+ */
+export function collectProjectPackage(
+  src: PackageSource,
+  sceneIds?: string[],
+): { content: PackageContent; assetIds: string[] } {
+  const ids = sceneIds ?? (src.scenes ?? []).map((scene) => scene.id);
+  return collectPackage(src, { scenes: ids });
+}
 
 /**
  * Collect the full dependency closure of a prefab into a transferable PackageContent + asset id set.
@@ -188,6 +202,7 @@ export function collectPackage(
     uiDocument: new Set<string>(),
     variable: new Set<string>(),
     asset: new Set<string>(),
+    scene: new Set<string>(),
   };
   const addTo = (set: Set<string>) => (id?: string) => {
     if (id) set.add(id);
@@ -206,6 +221,20 @@ export function collectPackage(
     uiDocument: addTo(ids.uiDocument),
     variable: addTo(ids.variable),
     asset: addTo(ids.asset),
+    scene: addTo(ids.scene),
+  };
+
+  /** Scene-level references: its audio bed and everything its cinematics drive. */
+  const scanScene = (scene: Scene) => {
+    add.asset(scene.ambientSoundId);
+    add.asset(scene.musicSoundId);
+    for (const sequence of scene.cinematics ?? []) {
+      for (const action of sequence.actions) {
+        add.prefab(action.prefabId);
+        add.animation(action.animationId);
+        add.asset(action.soundId);
+      }
+    }
   };
 
   /** Pull every id referenced by a captured object's components into the buckets. */
@@ -253,12 +282,17 @@ export function collectPackage(
   seeds.dataAssets?.forEach(add.dataAsset);
   seeds.uiDocuments?.forEach(add.uiDocument);
   seeds.assets?.forEach(add.asset);
+  seeds.scenes?.forEach(add.scene);
 
   // Fixed-point: keep re-scanning every included entity until no new ids appear. Package-sized, so cheap.
   let changed = true;
   while (changed) {
     const before = Object.values(ids).reduce((sum, set) => sum + set.size, 0);
 
+    for (const scene of (src.scenes ?? []).filter((s) => ids.scene.has(s.id))) {
+      for (const object of scene.objects) scanObject(object);
+      scanScene(scene);
+    }
     for (const prefab of src.prefabs.filter((p) => ids.prefab.has(p.id))) {
       for (const object of prefab.objects) scanObject(object);
     }
@@ -317,6 +351,8 @@ export function collectPackage(
     uiDocuments: pick(src.uiDocuments, ids.uiDocument),
     variables: pick(src.variables, ids.variable),
   };
+  // Only present for project packages; a module package leaves `scenes` undefined.
+  if (ids.scene.size) content.scenes = pick(src.scenes ?? [], ids.scene);
 
   return { content, assetIds: [...ids.asset] };
 }
@@ -341,11 +377,14 @@ export interface RemapResult {
 /**
  * Produce import-ready content: fresh ids for every entity, all cross-references rewritten, asset
  * bytes carried through (their runtime url/path is resolved by the caller). `existingSkeletons` lets
- * us dedupe identical rigs by signature instead of importing a second copy. Pure.
+ * us dedupe identical rigs by signature instead of importing a second copy; `existingAssets` does the
+ * same for binary assets by content hash, so installing two packages that share a model imports —
+ * and downloads — those bytes once. Pure.
  */
 export function remapPackageForImport(
   pkg: NodeForgePackage,
   existingSkeletons: SkeletonAsset[] = [],
+  existingAssets: AssetItem[] = [],
 ): RemapResult {
   const c = structuredClone(pkg.content) as PackageContent;
 
@@ -368,6 +407,8 @@ export function remapPackageForImport(
     // UI element ids are regenerated on import; graph nodes (Set UI Text) reference them, so the
     // old→new mapping is allocated UP FRONT and applied in BOTH rewriteUIElement and rewriteGraph.
     uiElement: new Map<string, string>(),
+    scene: new Map<string, string>(),
+    cinematic: new Map<string, string>(),
   };
 
   // Skeletons: reuse an existing identical rig (by signature) when present; otherwise import fresh.
@@ -394,9 +435,31 @@ export function remapPackageForImport(
   c.dataAssets.forEach((d) => maps.dataAsset.set(d.id, newId('data')));
   c.uiDocuments.forEach((d) => maps.uiDocument.set(d.id, newId('ui')));
   c.variables.forEach((v) => maps.variable.set(v.id, newId('var')));
-  pkg.assets.forEach((a) => maps.asset.set(a.id, newId('asset')));
-  // Every object across every prefab gets a fresh id (refs between them are rewritten below).
+  // Project packages carry whole scenes; their ids and cinematics are remapped like everything else.
+  (c.scenes ?? []).forEach((s) => {
+    maps.scene.set(s.id, newId('scene'));
+    (s.cinematics ?? []).forEach((seq) => maps.cinematic.set(seq.id, newId('cine')));
+  });
+  // Assets: an incoming asset whose content hash already exists in the project maps onto that asset
+  // instead of being imported again. Only hash-bearing assets can dedupe — older packages carry no
+  // hash, so they keep the previous behaviour of always importing a fresh copy.
+  const byHash = new Map(existingAssets.filter((a) => a.hash).map((a) => [a.hash as string, a.id]));
+  const importedAssets: AssetItem[] = [];
+  for (const asset of pkg.assets) {
+    const reuse = asset.hash ? byHash.get(asset.hash) : undefined;
+    if (reuse) {
+      maps.asset.set(asset.id, reuse);
+    } else {
+      const id = newId('asset');
+      maps.asset.set(asset.id, id);
+      importedAssets.push(asset);
+      // A package that ships the same bytes twice under two ids should also collapse to one.
+      if (asset.hash) byHash.set(asset.hash, id);
+    }
+  }
+  // Every object across every prefab AND scene gets a fresh id (refs between them are rewritten below).
   c.prefabs.forEach((p) => p.objects.forEach((o) => maps.object.set(o.id, newId('obj'))));
+  (c.scenes ?? []).forEach((s) => s.objects.forEach((o) => maps.object.set(o.id, newId('obj'))));
   // Allocate UI element ids before any rewriting so graph nodes can be remapped in the same pass.
   const allocElementIds = (element: UIElement) => {
     maps.uiElement.set(element.id, newId('uiel'));
@@ -503,11 +566,11 @@ export function remapPackageForImport(
       if (d.projectileTemplateId) d.projectileTemplateId = remap(maps.object, d.projectileTemplateId);
       if (d.projectileBlastSound) d.projectileBlastSound = remap(maps.asset, d.projectileBlastSound);
       if (d.elementId) d.elementId = remap(maps.uiElement, d.elementId);
-      // Scenes and cinematics are PROJECT-level and never travel inside a package — a dangling id
-      // here would silently no-op at runtime in the importing project. Clear them so the node reads
-      // as "unset" in the editor (and the Problems panel can point at it) instead of lying.
-      if (d.cinematicId) d.cinematicId = undefined;
-      if (d.targetSceneId) d.targetSceneId = undefined;
+      // Scenes and cinematics only travel in a `kind: 'project'` package. When they do, rewire to the
+      // imported copy; otherwise clear, because a dangling id would silently no-op at runtime. Cleared
+      // reads as "unset" in the editor (and the Problems panel can point at it) instead of lying.
+      if (d.cinematicId) d.cinematicId = maps.cinematic.get(d.cinematicId);
+      if (d.targetSceneId) d.targetSceneId = maps.scene.get(d.targetSceneId);
     }
   };
 
@@ -518,6 +581,26 @@ export function remapPackageForImport(
   };
 
   // 4. Apply across all entity collections. Drop folderId so imports land at the project root.
+  for (const scene of c.scenes ?? []) {
+    scene.id = remap(maps.scene, scene.id)!;
+    scene.objects = scene.objects.map(rewriteObject);
+    scene.ambientSoundId = remap(maps.asset, scene.ambientSoundId);
+    scene.musicSoundId = remap(maps.asset, scene.musicSoundId);
+    for (const sequence of scene.cinematics ?? []) {
+      sequence.id = remap(maps.cinematic, sequence.id)!;
+      sequence.takeOf = remap(maps.cinematic, sequence.takeOf);
+      for (const action of sequence.actions) {
+        action.objectId = remap(maps.object, action.objectId);
+        action.focusObjectId = remap(maps.object, action.focusObjectId);
+        action.lookAtObjectId = remap(maps.object, action.lookAtObjectId);
+        action.followObjectId = remap(maps.object, action.followObjectId);
+        action.prefabId = remap(maps.prefab, action.prefabId);
+        action.animationId = remap(maps.animation, action.animationId);
+        action.soundId = remap(maps.asset, action.soundId);
+        action.cinematicId = remap(maps.cinematic, action.cinematicId);
+      }
+    }
+  }
   for (const prefab of c.prefabs) {
     prefab.id = remap(maps.prefab, prefab.id)!;
     prefab.folderId = undefined;
@@ -602,7 +685,8 @@ export function remapPackageForImport(
   }
 
   // 5. Assets: fresh ids + carry bytes; strip path/url (the caller re-imports the bytes per platform).
-  const assets: AssetItem[] = pkg.assets.map((asset) => ({
+  // Only the assets we actually import — deduped ones already exist in the project untouched.
+  const assets: AssetItem[] = importedAssets.map((asset) => ({
     ...asset,
     id: remap(maps.asset, asset.id)!,
     path: undefined,
