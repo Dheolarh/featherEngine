@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { existsSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // `BUILD_TARGET=player vite build` produces the standalone game player into dist-player/.
@@ -23,9 +23,48 @@ function finalizePlayerBuild(): Plugin {
   };
 }
 
+/**
+ * Dev-only sink for `?exportTemplate=<key>` (see src/dev/exportTemplate.ts).
+ *
+ * The starter templates are imperative builders that fetch real multi-megabyte models and use
+ * browser-only APIs, so the only faithful way to turn one into a `.nfpack` is to run it in a real
+ * browser and post the result back out. This receives that JSON and writes it into public/store/.
+ */
+function templateExportSink(): Plugin {
+  return {
+    name: 'feather-template-export-sink',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/__feather/export-template', (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          return res.end('POST only');
+        }
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk: Buffer) => chunks.push(chunk));
+        req.on('end', () => {
+          try {
+            const { slug, pkg } = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            if (!slug || !/^[a-z0-9-]+$/.test(slug)) throw new Error('bad slug');
+            const dir = resolve(__dirname, 'public/store/packages');
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(resolve(dir, `${slug}.nfpack`), `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
+            server.config.logger.info(`[template-export] wrote public/store/packages/${slug}.nfpack`);
+            res.setHeader('content-type', 'application/json');
+            res.end(JSON.stringify({ ok: true, slug }));
+          } catch (error) {
+            res.statusCode = 400;
+            res.end(String(error));
+          }
+        });
+      });
+    },
+  };
+}
+
 // Tauri expects a fixed dev server port (see src-tauri/tauri.conf.json devUrl).
 export default defineConfig({
-  plugins: [react(), ...(isPlayer ? [finalizePlayerBuild()] : [])],
+  plugins: [react(), templateExportSink(), ...(isPlayer ? [finalizePlayerBuild()] : [])],
   clearScreen: false,
   // Relative base so a hosted export can live under any URL path and Tauri can use the same build.
   // Browsers block module applications launched directly through file://; see PRODUCTION_EXPORT.md.

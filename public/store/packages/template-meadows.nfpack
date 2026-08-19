@@ -1,0 +1,3718 @@
+{
+  "format": "nodeforge-package",
+  "formatVersion": "1.0.0",
+  "kind": "project",
+  "meta": {
+    "id": "pkg-feather-template-meadows",
+    "name": "Meadows",
+    "description": "Stylized BOTW-style grass, wildflowers and trees to walk through.",
+    "author": "Feather",
+    "version": "1.0.0",
+    "tags": [
+      "template",
+      "world",
+      "vegetation",
+      "outdoor"
+    ],
+    "createdAt": "2026-08-19T18:45:37.236Z",
+    "engineVersion": "0.7.0"
+  },
+  "content": {
+    "prefabs": [],
+    "blueprints": [
+      {
+        "id": "bp-87f5d9e9-e270-42ad-820c-681754cffcbf",
+        "name": "UAL1 Controller",
+        "description": "Third-person character logic — edit these nodes to change movement, jump, abilities.",
+        "graphId": "graph-493276f5-94a9-4a9f-a395-9c888f2a0120",
+        "color": "#5b8cff",
+        "createdAt": 1787165136559
+      },
+      {
+        "id": "bp-ef553716-054e-4d8a-8842-34181852a2c8",
+        "name": "UAL1 Controller",
+        "description": "Third-person character logic — edit these nodes to change movement, jump, abilities.",
+        "graphId": "graph-5d108587-5fed-4c47-bd5f-26f176b22826",
+        "color": "#5b8cff",
+        "createdAt": 1787165136708
+      }
+    ],
+    "graphs": [
+      {
+        "id": "graph-493276f5-94a9-4a9f-a395-9c888f2a0120",
+        "name": "UAL1 Controller",
+        "nodes": [
+          {
+            "id": "node-71d9e05d-e116-4c31-bccd-073b7671b463",
+            "type": "nodeforge",
+            "position": {
+              "x": 40,
+              "y": 60
+            },
+            "data": {
+              "label": "Update",
+              "category": "Events",
+              "nodeKind": "event.update",
+              "hasInput": false,
+              "description": "Runs every preview frame while Play is active. Set Interval above 0 to throttle it.",
+              "tone": "event",
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-2014ccf1-d3b4-406c-a9f9-0b7b7486d6d6",
+            "type": "nodeforge",
+            "position": {
+              "x": 40,
+              "y": 200
+            },
+            "data": {
+              "label": "Get Move Input",
+              "category": "Runtime",
+              "nodeKind": "input.move",
+              "description": "WASD / arrows → a world move direction.",
+              "tone": "runtime",
+              "hasInput": false,
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-313a0bb0-50ac-4575-b3f1-9e1390a98737",
+            "type": "nodeforge",
+            "position": {
+              "x": 360,
+              "y": 90
+            },
+            "data": {
+              "label": "Move",
+              "category": "Runtime",
+              "nodeKind": "action.move",
+              "description": "Moves + turns the owner along a direction at a speed.",
+              "tone": "runtime",
+              "hasInput": true,
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-7543cb7d-b0d1-426c-8494-26075793ffbe",
+            "type": "nodeforge",
+            "position": {
+              "x": 40,
+              "y": 360
+            },
+            "data": {
+              "label": "Key Down: Space",
+              "category": "Events",
+              "nodeKind": "event.keyDown",
+              "keyCode": "Space",
+              "hasInput": false,
+              "description": "Fires while Space is pressed during preview.",
+              "tone": "event",
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-f62c8ecf-7c95-438a-be1d-dfcd2264cf74",
+            "type": "nodeforge",
+            "position": {
+              "x": 360,
+              "y": 360
+            },
+            "data": {
+              "label": "Jump",
+              "category": "Runtime",
+              "nodeKind": "action.jump",
+              "description": "Makes the owning character jump.",
+              "tone": "runtime",
+              "hasInput": true,
+              "hasOutput": true
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "edge-3ac1d3c7-b97d-4c38-9d5d-9780ce1e031f",
+            "source": "node-71d9e05d-e116-4c31-bccd-073b7671b463",
+            "target": "node-313a0bb0-50ac-4575-b3f1-9e1390a98737",
+            "sourceHandle": "exec-out",
+            "targetHandle": "exec-in",
+            "animated": true,
+            "type": "smoothstep"
+          },
+          {
+            "id": "edge-ac35270d-d84d-41e1-889b-d5ffd0ee494b",
+            "source": "node-2014ccf1-d3b4-406c-a9f9-0b7b7486d6d6",
+            "target": "node-313a0bb0-50ac-4575-b3f1-9e1390a98737",
+            "sourceHandle": "value-out",
+            "targetHandle": "vector",
+            "type": "smoothstep",
+            "style": {
+              "stroke": "#3DD0DC",
+              "strokeWidth": 2
+            }
+          },
+          {
+            "id": "edge-afcbf911-0713-48a1-9977-65a698a9860c",
+            "source": "node-7543cb7d-b0d1-426c-8494-26075793ffbe",
+            "target": "node-f62c8ecf-7c95-438a-be1d-dfcd2264cf74",
+            "sourceHandle": "exec-out",
+            "targetHandle": "exec-in",
+            "animated": true,
+            "type": "smoothstep"
+          }
+        ]
+      },
+      {
+        "id": "graph-5d108587-5fed-4c47-bd5f-26f176b22826",
+        "name": "UAL1 Controller",
+        "nodes": [
+          {
+            "id": "node-46abdf37-7f61-4783-8767-0caab659b56b",
+            "type": "nodeforge",
+            "position": {
+              "x": 40,
+              "y": 60
+            },
+            "data": {
+              "label": "Update",
+              "category": "Events",
+              "nodeKind": "event.update",
+              "hasInput": false,
+              "description": "Runs every preview frame while Play is active. Set Interval above 0 to throttle it.",
+              "tone": "event",
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-f7a8a752-b19a-42d4-91e2-860621a392d4",
+            "type": "nodeforge",
+            "position": {
+              "x": 40,
+              "y": 200
+            },
+            "data": {
+              "label": "Get Move Input",
+              "category": "Runtime",
+              "nodeKind": "input.move",
+              "description": "WASD / arrows → a world move direction.",
+              "tone": "runtime",
+              "hasInput": false,
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-14b2816f-c07b-49e3-9727-6436f96e9d76",
+            "type": "nodeforge",
+            "position": {
+              "x": 360,
+              "y": 90
+            },
+            "data": {
+              "label": "Move",
+              "category": "Runtime",
+              "nodeKind": "action.move",
+              "description": "Moves + turns the owner along a direction at a speed.",
+              "tone": "runtime",
+              "hasInput": true,
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-14df0b39-e8ee-40a0-aec7-28931d235031",
+            "type": "nodeforge",
+            "position": {
+              "x": 40,
+              "y": 360
+            },
+            "data": {
+              "label": "Key Down: Space",
+              "category": "Events",
+              "nodeKind": "event.keyDown",
+              "keyCode": "Space",
+              "hasInput": false,
+              "description": "Fires while Space is pressed during preview.",
+              "tone": "event",
+              "hasOutput": true
+            }
+          },
+          {
+            "id": "node-94472c3f-00f9-4cb5-8d75-ab869f8f5a7b",
+            "type": "nodeforge",
+            "position": {
+              "x": 360,
+              "y": 360
+            },
+            "data": {
+              "label": "Jump",
+              "category": "Runtime",
+              "nodeKind": "action.jump",
+              "description": "Makes the owning character jump.",
+              "tone": "runtime",
+              "hasInput": true,
+              "hasOutput": true
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "edge-1ad2a07a-7b43-4859-97a9-4001330f3213",
+            "source": "node-46abdf37-7f61-4783-8767-0caab659b56b",
+            "target": "node-14b2816f-c07b-49e3-9727-6436f96e9d76",
+            "sourceHandle": "exec-out",
+            "targetHandle": "exec-in",
+            "animated": true,
+            "type": "smoothstep"
+          },
+          {
+            "id": "edge-ac2a016c-5d05-4b62-9c43-31b9623ca927",
+            "source": "node-f7a8a752-b19a-42d4-91e2-860621a392d4",
+            "target": "node-14b2816f-c07b-49e3-9727-6436f96e9d76",
+            "sourceHandle": "value-out",
+            "targetHandle": "vector",
+            "type": "smoothstep",
+            "style": {
+              "stroke": "#3DD0DC",
+              "strokeWidth": 2
+            }
+          },
+          {
+            "id": "edge-bc019de7-73ad-4f27-b9a3-2f0999c160b2",
+            "source": "node-14df0b39-e8ee-40a0-aec7-28931d235031",
+            "target": "node-94472c3f-00f9-4cb5-8d75-ab869f8f5a7b",
+            "sourceHandle": "exec-out",
+            "targetHandle": "exec-in",
+            "animated": true,
+            "type": "smoothstep"
+          }
+        ]
+      }
+    ],
+    "materials": [],
+    "particleSystems": [],
+    "skeletons": [
+      {
+        "id": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "name": "UAL1 Skeleton",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "boneNames": [
+          "root",
+          "pelvis",
+          "spine_01",
+          "spine_02",
+          "spine_03",
+          "neck_01",
+          "Head",
+          "clavicle_l",
+          "upperarm_l",
+          "lowerarm_l",
+          "hand_l",
+          "index_01_l",
+          "index_02_l",
+          "index_03_l",
+          "index_04_leaf_l",
+          "middle_01_l",
+          "middle_02_l",
+          "middle_03_l",
+          "middle_04_leaf_l",
+          "pinky_01_l",
+          "pinky_02_l",
+          "pinky_03_l",
+          "pinky_04_leaf_l",
+          "ring_01_l",
+          "ring_02_l",
+          "ring_03_l",
+          "ring_04_leaf_l",
+          "thumb_01_l",
+          "thumb_02_l",
+          "thumb_03_l",
+          "thumb_04_leaf_l",
+          "clavicle_r",
+          "upperarm_r",
+          "lowerarm_r",
+          "hand_r",
+          "index_01_r",
+          "index_02_r",
+          "index_03_r",
+          "index_04_leaf_r",
+          "middle_01_r",
+          "middle_02_r",
+          "middle_03_r",
+          "middle_04_leaf_r",
+          "pinky_01_r",
+          "pinky_02_r",
+          "pinky_03_r",
+          "pinky_04_leaf_r",
+          "ring_01_r",
+          "ring_02_r",
+          "ring_03_r",
+          "ring_04_leaf_r",
+          "thumb_01_r",
+          "thumb_02_r",
+          "thumb_03_r",
+          "thumb_04_leaf_r",
+          "thigh_l",
+          "calf_l",
+          "foot_l",
+          "ball_l",
+          "ball_leaf_l",
+          "thigh_r",
+          "calf_r",
+          "foot_r",
+          "ball_r",
+          "ball_leaf_r"
+        ],
+        "signature": "4bfddc63",
+        "rootBone": "root",
+        "createdAt": 1787165136555
+      }
+    ],
+    "skeletalMeshes": [],
+    "animations": [
+      {
+        "id": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
+        "name": "Climb_Idle_Loop",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Climb_Idle_Loop",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 2.933333396911621,
+        "loop": true,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-591fd0ad-fd36-4aeb-826a-2d19c66d22d7",
+        "name": "Crawl_Fwd_Loop",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Crawl_Fwd_Loop",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 2.1666667461395264,
+        "loop": true,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-c98e1984-a130-4acb-a39b-b25898d30881",
+        "name": "Crawl_Idle_Loop",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Crawl_Idle_Loop",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 2.3333332538604736,
+        "loop": true,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-259b6f37-5ce4-4d83-8417-acf6aaf725c1",
+        "name": "Crouch_Fwd_L_Loop",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Crouch_Fwd_L_Loop",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 2,
+        "loop": true,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
+        "name": "Crouch_Idle_Loop",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Crouch_Idle_Loop",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 2.933333396911621,
+        "loop": true,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
+        "name": "Idle_Loop",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Idle_Loop",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 2.5,
+        "loop": true,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-8cf600ac-14a5-463a-8ea9-b54a4adf2b1f",
+        "name": "Jump_Land",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Jump_Land",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 1.2666666507720947,
+        "loop": false,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-dff94c99-1381-4a76-9c7b-b197f42e2843",
+        "name": "Jump_Loop",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Jump_Loop",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 2.5,
+        "loop": true,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-d3c13ebb-7348-421c-a3d3-d4ac51deb7b4",
+        "name": "Jump_Start",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Jump_Start",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 1.3333333730697632,
+        "loop": false,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-2e993eda-229b-431c-929d-08aa6b14ef1c",
+        "name": "Kick",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Kick",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 1.100000023841858,
+        "loop": false,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-8e580385-f173-4166-a226-c07806e53683",
+        "name": "Punch_Cross",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Punch_Cross",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 1,
+        "loop": false,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
+        "name": "Roll",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Roll",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 1.4666666984558105,
+        "loop": false,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
+        "name": "Swim_Idle_Loop",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Swim_Idle_Loop",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 3.3333332538604736,
+        "loop": true,
+        "createdAt": 1787165136555
+      },
+      {
+        "id": "anim-e601e68e-26e1-4d27-995b-13f6aef25bce",
+        "name": "Sword_Attack",
+        "sourceAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+        "clipName": "Sword_Attack",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "duration": 1.5333333015441895,
+        "loop": false,
+        "createdAt": 1787165136555
+      }
+    ],
+    "animatorControllers": [
+      {
+        "id": "animctl-c4f0f7bf-ce77-46c4-844a-d247104d4fd1",
+        "name": "UAL1 Locomotion",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "parameters": [
+          {
+            "id": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+            "name": "Speed",
+            "type": "float",
+            "source": "speed",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+            "name": "VerticalSpeed",
+            "type": "float",
+            "source": "verticalSpeed",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+            "name": "Crouching",
+            "type": "bool",
+            "source": "crouching",
+            "defaultValue": false
+          },
+          {
+            "id": "param-46ed2698-31f2-49d8-8da1-611efce5db6e",
+            "name": "Grounded",
+            "type": "bool",
+            "source": "grounded",
+            "defaultValue": true
+          },
+          {
+            "id": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+            "name": "Rolling",
+            "type": "bool",
+            "source": "rolling",
+            "defaultValue": false
+          },
+          {
+            "id": "param-e38759b8-6b3c-4a63-b9bf-24097418f947",
+            "name": "Mantling",
+            "type": "bool",
+            "source": "mantling",
+            "defaultValue": false
+          },
+          {
+            "id": "param-a2ef45c6-7a39-4b38-a3d4-37694990d080",
+            "name": "Turning",
+            "type": "bool",
+            "source": "turning",
+            "defaultValue": false
+          },
+          {
+            "id": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+            "name": "Attacking",
+            "type": "bool",
+            "source": "attacking",
+            "defaultValue": false
+          },
+          {
+            "id": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+            "name": "WeaponEquipped",
+            "type": "bool",
+            "source": "weaponEquipped",
+            "defaultValue": false
+          },
+          {
+            "id": "param-45bffd3f-3a17-4947-96c0-086458464835",
+            "name": "MoveX",
+            "type": "float",
+            "source": "moveX",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-eb997ec7-e4c6-4073-bd15-1b080b5848ab",
+            "name": "MoveY",
+            "type": "float",
+            "source": "moveY",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+            "name": "Crawling",
+            "type": "bool",
+            "source": "crawling",
+            "defaultValue": false
+          },
+          {
+            "id": "param-36972af9-bd3f-4459-b6ff-2815c0bb5515",
+            "name": "Swimming",
+            "type": "bool",
+            "source": "swimming",
+            "defaultValue": false
+          },
+          {
+            "id": "param-cff0666d-5221-41e2-99bf-ba46dc4013ae",
+            "name": "Climbing",
+            "type": "bool",
+            "source": "climbing",
+            "defaultValue": false
+          },
+          {
+            "id": "param-87cf6ae2-3313-43d2-abdc-2212bb0b932d",
+            "name": "RollX",
+            "type": "float",
+            "source": "rollX",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-814dae47-3933-490e-936c-075080862416",
+            "name": "Sliding",
+            "type": "bool",
+            "source": "sliding",
+            "defaultValue": false
+          }
+        ],
+        "states": [
+          {
+            "id": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "name": "Locomotion",
+            "animationId": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 40
+            },
+            "blendParameterId": "param-45bffd3f-3a17-4947-96c0-086458464835",
+            "blendParameterIdY": "param-eb997ec7-e4c6-4073-bd15-1b080b5848ab",
+            "blendSamples": [
+              {
+                "animationId": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
+                "value": 0,
+                "y": 0
+              },
+              {
+                "animationId": "anim-082ba7d1-f7b9-4a97-b730-f1e3d2e4347d",
+                "value": 0,
+                "y": 1
+              },
+              {
+                "animationId": "anim-5514b774-4195-4d74-abf4-e8b2a3715f30",
+                "value": 0,
+                "y": -1
+              },
+              {
+                "animationId": "anim-b49484cb-1f5b-43d1-bf04-2921b892322a",
+                "value": -1,
+                "y": 0
+              },
+              {
+                "animationId": "anim-617c74ad-22ae-4e6e-9183-c2e3b1fe6637",
+                "value": 1,
+                "y": 0
+              },
+              {
+                "animationId": "anim-b86b9031-e486-47b4-89a9-6f27b8c6dcff",
+                "value": -0.7,
+                "y": 0.7
+              },
+              {
+                "animationId": "anim-6bc98e34-7096-4d96-881f-b0ed7f29f80d",
+                "value": 0.7,
+                "y": 0.7
+              },
+              {
+                "animationId": "anim-4e140fba-6f28-4bdd-8bd4-885b80287d63",
+                "value": -0.7,
+                "y": -0.7
+              },
+              {
+                "animationId": "anim-600d2d16-6858-4f10-892c-10a7ba90f1af",
+                "value": 0.7,
+                "y": -0.7
+              }
+            ]
+          },
+          {
+            "id": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "name": "Jump Start",
+            "animationId": "anim-d3c13ebb-7348-421c-a3d3-d4ac51deb7b4",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 320,
+              "y": 220
+            }
+          },
+          {
+            "id": "state-9e6dad19-e8ba-407f-ad1f-d89b002f3381",
+            "name": "Jump Loop",
+            "animationId": "anim-dff94c99-1381-4a76-9c7b-b197f42e2843",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 540,
+              "y": 220
+            }
+          },
+          {
+            "id": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
+            "name": "Jump Land",
+            "animationId": "anim-8cf600ac-14a5-463a-8ea9-b54a4adf2b1f",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 760,
+              "y": 220
+            }
+          },
+          {
+            "id": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "name": "Crouch Idle",
+            "animationId": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 380
+            }
+          },
+          {
+            "id": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "name": "Crouch Walk",
+            "animationId": "anim-259b6f37-5ce4-4d83-8417-acf6aaf725c1",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 320,
+              "y": 380
+            }
+          },
+          {
+            "id": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
+            "name": "Crawl Idle",
+            "animationId": "anim-c98e1984-a130-4acb-a39b-b25898d30881",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 580
+            }
+          },
+          {
+            "id": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
+            "name": "Crawl",
+            "animationId": "anim-591fd0ad-fd36-4aeb-826a-2d19c66d22d7",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 670
+            }
+          },
+          {
+            "id": "state-e7f031fc-54d7-4ea7-b37e-597bd93d20dd",
+            "name": "Swim",
+            "animationId": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 840,
+              "y": 380
+            },
+            "blendParameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+            "blendSamples": [
+              {
+                "animationId": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
+                "value": 0
+              },
+              {
+                "animationId": "anim-34606694-ad3e-48d4-aa55-723b26215b66",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "id": "state-08c66896-208a-4c7b-95d3-9f1a9e955cc3",
+            "name": "Climb",
+            "animationId": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 840,
+              "y": 540
+            },
+            "blendParameterId": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+            "blendSamples": [
+              {
+                "animationId": "anim-fddee64b-409e-4fd2-a52e-bdad5ee3fc38",
+                "value": -1.5
+              },
+              {
+                "animationId": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
+                "value": 0
+              },
+              {
+                "animationId": "anim-b520aa48-e761-4532-b1a6-4a3f78603a4a",
+                "value": 1.5
+              }
+            ]
+          },
+          {
+            "id": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "name": "Roll",
+            "animationId": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 580,
+              "y": 380
+            },
+            "blendParameterId": "param-87cf6ae2-3313-43d2-abdc-2212bb0b932d",
+            "blendSamples": [
+              {
+                "animationId": "anim-0447d7b1-d1e8-4d78-8926-85e122e60a19",
+                "value": -1
+              },
+              {
+                "animationId": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
+                "value": 0
+              },
+              {
+                "animationId": "anim-79bb68bf-65a3-4279-9220-6c6216889e19",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "id": "state-8734f286-179e-4d59-bcde-f917ba660516",
+            "name": "Slide",
+            "animationId": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 1030
+            }
+          },
+          {
+            "id": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "name": "Punch",
+            "animationId": "anim-8e580385-f173-4166-a226-c07806e53683",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 60,
+              "y": 540
+            }
+          },
+          {
+            "id": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "name": "Kick",
+            "animationId": "anim-2e993eda-229b-431c-929d-08aa6b14ef1c",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 60,
+              "y": 700
+            }
+          },
+          {
+            "id": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "name": "Sword Attack",
+            "animationId": "anim-e601e68e-26e1-4d27-995b-13f6aef25bce",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 320,
+              "y": 540
+            }
+          }
+        ],
+        "defaultStateId": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+        "transitions": [
+          {
+            "id": "xition-835361f4-e836-45ec-be2e-9627897f6a88",
+            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "to": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "conditions": [
+              {
+                "parameterId": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+                "op": ">",
+                "value": 1
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-a60e0b05-c74f-4601-bccb-980ca1049a6f",
+            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "to": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "conditions": [
+              {
+                "parameterId": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+                "op": ">",
+                "value": 1
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-ee00e0c3-c840-4fa6-a091-30e74605b14d",
+            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "to": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "conditions": [
+              {
+                "parameterId": "param-df510d89-0e5d-4a88-9a61-cdda98edd440",
+                "op": ">",
+                "value": 1
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-da07d4c5-3a9b-485a-9b78-ec99af1c916b",
+            "from": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "to": "state-9e6dad19-e8ba-407f-ad1f-d89b002f3381",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 0.5
+          },
+          {
+            "id": "xition-4b5d8b3e-7218-4ac3-8e00-de724c10c490",
+            "from": "state-2b909ecc-fe85-4456-b68d-e0ed24f593fb",
+            "to": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
+            "conditions": [
+              {
+                "parameterId": "param-46ed2698-31f2-49d8-8da1-611efce5db6e",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.1
+          },
+          {
+            "id": "xition-d6d6a6ca-89c7-4e8b-97e7-3d6de06c95ce",
+            "from": "state-9e6dad19-e8ba-407f-ad1f-d89b002f3381",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-46ed2698-31f2-49d8-8da1-611efce5db6e",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-8347cfbd-8ec7-4837-8de3-e8f00cbd21f0",
+            "from": "state-9e6dad19-e8ba-407f-ad1f-d89b002f3381",
+            "to": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
+            "conditions": [
+              {
+                "parameterId": "param-46ed2698-31f2-49d8-8da1-611efce5db6e",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.1
+          },
+          {
+            "id": "xition-a5e128bf-3416-404f-a2f9-3dc930881803",
+            "from": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-e7b67a89-f8ca-4f26-b726-ee15a2b4b820",
+            "from": "state-2d6ca884-0351-4ff3-a81f-77986b154f88",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 0.45
+          },
+          {
+            "id": "xition-ca3e80f5-b818-4d4d-a193-fb0f194c4c9a",
+            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "to": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "conditions": [
+              {
+                "parameterId": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-83cc5ef0-cc30-4b35-bbdb-f0885d8e0a30",
+            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "to": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "conditions": [
+              {
+                "parameterId": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-53b50459-2a5a-4b5b-bee6-95c29ca4ab7c",
+            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "to": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "conditions": [
+              {
+                "parameterId": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-22a9a832-251c-4bd3-8021-2fb465d4eacc",
+            "from": "state-f156edc8-7cce-4179-8242-396db41e049a",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-a442e56b-36e0-490f-87e3-fe07a4de97c6",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-2a2d8bac-2660-4da8-ac49-fc801daddd82",
+            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "to": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-6eb93dc0-4811-4f64-a3e2-b804802b3241",
+            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "to": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-c1268af8-987e-43e9-816c-c40b108dc034",
+            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "to": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-bfdea9f5-9728-416c-a308-451cdac101a2",
+            "from": "state-611ff798-0c23-4f8e-91e7-99049418bbee",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 1
+          },
+          {
+            "id": "xition-396afb3c-afef-4d50-83d4-cc296bd23c39",
+            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "to": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 4
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-3a94905f-6ecb-4730-a094-7c4318d635e0",
+            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "to": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 4
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-b9b68192-0287-4a53-b620-d83ef1aa822f",
+            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "to": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 4
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-43dd132f-04bc-4c01-8abf-4cf48532a36d",
+            "from": "state-43166721-3d9f-4e89-bf18-cfe2967fac00",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 1
+          },
+          {
+            "id": "xition-7050a4c6-5116-4447-ba8b-8f7e13143c17",
+            "from": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "to": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-cfb2f39b-c3f7-4e87-b3d3-218e46dfbc7f",
+            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "to": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-23e8120d-6311-4a74-8ff3-efeec6c0df55",
+            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "to": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "conditions": [
+              {
+                "parameterId": "param-c65749e5-741e-4e66-bd3f-941c86a6d7cb",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-0fdc1299-2d9a-4031-9df9-aa1ed2635ce2",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-27d43528-7353-4583-942d-82055651e347",
+            "from": "state-279f30f4-b5bb-438a-84b4-f4bcba551892",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 1
+          },
+          {
+            "id": "xition-ef778e56-2096-4849-bfc4-f68409161f08",
+            "from": "any",
+            "to": "state-8734f286-179e-4d59-bcde-f917ba660516",
+            "conditions": [
+              {
+                "parameterId": "param-814dae47-3933-490e-936c-075080862416",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.1
+          },
+          {
+            "id": "xition-2edd4c28-4d91-4b21-8c48-f6498c632f8b",
+            "from": "state-8734f286-179e-4d59-bcde-f917ba660516",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-814dae47-3933-490e-936c-075080862416",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.16
+          },
+          {
+            "id": "xition-0d5f89e1-eec2-4c1c-8e36-23d515c3b757",
+            "from": "any",
+            "to": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "conditions": [
+              {
+                "parameterId": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-35fe2dce-60ed-4c87-91d0-c315ab0af35e",
+            "from": "any",
+            "to": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "conditions": [
+              {
+                "parameterId": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": "<",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-e2338c26-8acc-4247-bcaf-1421cfd89bc0",
+            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "to": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "conditions": [
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-971913ac-6ea4-4567-9e7a-21d8555e1996",
+            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "to": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "conditions": [
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": "<",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-185f97f0-2703-46b1-b1d1-1940cc2a3c4b",
+            "from": "state-8b56a6c2-7911-4e46-8413-6e2bb3c57645",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-e4db9335-8943-4762-8cb0-0fecb3a0594c",
+            "from": "state-36a38f43-3915-4053-860f-a76d5de0f4f9",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-f5fae9b2-680d-4c9e-9f78-97a08d8c2a3c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-7ad54b26-5c97-45ca-9d16-605db69acc2f",
+            "from": "any",
+            "to": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
+            "conditions": [
+              {
+                "parameterId": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-a6e61da1-210e-462f-a29f-7ae234322aa0",
+            "from": "any",
+            "to": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
+            "conditions": [
+              {
+                "parameterId": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": "<",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-4fa5a700-a6e2-4d99-a7f2-8b7a4d965399",
+            "from": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
+            "to": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
+            "conditions": [
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-c392213a-4443-4ae5-b193-f877c790db7a",
+            "from": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
+            "to": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
+            "conditions": [
+              {
+                "parameterId": "param-16c01518-2758-4c78-b1c0-75d4b1b51179",
+                "op": "<",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-8cfb44e9-c97b-4909-8395-7cfb0495cb8d",
+            "from": "state-ffc5cd94-9643-4714-85a5-4501acb08177",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-12b53718-0bbb-4695-825e-4e75b59f5863",
+            "from": "state-e4fedda9-d5d6-4c60-a71a-6afda20fc59c",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-2548c185-8529-43a3-80bb-cb643fa8a86c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-c5dcb743-5624-487c-8db1-44797c5a1fb3",
+            "from": "any",
+            "to": "state-e7f031fc-54d7-4ea7-b37e-597bd93d20dd",
+            "conditions": [
+              {
+                "parameterId": "param-36972af9-bd3f-4459-b6ff-2815c0bb5515",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.15
+          },
+          {
+            "id": "xition-42964e6b-db0e-4e81-8ad9-f6fa8c2bf9ae",
+            "from": "state-e7f031fc-54d7-4ea7-b37e-597bd93d20dd",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-36972af9-bd3f-4459-b6ff-2815c0bb5515",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.15
+          },
+          {
+            "id": "xition-55b9a927-b0d5-474b-af3a-86e816eb3b22",
+            "from": "any",
+            "to": "state-08c66896-208a-4c7b-95d3-9f1a9e955cc3",
+            "conditions": [
+              {
+                "parameterId": "param-cff0666d-5221-41e2-99bf-ba46dc4013ae",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.15
+          },
+          {
+            "id": "xition-8b90b6e6-6b70-46a4-be93-1f28a838acfd",
+            "from": "state-08c66896-208a-4c7b-95d3-9f1a9e955cc3",
+            "to": "state-f89b18e5-67f1-44ca-8560-b55864866c49",
+            "conditions": [
+              {
+                "parameterId": "param-cff0666d-5221-41e2-99bf-ba46dc4013ae",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.15
+          }
+        ],
+        "createdAt": 1787165136559
+      },
+      {
+        "id": "animctl-0058e759-3613-4b9f-8978-bbacc2ba0799",
+        "name": "UAL1 Locomotion",
+        "skeletonId": "skeleton-915e736c-3b10-4b64-88d3-4c5c5ee62242",
+        "parameters": [
+          {
+            "id": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+            "name": "Speed",
+            "type": "float",
+            "source": "speed",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
+            "name": "VerticalSpeed",
+            "type": "float",
+            "source": "verticalSpeed",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
+            "name": "Crouching",
+            "type": "bool",
+            "source": "crouching",
+            "defaultValue": false
+          },
+          {
+            "id": "param-92fe1544-a8ae-4725-bf68-80bc3b96bd65",
+            "name": "Grounded",
+            "type": "bool",
+            "source": "grounded",
+            "defaultValue": true
+          },
+          {
+            "id": "param-811bc448-f036-4216-922e-74edf4997c74",
+            "name": "Rolling",
+            "type": "bool",
+            "source": "rolling",
+            "defaultValue": false
+          },
+          {
+            "id": "param-2fd2710a-d04c-4774-a234-ba7ceec576dd",
+            "name": "Mantling",
+            "type": "bool",
+            "source": "mantling",
+            "defaultValue": false
+          },
+          {
+            "id": "param-beade890-3013-4cb5-a10b-649887af4c91",
+            "name": "Turning",
+            "type": "bool",
+            "source": "turning",
+            "defaultValue": false
+          },
+          {
+            "id": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+            "name": "Attacking",
+            "type": "bool",
+            "source": "attacking",
+            "defaultValue": false
+          },
+          {
+            "id": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+            "name": "WeaponEquipped",
+            "type": "bool",
+            "source": "weaponEquipped",
+            "defaultValue": false
+          },
+          {
+            "id": "param-02888275-15cb-4c18-b989-ac9068397b7a",
+            "name": "MoveX",
+            "type": "float",
+            "source": "moveX",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-7ee258bc-794b-4380-8eed-36285d3cffbd",
+            "name": "MoveY",
+            "type": "float",
+            "source": "moveY",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
+            "name": "Crawling",
+            "type": "bool",
+            "source": "crawling",
+            "defaultValue": false
+          },
+          {
+            "id": "param-468a8045-fd47-4b81-a542-9e1c4cf7596c",
+            "name": "Swimming",
+            "type": "bool",
+            "source": "swimming",
+            "defaultValue": false
+          },
+          {
+            "id": "param-1639059f-4d44-4077-819e-24220c4073fd",
+            "name": "Climbing",
+            "type": "bool",
+            "source": "climbing",
+            "defaultValue": false
+          },
+          {
+            "id": "param-99beb7a6-865b-4818-9f86-ab5a23690d54",
+            "name": "RollX",
+            "type": "float",
+            "source": "rollX",
+            "defaultValue": 0
+          },
+          {
+            "id": "param-d9dc3887-fd2e-4dc3-b334-e2f32c9b652c",
+            "name": "Sliding",
+            "type": "bool",
+            "source": "sliding",
+            "defaultValue": false
+          }
+        ],
+        "states": [
+          {
+            "id": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "name": "Locomotion",
+            "animationId": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 40
+            },
+            "blendParameterId": "param-02888275-15cb-4c18-b989-ac9068397b7a",
+            "blendParameterIdY": "param-7ee258bc-794b-4380-8eed-36285d3cffbd",
+            "blendSamples": [
+              {
+                "animationId": "anim-c16817ac-ba66-424b-8dfc-6ae434e51485",
+                "value": 0,
+                "y": 0
+              },
+              {
+                "animationId": "anim-082ba7d1-f7b9-4a97-b730-f1e3d2e4347d",
+                "value": 0,
+                "y": 1
+              },
+              {
+                "animationId": "anim-5514b774-4195-4d74-abf4-e8b2a3715f30",
+                "value": 0,
+                "y": -1
+              },
+              {
+                "animationId": "anim-b49484cb-1f5b-43d1-bf04-2921b892322a",
+                "value": -1,
+                "y": 0
+              },
+              {
+                "animationId": "anim-617c74ad-22ae-4e6e-9183-c2e3b1fe6637",
+                "value": 1,
+                "y": 0
+              },
+              {
+                "animationId": "anim-b86b9031-e486-47b4-89a9-6f27b8c6dcff",
+                "value": -0.7,
+                "y": 0.7
+              },
+              {
+                "animationId": "anim-6bc98e34-7096-4d96-881f-b0ed7f29f80d",
+                "value": 0.7,
+                "y": 0.7
+              },
+              {
+                "animationId": "anim-4e140fba-6f28-4bdd-8bd4-885b80287d63",
+                "value": -0.7,
+                "y": -0.7
+              },
+              {
+                "animationId": "anim-600d2d16-6858-4f10-892c-10a7ba90f1af",
+                "value": 0.7,
+                "y": -0.7
+              }
+            ]
+          },
+          {
+            "id": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
+            "name": "Jump Start",
+            "animationId": "anim-d3c13ebb-7348-421c-a3d3-d4ac51deb7b4",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 320,
+              "y": 220
+            }
+          },
+          {
+            "id": "state-6074b7f2-3b2b-4da4-9849-ca85e75de594",
+            "name": "Jump Loop",
+            "animationId": "anim-dff94c99-1381-4a76-9c7b-b197f42e2843",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 540,
+              "y": 220
+            }
+          },
+          {
+            "id": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
+            "name": "Jump Land",
+            "animationId": "anim-8cf600ac-14a5-463a-8ea9-b54a4adf2b1f",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 760,
+              "y": 220
+            }
+          },
+          {
+            "id": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "name": "Crouch Idle",
+            "animationId": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 380
+            }
+          },
+          {
+            "id": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "name": "Crouch Walk",
+            "animationId": "anim-259b6f37-5ce4-4d83-8417-acf6aaf725c1",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 320,
+              "y": 380
+            }
+          },
+          {
+            "id": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
+            "name": "Crawl Idle",
+            "animationId": "anim-c98e1984-a130-4acb-a39b-b25898d30881",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 580
+            }
+          },
+          {
+            "id": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
+            "name": "Crawl",
+            "animationId": "anim-591fd0ad-fd36-4aeb-826a-2d19c66d22d7",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 670
+            }
+          },
+          {
+            "id": "state-c689d008-fe65-4000-87c8-6c937cbe5860",
+            "name": "Swim",
+            "animationId": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 840,
+              "y": 380
+            },
+            "blendParameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+            "blendSamples": [
+              {
+                "animationId": "anim-a139f17b-5b35-4b89-a107-82e36033824a",
+                "value": 0
+              },
+              {
+                "animationId": "anim-34606694-ad3e-48d4-aa55-723b26215b66",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "id": "state-19248cdb-edf8-4f43-af53-1ce3fc7606aa",
+            "name": "Climb",
+            "animationId": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 840,
+              "y": 540
+            },
+            "blendParameterId": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
+            "blendSamples": [
+              {
+                "animationId": "anim-fddee64b-409e-4fd2-a52e-bdad5ee3fc38",
+                "value": -1.5
+              },
+              {
+                "animationId": "anim-8154bd2a-ec2b-4423-b558-edda1a0ebabd",
+                "value": 0
+              },
+              {
+                "animationId": "anim-b520aa48-e761-4532-b1a6-4a3f78603a4a",
+                "value": 1.5
+              }
+            ]
+          },
+          {
+            "id": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
+            "name": "Roll",
+            "animationId": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 580,
+              "y": 380
+            },
+            "blendParameterId": "param-99beb7a6-865b-4818-9f86-ab5a23690d54",
+            "blendSamples": [
+              {
+                "animationId": "anim-0447d7b1-d1e8-4d78-8926-85e122e60a19",
+                "value": -1
+              },
+              {
+                "animationId": "anim-88c98d69-954c-428c-a7e2-bd0d5c7eedcb",
+                "value": 0
+              },
+              {
+                "animationId": "anim-79bb68bf-65a3-4279-9220-6c6216889e19",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "id": "state-a9f397f5-1b67-4d5b-8467-2c7d7eefeebc",
+            "name": "Slide",
+            "animationId": "anim-c19ba9a3-f7ae-4651-a2b5-dcdd340c8b58",
+            "speed": 1,
+            "loop": true,
+            "position": {
+              "x": 60,
+              "y": 1030
+            }
+          },
+          {
+            "id": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
+            "name": "Punch",
+            "animationId": "anim-8e580385-f173-4166-a226-c07806e53683",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 60,
+              "y": 540
+            }
+          },
+          {
+            "id": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
+            "name": "Kick",
+            "animationId": "anim-2e993eda-229b-431c-929d-08aa6b14ef1c",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 60,
+              "y": 700
+            }
+          },
+          {
+            "id": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
+            "name": "Sword Attack",
+            "animationId": "anim-e601e68e-26e1-4d27-995b-13f6aef25bce",
+            "speed": 1,
+            "loop": false,
+            "position": {
+              "x": 320,
+              "y": 540
+            }
+          }
+        ],
+        "defaultStateId": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+        "transitions": [
+          {
+            "id": "xition-c0924a8c-8ddf-4eac-92d2-9cf665ea5261",
+            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "to": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
+            "conditions": [
+              {
+                "parameterId": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
+                "op": ">",
+                "value": 1
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-32169e4d-2988-4107-8c3e-b849dca0c24e",
+            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "to": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
+            "conditions": [
+              {
+                "parameterId": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
+                "op": ">",
+                "value": 1
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-d46558b9-8014-4e21-b02e-77cb6890ee57",
+            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "to": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
+            "conditions": [
+              {
+                "parameterId": "param-6f744900-0df2-4767-be2c-5173ebdd9791",
+                "op": ">",
+                "value": 1
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-97ad326f-fcbf-47cc-92e3-c96b20cd6e5a",
+            "from": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
+            "to": "state-6074b7f2-3b2b-4da4-9849-ca85e75de594",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 0.5
+          },
+          {
+            "id": "xition-81dc8608-7f35-4bb3-baf9-6bec0309048f",
+            "from": "state-895ec5fa-f51a-4106-9c5f-dd843d63bb6e",
+            "to": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
+            "conditions": [
+              {
+                "parameterId": "param-92fe1544-a8ae-4725-bf68-80bc3b96bd65",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.1
+          },
+          {
+            "id": "xition-c04791fe-2646-415e-8c37-7c24cf3e4e30",
+            "from": "state-6074b7f2-3b2b-4da4-9849-ca85e75de594",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-92fe1544-a8ae-4725-bf68-80bc3b96bd65",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-64eca1b0-6f8c-4f4d-be69-5ab58240615f",
+            "from": "state-6074b7f2-3b2b-4da4-9849-ca85e75de594",
+            "to": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
+            "conditions": [
+              {
+                "parameterId": "param-92fe1544-a8ae-4725-bf68-80bc3b96bd65",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.1
+          },
+          {
+            "id": "xition-357e9550-4755-4c74-83a8-f18a288f8cde",
+            "from": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-057f288c-844f-4286-9639-b4bd6f202d36",
+            "from": "state-65e6c48e-5f66-4a2b-82e1-3bd3b9bee2dc",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 0.45
+          },
+          {
+            "id": "xition-1d30e951-ff36-463d-b701-8d6a64b74873",
+            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "to": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
+            "conditions": [
+              {
+                "parameterId": "param-811bc448-f036-4216-922e-74edf4997c74",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-e4d2a381-af4f-42a8-8245-2f88734a3100",
+            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "to": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
+            "conditions": [
+              {
+                "parameterId": "param-811bc448-f036-4216-922e-74edf4997c74",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-0b124c36-77a5-4d69-a470-02cc84f89826",
+            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "to": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
+            "conditions": [
+              {
+                "parameterId": "param-811bc448-f036-4216-922e-74edf4997c74",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-6de7c778-067a-4298-9dd0-4fe3ccadf14f",
+            "from": "state-efd4cb36-ad06-4df8-bb15-d46b112d9544",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-811bc448-f036-4216-922e-74edf4997c74",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-7927e298-7552-4f7e-a75f-0b314909b11d",
+            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "to": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-9587045c-c4f2-4874-a76d-0db9bb6633b7",
+            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "to": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-f62fe989-1556-4ea2-8d3d-c7feb3d5f526",
+            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "to": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-ca0e9d6f-153f-4508-b018-2fc1ab2095da",
+            "from": "state-71caa7fc-cc6c-4d73-8351-43517ea01187",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 1
+          },
+          {
+            "id": "xition-54323421-be95-4cc3-8fef-6c413eb3c637",
+            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "to": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 4
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-f323e2a8-8665-4978-a1be-7dc5bc050be8",
+            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "to": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 4
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-1df252d0-5667-4b05-8a32-ea6af9b60f65",
+            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "to": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 4
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-a2cef906-0452-493f-b28e-743a272d567a",
+            "from": "state-c82165b0-d8ca-49d6-8ca8-5711f30d3bd9",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 1
+          },
+          {
+            "id": "xition-050f3c64-6381-4970-9929-0ac6463282c9",
+            "from": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "to": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-47f2fe5b-b869-43c6-b8eb-5fa9db735186",
+            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "to": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-bf18ac22-54b8-490a-a2d1-c85d0b214d7e",
+            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "to": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
+            "conditions": [
+              {
+                "parameterId": "param-88fa20ca-f456-4ec2-90fa-2af08ed8e6bd",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-17c4d246-b5d0-4777-ac99-86de1805a76c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.08
+          },
+          {
+            "id": "xition-673a0cab-3c69-49fb-aa49-9c6902d96457",
+            "from": "state-34df3cc2-06e8-46a6-b413-d51bf43321a8",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [],
+            "duration": 0.12,
+            "hasExitTime": true,
+            "exitTime": 1
+          },
+          {
+            "id": "xition-6431fd8d-d5b7-4295-a169-860301a23875",
+            "from": "any",
+            "to": "state-a9f397f5-1b67-4d5b-8467-2c7d7eefeebc",
+            "conditions": [
+              {
+                "parameterId": "param-d9dc3887-fd2e-4dc3-b334-e2f32c9b652c",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.1
+          },
+          {
+            "id": "xition-fffe5aca-efee-4989-8c3c-f7cd80a92520",
+            "from": "state-a9f397f5-1b67-4d5b-8467-2c7d7eefeebc",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-d9dc3887-fd2e-4dc3-b334-e2f32c9b652c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.16
+          },
+          {
+            "id": "xition-66a3e4e3-54f8-4b91-8f85-d15eb43c3ea8",
+            "from": "any",
+            "to": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "conditions": [
+              {
+                "parameterId": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-16b5c255-e37a-48de-9cc0-f560a24deaf5",
+            "from": "any",
+            "to": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "conditions": [
+              {
+                "parameterId": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": "<",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-4001024a-2b2e-4d52-ac18-d40688aef836",
+            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "to": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "conditions": [
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-2e360e4d-30a5-4307-b4f4-7115fe5e62b3",
+            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "to": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "conditions": [
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": "<",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-8cdd81a8-1a53-430a-a727-3806df4cac07",
+            "from": "state-612c7e16-99f7-45d7-8051-c4245a40280d",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-6e470fb0-005e-4170-aaad-cf800f536d0b",
+            "from": "state-64e965a6-6dd2-4ac3-b9f0-21d11abf3180",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-ace293f6-b317-4795-943a-77cdd5fb9069",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-88af53b6-95dc-4513-8982-35b2134c9fe9",
+            "from": "any",
+            "to": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
+            "conditions": [
+              {
+                "parameterId": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-c61c24a0-1765-481f-90c4-f563cc4ac610",
+            "from": "any",
+            "to": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
+            "conditions": [
+              {
+                "parameterId": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
+                "op": "==",
+                "value": true
+              },
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": "<",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.12
+          },
+          {
+            "id": "xition-8c1c99cc-9e4c-450e-80d4-4d935231cf8b",
+            "from": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
+            "to": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
+            "conditions": [
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": ">",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-4e83cb7d-91f0-4893-a433-79c2003ad525",
+            "from": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
+            "to": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
+            "conditions": [
+              {
+                "parameterId": "param-a141758a-160e-4af8-8c8f-69dfb639bc2b",
+                "op": "<",
+                "value": 0.1
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-6d6ee0b2-0e5c-4583-aac1-cfb9f3f8e681",
+            "from": "state-3e2608fe-3317-44bc-b353-8d8e31e73271",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-3ca675fb-d46f-43c4-96bd-6b9c4f7fe43b",
+            "from": "state-e461b1c9-6495-4d64-8000-c8b373da1538",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-82c730c6-e5a5-4586-9a21-c1d9921a8153",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.18
+          },
+          {
+            "id": "xition-2f8eff4b-5e28-4468-8921-fafb5bcbb43f",
+            "from": "any",
+            "to": "state-c689d008-fe65-4000-87c8-6c937cbe5860",
+            "conditions": [
+              {
+                "parameterId": "param-468a8045-fd47-4b81-a542-9e1c4cf7596c",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.15
+          },
+          {
+            "id": "xition-6fe79a5e-8977-44cc-84d8-092e56836f6f",
+            "from": "state-c689d008-fe65-4000-87c8-6c937cbe5860",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-468a8045-fd47-4b81-a542-9e1c4cf7596c",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.15
+          },
+          {
+            "id": "xition-0af374b0-af60-496f-81de-959b1200dc52",
+            "from": "any",
+            "to": "state-19248cdb-edf8-4f43-af53-1ce3fc7606aa",
+            "conditions": [
+              {
+                "parameterId": "param-1639059f-4d44-4077-819e-24220c4073fd",
+                "op": "==",
+                "value": true
+              }
+            ],
+            "duration": 0.15
+          },
+          {
+            "id": "xition-f5e81ad6-5c65-47ef-8ce0-bd24c2e3b4af",
+            "from": "state-19248cdb-edf8-4f43-af53-1ce3fc7606aa",
+            "to": "state-55f6a331-bb52-4934-b1e4-c92c22fd8e6f",
+            "conditions": [
+              {
+                "parameterId": "param-1639059f-4d44-4077-819e-24220c4073fd",
+                "op": "==",
+                "value": false
+              }
+            ],
+            "duration": 0.15
+          }
+        ],
+        "createdAt": 1787165136707
+      }
+    ],
+    "dataAssets": [],
+    "uiDocuments": [],
+    "variables": [],
+    "scenes": [
+      {
+        "id": "scene-main",
+        "name": "Main",
+        "objects": [
+          {
+            "id": "obj-4500fb69-5596-4258-bb06-2366d48391f7",
+            "name": "Meadow",
+            "kind": "terrain",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "terrain": {
+              "enabled": true,
+              "size": 600,
+              "chunkSize": 32,
+              "resolution": 18,
+              "streamRadius": 4,
+              "physicsRadius": 2,
+              "seed": 1337,
+              "heightScale": 7,
+              "frequency": 0.03,
+              "octaves": 4,
+              "persistence": 0.5,
+              "lacunarity": 2,
+              "editSpacing": 2,
+              "lowColor": "#496f38",
+              "midColor": "#6f8f4f",
+              "highColor": "#b6b09a",
+              "materialLayers": [
+                {
+                  "id": "terrain-grass",
+                  "name": "Grass",
+                  "color": "#5aa848"
+                },
+                {
+                  "id": "terrain-meadow",
+                  "name": "Meadow",
+                  "color": "#71ba52"
+                },
+                {
+                  "id": "terrain-rock",
+                  "name": "Rock",
+                  "color": "#9a9482"
+                }
+              ],
+              "heightOverrides": {},
+              "paintOverrides": {},
+              "foliageOverrides": {},
+              "foliage": {
+                "enabled": true,
+                "mode": "mixed",
+                "density": 1,
+                "treeDensity": 0.18,
+                "minScale": 0.85,
+                "maxScale": 1.4,
+                "slopeLimit": 0.68,
+                "grassMesh": "blade",
+                "treeMesh": "fir",
+                "grassSource": "builtin",
+                "treeSource": "builtin",
+                "grassColor": "#46a03c",
+                "trunkColor": "#5b3f2b",
+                "treeColor": "#3f9a4e",
+                "windStrength": 1,
+                "interactStrength": 1,
+                "flowerDensity": 0.28,
+                "usePaintMask": false,
+                "stylizedGrass": {
+                  "gradientTop": "#f0f2d4",
+                  "gradientBottom": "#4a4f3e",
+                  "gradientOffset": 0.05,
+                  "gradientContrast": 0.45,
+                  "colorNoiseScale": 0.045,
+                  "colorNoiseStrength": 0.35,
+                  "colorNoiseLow": "#eef1c8",
+                  "colorNoiseHigh": "#8fb257",
+                  "windSpeed": 0.35,
+                  "windNoiseScale": 0.06,
+                  "bendPivot": 0.25,
+                  "perspectiveCorrection": 0.55,
+                  "perspectiveHeightStart": 0.3,
+                  "interactionStrength": 0.55,
+                  "pushDownAmount": 0.35,
+                  "trailTint": "#c9d98f",
+                  "normalLift": 0.75,
+                  "fadeMode": "dither",
+                  "fadeStart": 45,
+                  "fadeEnd": 70
+                },
+                "treeSpecId": "tree-pine"
+              },
+              "editVersion": 0
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "mesh",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-d41d68ab-5403-4269-a95a-6a5ad16d0633",
+            "name": "Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                15,
+                -0.2411052259284307,
+                -11
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                2,
+                1.4,
+                1.7
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#8d877a",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-cba018d1-4f2f-42c2-8fb1-a8b1c8c93561",
+            "name": "Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                -19,
+                -0.6689928623587581,
+                9
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                2.6,
+                1.8,
+                2.2
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#8d877a",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-3b178871-eccc-48cf-b775-781c4d88df15",
+            "name": "Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                7,
+                -1.6276571785242708,
+                23
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.6,
+                1.1,
+                1.5
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#8d877a",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-c0166f4c-c304-47bf-8053-3458fac28808",
+            "name": "Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                -10,
+                -0.09169031864699428,
+                -22
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                2.2,
+                1.5,
+                1.9
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#8d877a",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-55919b80-78e7-4f23-bf28-273cd6145736",
+            "name": "Loose Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                3,
+                1.0676113275246868,
+                6
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.2,
+                1.2,
+                1.2
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#b7a98f",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 5,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-97640801-a034-40a0-a228-f65c22c78121",
+            "name": "Loose Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                -4,
+                0.4798388752742776,
+                7.5
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.2,
+                1.2,
+                1.2
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#b7a98f",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 5,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-ff8016a7-1f95-42df-b1a4-cdb35c700f86",
+            "name": "Loose Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                1,
+                0.6912099444774408,
+                10
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.2,
+                1.2,
+                1.2
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#b7a98f",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 5,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-4cc00e8c-6fb1-4658-9ece-cf3e32be9a72",
+            "name": "Player",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                -0.20880207383899702,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#5B8CFF",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "modelAssetId": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a"
+            },
+            "animator": {
+              "enabled": true,
+              "controllerId": "animctl-c4f0f7bf-ce77-46c4-844a-d247104d4fd1",
+              "speed": 1,
+              "loop": true
+            },
+            "character": {
+              "enabled": true,
+              "moveSpeed": 3.4,
+              "sprintMultiplier": 2,
+              "crouchMultiplier": 0.45,
+              "jumpStrength": 6,
+              "gravity": 16,
+              "fallMultiplier": 1.9,
+              "jumpCutMultiplier": 0.45,
+              "coyoteTime": 0.12,
+              "jumpBufferTime": 0.15,
+              "landingRecovery": 0.4,
+              "apexHang": 0.65,
+              "sprintTurnFactor": 0.55,
+              "slideEnabled": true,
+              "slideDuration": 0.9,
+              "slideSpeedBoost": 1.2,
+              "acceleration": 60,
+              "deceleration": 70,
+              "airControl": 0.35,
+              "turnSpeed": 12,
+              "turnInPlace": true,
+              "turnInPlaceThreshold": 0.45,
+              "turnInPlaceSpeed": 10,
+              "mantleEnabled": true,
+              "keyMantle": "",
+              "mantleRange": 1.35,
+              "mantleMaxHeight": 1.45,
+              "vaultMaxHeight": 0.9,
+              "mantleDuration": 0.38,
+              "modelYawOffset": 0,
+              "groundLevel": 0,
+              "keyForward": "KeyW",
+              "keyBackward": "KeyS",
+              "keyLeft": "KeyA",
+              "keyRight": "KeyD",
+              "keyJump": "Space",
+              "keySprint": "ShiftLeft",
+              "keyCrouch": "KeyC",
+              "keyCrawl": "KeyZ",
+              "crawlMultiplier": 0.4,
+              "strafe": true,
+              "keyRoll": "KeyQ",
+              "rollSpeed": 3.4,
+              "rollDuration": 1.4666666984558105,
+              "keyAttack": "Mouse0",
+              "keyAim": "Mouse1",
+              "keyReload": "KeyR",
+              "keyInteract": "KeyE",
+              "keyEmote": "KeyF",
+              "keyRagdoll": "KeyP",
+              "lockOnEnabled": true,
+              "keyLockOn": "KeyT",
+              "lockOnRange": 16,
+              "lockOnBreakDistance": 22,
+              "meleeDamage": 34,
+              "meleeRange": 2.4,
+              "meleeComboCount": 1,
+              "meleeComboWindow": 0.35,
+              "meleeHitstop": 0,
+              "meleeHitstopScale": 0.05,
+              "rollIFrameStart": 0,
+              "rollIFrameEnd": 0,
+              "keySwapShoulder": "KeyV",
+              "cameraMode": "thirdPerson",
+              "cameraFollow": true,
+              "cameraOffset": [
+                0,
+                3,
+                -7
+              ],
+              "mouseLook": true,
+              "mouseSensitivity": 0.0025,
+              "cameraPitch": 0.12,
+              "cameraMinPitch": -0.2,
+              "cameraMaxPitch": 1.2,
+              "cameraRelativeMovement": true
+            },
+            "script": {
+              "blueprintId": "bp-87f5d9e9-e270-42ad-820c-681754cffcbf",
+              "graphId": "graph-493276f5-94a9-4a9f-a395-9c888f2a0120",
+              "enabled": true
+            }
+          },
+          {
+            "id": "obj-f65ca418-10d4-4321-beb4-7d6db181df42",
+            "name": "Meadow",
+            "kind": "terrain",
+            "transform": {
+              "position": [
+                0,
+                0,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "terrain": {
+              "enabled": true,
+              "size": 600,
+              "chunkSize": 32,
+              "resolution": 18,
+              "streamRadius": 4,
+              "physicsRadius": 2,
+              "seed": 1337,
+              "heightScale": 7,
+              "frequency": 0.03,
+              "octaves": 4,
+              "persistence": 0.5,
+              "lacunarity": 2,
+              "editSpacing": 2,
+              "lowColor": "#496f38",
+              "midColor": "#6f8f4f",
+              "highColor": "#b6b09a",
+              "materialLayers": [
+                {
+                  "id": "terrain-grass",
+                  "name": "Grass",
+                  "color": "#5aa848"
+                },
+                {
+                  "id": "terrain-meadow",
+                  "name": "Meadow",
+                  "color": "#71ba52"
+                },
+                {
+                  "id": "terrain-rock",
+                  "name": "Rock",
+                  "color": "#9a9482"
+                }
+              ],
+              "heightOverrides": {},
+              "paintOverrides": {},
+              "foliageOverrides": {},
+              "foliage": {
+                "enabled": true,
+                "mode": "mixed",
+                "density": 1,
+                "treeDensity": 0.18,
+                "minScale": 0.85,
+                "maxScale": 1.4,
+                "slopeLimit": 0.68,
+                "grassMesh": "blade",
+                "treeMesh": "fir",
+                "grassSource": "builtin",
+                "treeSource": "builtin",
+                "grassColor": "#46a03c",
+                "trunkColor": "#5b3f2b",
+                "treeColor": "#3f9a4e",
+                "windStrength": 1,
+                "interactStrength": 1,
+                "flowerDensity": 0.28,
+                "usePaintMask": false,
+                "stylizedGrass": {
+                  "gradientTop": "#f0f2d4",
+                  "gradientBottom": "#4a4f3e",
+                  "gradientOffset": 0.05,
+                  "gradientContrast": 0.45,
+                  "colorNoiseScale": 0.045,
+                  "colorNoiseStrength": 0.35,
+                  "colorNoiseLow": "#eef1c8",
+                  "colorNoiseHigh": "#8fb257",
+                  "windSpeed": 0.35,
+                  "windNoiseScale": 0.06,
+                  "bendPivot": 0.25,
+                  "perspectiveCorrection": 0.55,
+                  "perspectiveHeightStart": 0.3,
+                  "interactionStrength": 0.55,
+                  "pushDownAmount": 0.35,
+                  "trailTint": "#c9d98f",
+                  "normalLift": 0.75,
+                  "fadeMode": "dither",
+                  "fadeStart": 45,
+                  "fadeEnd": 70
+                },
+                "treeSpecId": "tree-pine"
+              },
+              "editVersion": 0
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "mesh",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-b067e206-dfad-4994-8deb-516fa5e34d0c",
+            "name": "Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                15,
+                -0.2411052259284307,
+                -11
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                2,
+                1.4,
+                1.7
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#8d877a",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-3dc3b035-b42f-421b-a8c1-20fa1d3f2f4d",
+            "name": "Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                -19,
+                -0.6689928623587581,
+                9
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                2.6,
+                1.8,
+                2.2
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#8d877a",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-44d231fb-6d62-449c-a2ab-2aee100dce2e",
+            "name": "Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                7,
+                -1.6276571785242708,
+                23
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.6,
+                1.1,
+                1.5
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#8d877a",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-a04e798b-6a97-4be9-a6c6-1b0ecf156150",
+            "name": "Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                -10,
+                -0.09169031864699428,
+                -22
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                2.2,
+                1.5,
+                1.9
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#8d877a",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "fixed",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 1,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-328da865-773c-4357-a8e6-da38a78b0c68",
+            "name": "Loose Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                3,
+                1.0676113275246868,
+                6
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.2,
+                1.2,
+                1.2
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#b7a98f",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 5,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-1cfc110c-dbae-41ca-b6c5-7394844b97f1",
+            "name": "Loose Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                -4,
+                0.4798388752742776,
+                7.5
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.2,
+                1.2,
+                1.2
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#b7a98f",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 5,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-664840b6-e435-4c71-83bc-3b51cc9d53ea",
+            "name": "Loose Boulder",
+            "kind": "sphere",
+            "transform": {
+              "position": [
+                1,
+                0.6912099444774408,
+                10
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1.2,
+                1.2,
+                1.2
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "sphere",
+              "color": "#b7a98f",
+              "metalness": 0.1,
+              "roughness": 0.65
+            },
+            "physics": {
+              "enabled": true,
+              "bodyType": "dynamic",
+              "collider": "sphere",
+              "materialPreset": "default",
+              "isTrigger": false,
+              "collisionLayer": 0,
+              "collisionMask": 65535,
+              "mass": 5,
+              "gravityScale": 1,
+              "friction": 0.6,
+              "restitution": 0.05,
+              "linearDamping": 0,
+              "angularDamping": 0.05,
+              "windInfluence": 0
+            }
+          },
+          {
+            "id": "obj-a20c35f7-5b26-4b69-8553-a4b5c30b90b6",
+            "name": "Player",
+            "kind": "cube",
+            "transform": {
+              "position": [
+                0,
+                -0.20880207383899702,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ],
+              "scale": [
+                1,
+                1,
+                1
+              ]
+            },
+            "renderer": {
+              "enabled": true,
+              "mesh": "cube",
+              "color": "#5B8CFF",
+              "metalness": 0.1,
+              "roughness": 0.65,
+              "modelAssetId": "asset-e045f9b1-df72-4a78-80a7-12c09af9ceb8"
+            },
+            "animator": {
+              "enabled": true,
+              "controllerId": "animctl-0058e759-3613-4b9f-8978-bbacc2ba0799",
+              "speed": 1,
+              "loop": true
+            },
+            "character": {
+              "enabled": true,
+              "moveSpeed": 3.4,
+              "sprintMultiplier": 2,
+              "crouchMultiplier": 0.45,
+              "jumpStrength": 6,
+              "gravity": 16,
+              "fallMultiplier": 1.9,
+              "jumpCutMultiplier": 0.45,
+              "coyoteTime": 0.12,
+              "jumpBufferTime": 0.15,
+              "landingRecovery": 0.4,
+              "apexHang": 0.65,
+              "sprintTurnFactor": 0.55,
+              "slideEnabled": true,
+              "slideDuration": 0.9,
+              "slideSpeedBoost": 1.2,
+              "acceleration": 60,
+              "deceleration": 70,
+              "airControl": 0.35,
+              "turnSpeed": 12,
+              "turnInPlace": true,
+              "turnInPlaceThreshold": 0.45,
+              "turnInPlaceSpeed": 10,
+              "mantleEnabled": true,
+              "keyMantle": "",
+              "mantleRange": 1.35,
+              "mantleMaxHeight": 1.45,
+              "vaultMaxHeight": 0.9,
+              "mantleDuration": 0.38,
+              "modelYawOffset": 0,
+              "groundLevel": 0,
+              "keyForward": "KeyW",
+              "keyBackward": "KeyS",
+              "keyLeft": "KeyA",
+              "keyRight": "KeyD",
+              "keyJump": "Space",
+              "keySprint": "ShiftLeft",
+              "keyCrouch": "KeyC",
+              "keyCrawl": "KeyZ",
+              "crawlMultiplier": 0.4,
+              "strafe": true,
+              "keyRoll": "KeyQ",
+              "rollSpeed": 3.4,
+              "rollDuration": 1.4666666984558105,
+              "keyAttack": "Mouse0",
+              "keyAim": "Mouse1",
+              "keyReload": "KeyR",
+              "keyInteract": "KeyE",
+              "keyEmote": "KeyF",
+              "keyRagdoll": "KeyP",
+              "lockOnEnabled": true,
+              "keyLockOn": "KeyT",
+              "lockOnRange": 16,
+              "lockOnBreakDistance": 22,
+              "meleeDamage": 34,
+              "meleeRange": 2.4,
+              "meleeComboCount": 1,
+              "meleeComboWindow": 0.35,
+              "meleeHitstop": 0,
+              "meleeHitstopScale": 0.05,
+              "rollIFrameStart": 0,
+              "rollIFrameEnd": 0,
+              "keySwapShoulder": "KeyV",
+              "cameraMode": "thirdPerson",
+              "cameraFollow": true,
+              "cameraOffset": [
+                0,
+                3,
+                -7
+              ],
+              "mouseLook": true,
+              "mouseSensitivity": 0.0025,
+              "cameraPitch": 0.12,
+              "cameraMinPitch": -0.2,
+              "cameraMaxPitch": 1.2,
+              "cameraRelativeMovement": true
+            },
+            "script": {
+              "blueprintId": "bp-ef553716-054e-4d8a-8842-34181852a2c8",
+              "graphId": "graph-5d108587-5fed-4c47-bd5f-26f176b22826",
+              "enabled": true
+            }
+          }
+        ],
+        "environment": {
+          "skyMode": "procedural",
+          "backgroundColor": "#0F1117",
+          "skyTopColor": "#7ec2ff",
+          "skyHorizonColor": "#ecf7ff",
+          "skyGroundColor": "#a6d488",
+          "skyRotation": 0,
+          "environmentIntensity": 1.35,
+          "sunColor": "#fffaf0",
+          "sunIntensity": 1.75,
+          "sunAzimuth": 40,
+          "sunElevation": 52,
+          "fogEnabled": true,
+          "fogColor": "#101623",
+          "fogNear": 16,
+          "fogFar": 380,
+          "aerialFogEnabled": false,
+          "aerialFogHeightFalloff": 0.02,
+          "aerialFogSunColor": "#FFE9C0",
+          "aerialFogInscatter": 0.75,
+          "aerialFogInscatterPower": 6,
+          "volumetricFogEnabled": false,
+          "volumetricFogDensity": 0.1,
+          "volumetricFogColor": "#cfd8e8",
+          "volumetricFogHeight": 0,
+          "volumetricFogFalloff": 0.03,
+          "volumetricScattering": 0.6,
+          "volumetricSunStrength": 1.6,
+          "volumetricMaxDistance": 140,
+          "wind": [
+            3,
+            0,
+            1.6
+          ],
+          "windTurbulence": 0.5,
+          "toneMapping": "neutral",
+          "toneMappingExposure": 1.16,
+          "ambientMode": "hemisphere",
+          "contactShadows": true,
+          "contactShadowY": 0,
+          "contactShadowScale": 14,
+          "contactShadowOpacity": 0.36,
+          "dayCycleEnabled": false,
+          "dayCycleDuration": 360,
+          "dayCycleTime": 0.35,
+          "atmosphericFog": true
+        },
+        "cinematics": []
+      }
+    ]
+  },
+  "assets": [
+    {
+      "id": "asset-e045f9b1-df72-4a78-80a7-12c09af9ceb8",
+      "name": "UAL1.glb",
+      "type": "model",
+      "size": 23108672,
+      "hash": "bccd7586a5b6b088397965dd69d431d2209bc07fb3a602bafca9492a7dca69da",
+      "createdAt": 1787165136453,
+      "source": {
+        "url": "templates/UAL1.glb",
+        "sha256": "bccd7586a5b6b088397965dd69d431d2209bc07fb3a602bafca9492a7dca69da",
+        "bytes": 23108672
+      }
+    },
+    {
+      "id": "asset-a07fa14e-94c2-4324-a205-d5f96f88d86a",
+      "name": "UAL1.glb",
+      "type": "model",
+      "size": 23108672,
+      "hash": "bccd7586a5b6b088397965dd69d431d2209bc07fb3a602bafca9492a7dca69da",
+      "createdAt": 1787165136462,
+      "source": {
+        "url": "templates/UAL1.glb",
+        "sha256": "bccd7586a5b6b088397965dd69d431d2209bc07fb3a602bafca9492a7dca69da",
+        "bytes": 23108672
+      }
+    }
+  ]
+}

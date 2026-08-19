@@ -10,7 +10,7 @@
  * Run: node scripts/build-store-catalog.mjs
  */
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -428,6 +428,58 @@ const SANDBOX_TEMPLATE = {
   },
 };
 
+/** Card art for the browser-exported starter templates, which carry no thumbnail of their own. */
+const TEMPLATE_THUMBNAILS = {
+  'template-third-person': ['#5B8CFF', '#1B2C63', '\u{1F3C3}'],
+  'template-first-person': ['#FF3D6E', '#3A0C22', '\u{1F52B}'],
+  'template-driving': ['#FF9F3D', '#5A2E08', '\u{1F697}'],
+  'template-sim-racing': ['#E84B3C', '#4A120C', '\u{1F3C1}'],
+  'template-cinematic': ['#8C7BFF', '#241C52', '\u{1F3AC}'],
+  'template-meadows': ['#63C46A', '#1E4B2C', '\u{1F33F}'],
+  'template-cube-realm': ['#3DD6C0', '#0E4A45', '\u{1F9CA}'],
+};
+
+/**
+ * Total install footprint: the manifest plus the bytes actually fetched. Deduplicated by content
+ * hash — a template that imports the same 22 MB model twice downloads it once, so counting both
+ * entries would roughly double the advertised size.
+ */
+function installFootprint(pkg, json) {
+  const unique = new Map();
+  for (const asset of pkg.assets) {
+    const key = asset.hash ?? asset.id;
+    if (!unique.has(key)) unique.set(key, asset.source?.bytes ?? 0);
+  }
+  return Buffer.byteLength(json, 'utf8') + [...unique.values()].reduce((sum, bytes) => sum + bytes, 0);
+}
+
+/** The catalog row for a package, whether authored here or exported from the running editor. */
+function catalogEntry({ pkg, slug, file, json, thumbnail }) {
+  return {
+    id: pkg.meta.id,
+    slug,
+    title: pkg.meta.name,
+    description: pkg.meta.description ?? '',
+    author: pkg.meta.author ?? 'Feather',
+    version: pkg.meta.version,
+    kind: pkg.kind,
+    tags: pkg.meta.tags ?? [],
+    license: 'CC0-1.0',
+    priceCents: 0,
+    thumbnail: thumbnail ?? pkg.meta.thumbnail,
+    sizeBytes: installFootprint(pkg, json),
+    downloadUrl: `packages/${file}`,
+    engineVersion: ENGINE_VERSION,
+    contents: {
+      prefabs: pkg.content.prefabs.length,
+      materials: pkg.content.materials.length,
+      blueprints: pkg.content.blueprints.length,
+      assets: pkg.assets.length,
+      scenes: pkg.content.scenes?.length ?? 0,
+    },
+  };
+}
+
 // ------------------------------------------------------------------------------------------------
 
 async function main() {
@@ -440,35 +492,27 @@ async function main() {
     const json = `${JSON.stringify(pkg, null, 2)}\n`;
     const file = `${pack.slug}.nfpack`;
     await writeFile(join(PACKAGES_DIR, file), json, 'utf8');
-
-    entries.push({
-      id: pack.meta.id,
-      slug: pack.slug,
-      title: pack.meta.name,
-      description: pack.meta.description,
-      author: pack.meta.author,
-      version: pack.meta.version,
-      kind: pack.kind ?? 'module',
-      tags: pack.meta.tags,
-      license: 'CC0-1.0',
-      priceCents: 0,
-      thumbnail: pack.meta.thumbnail,
-      // Total install footprint: the manifest plus any bytes fetched separately — otherwise a
-      // manifest-only package would advertise a few KB while actually pulling down megabytes.
-      sizeBytes:
-        Buffer.byteLength(json, 'utf8') +
-        pkg.assets.reduce((sum, asset) => sum + (asset.source?.bytes ?? 0), 0),
-      downloadUrl: `packages/${file}`,
-      engineVersion: ENGINE_VERSION,
-      contents: {
-        prefabs: pkg.content.prefabs.length,
-        materials: pkg.content.materials.length,
-        blueprints: pkg.content.blueprints.length,
-        assets: pkg.assets.length,
-        scenes: pkg.content.scenes?.length ?? 0,
-      },
-    });
+    entries.push(catalogEntry({ pkg, slug: pack.slug, file, json }));
     console.log(`  ${file} — ${(Buffer.byteLength(json, 'utf8') / 1024).toFixed(1)} KB`);
+  }
+
+  // Starter templates are produced by the running editor (`?exportTemplate=<key>`, written by the
+  // dev-server sink in vite.config.ts) because they're imperative builders, not data. Pick up
+  // whatever has been exported so far and list it.
+  const exported = (await readdir(PACKAGES_DIR))
+    .filter((file) => file.startsWith('template-') && file.endsWith('.nfpack'))
+    .sort();
+  for (const file of exported) {
+    const json = await readFile(join(PACKAGES_DIR, file), 'utf8');
+    const pkg = JSON.parse(json);
+    const slug = file.replace(/\.nfpack$/, '');
+    const [from, to, glyph] = TEMPLATE_THUMBNAILS[slug] ?? ['#5B8CFF', '#1B2C63', '\u{1F5FA}'];
+    entries.push(catalogEntry({ pkg, slug, file, json, thumbnail: thumbnail(from, to, glyph) }));
+    const entry = entries[entries.length - 1];
+    console.log(
+      `  ${file} — manifest ${(Buffer.byteLength(json, 'utf8') / 1024).toFixed(0)} KB, ` +
+        `install ${(entry.sizeBytes / 1048576).toFixed(1)} MB (exported from the editor)`,
+    );
   }
 
   const catalog = {

@@ -137,6 +137,201 @@
         "assets": 0,
         "scenes": 1
       }
+    },
+    {
+      "id": "pkg-feather-template-cinematic",
+      "slug": "template-cinematic",
+      "title": "The Summit",
+      "description": "A cloth-and-wind mountain film set with a full cinematic sequence to play back.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "cinematic",
+        "film"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOEM3QkZGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjQxQzUyIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfjqw8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 30187449,
+      "downloadUrl": "packages/template-cinematic.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 0,
+        "blueprints": 0,
+        "assets": 14,
+        "scenes": 1
+      }
+    },
+    {
+      "id": "pkg-feather-template-cube-realm",
+      "slug": "template-cube-realm",
+      "title": "Cube Realm",
+      "description": "An action slice with a combo system, day cycle and a shrine to find.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "action"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjM0RENkMwIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMEU0QTQ1Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfp4o8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 23247388,
+      "downloadUrl": "packages/template-cube-realm.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 0,
+        "blueprints": 4,
+        "assets": 2,
+        "scenes": 1
+      }
+    },
+    {
+      "id": "pkg-feather-template-driving",
+      "slug": "template-driving",
+      "title": "Driving",
+      "description": "NFS-lite neon night cruise with cash orbs, nitro pads and a garage upgrade loop.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "driving",
+        "vehicle"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjRkY5RjNEIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjNUEyRTA4Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfmpc8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 1101996,
+      "downloadUrl": "packages/template-driving.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 0,
+        "blueprints": 10,
+        "assets": 16,
+        "scenes": 1
+      }
+    },
+    {
+      "id": "pkg-feather-template-first-person",
+      "slug": "template-first-person",
+      "title": "First Person Shooter",
+      "description": "Neon cyberpunk FPS starter: guns, grenades, explosive barrels and enemies.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "fps",
+        "shooter"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjRkYzRDZFIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjM0EwQzIyIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCflKs8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 4634511,
+      "downloadUrl": "packages/template-first-person.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 0,
+        "blueprints": 46,
+        "assets": 41,
+        "scenes": 3
+      }
+    },
+    {
+      "id": "pkg-feather-template-meadows",
+      "slug": "template-meadows",
+      "title": "Meadows",
+      "description": "Stylized BOTW-style grass, wildflowers and trees to walk through.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "vegetation",
+        "outdoor"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNjNDNDZBIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMUU0QjJDIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfjL88L3RleHQ+PC9zdmc+",
+      "sizeBytes": 23228106,
+      "downloadUrl": "packages/template-meadows.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 0,
+        "blueprints": 2,
+        "assets": 2,
+        "scenes": 1
+      }
+    },
+    {
+      "id": "pkg-feather-template-sim-racing",
+      "slug": "template-sim-racing",
+      "title": "Sim Racing",
+      "description": "Realistic car physics with a torque curve, gearbox, per-wheel grip and lap timing.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "racing",
+        "vehicle"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjRTg0QjNDIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjNEExMjBDIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfj4E8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 3179587,
+      "downloadUrl": "packages/template-sim-racing.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 2,
+        "materials": 0,
+        "blueprints": 32,
+        "assets": 25,
+        "scenes": 3
+      }
+    },
+    {
+      "id": "pkg-feather-template-third-person",
+      "slug": "template-third-person",
+      "title": "Third Person Starter",
+      "description": "A playable third-person character with follow camera, melee and ranged weapons, and a six-room tutorial corridor to explore.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "character",
+        "third-person"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNUI4Q0ZGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMUIyQzYzIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfj4M8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 25991263,
+      "downloadUrl": "packages/template-third-person.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 0,
+        "blueprints": 28,
+        "assets": 20,
+        "scenes": 1
+      }
     }
   ]
 }

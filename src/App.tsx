@@ -54,6 +54,16 @@ function useDemoAutoload() {
   }, []);
 }
 
+/** DEV-only: `?exportTemplate=third-person` converts a starter template into a store `.nfpack`. */
+function useTemplateExport() {
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const key = new URLSearchParams(window.location.search).get('exportTemplate');
+    if (!key) return;
+    void import('./dev/exportTemplate').then((module) => module.runTemplateExport(key));
+  }, []);
+}
+
 /**
  * Mirror the user's appearance preferences onto <html> so the global CSS variables
  * (defined in styles.css under [data-theme="..."] / [data-density="..."]) can react
@@ -168,6 +178,7 @@ export default function App() {
     initFeatherExternalSync();
   }, []);
   useDemoAutoload();
+  useTemplateExport();
 
   if (!hasProject) {
     return (

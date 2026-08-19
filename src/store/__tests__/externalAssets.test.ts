@@ -6,6 +6,7 @@ import { useEditorStore } from '../editorStore';
 import { useProjectStore } from '../projectStore';
 import type { AssetItem } from '../../types';
 import type { NodeForgePackage } from '../../project/package';
+import { blankProject } from '../../project/serialize';
 
 /**
  * Coverage for externally-referenced package assets: bytes that live outside the `.nfpack` and are
@@ -116,6 +117,9 @@ function serve(packages: Record<string, NodeForgePackage>) {
 
 describe('externally-referenced package assets', () => {
   beforeEach(() => {
+    // Reset the project: these tests assert asset counts, and content-hash dedupe means an asset
+    // installed by an earlier test would be silently reused instead of imported.
+    useEditorStore.getState().loadProject(blankProject('External Asset Test'));
     useProjectStore.getState().useDemo();
     useProjectStore.setState({ toast: null, error: null });
   });
@@ -193,6 +197,36 @@ describe('externally-referenced package assets', () => {
     const added = useEditorStore.getState().prefabs.slice(prefabsBefore);
     expect(added).toHaveLength(2);
     expect(added.every((prefab) => prefab.objects[0].renderer?.modelAssetId === afterSecond[0].id)).toBe(true);
+  });
+
+  it('collapses duplicate bytes shipped twice inside ONE package', async () => {
+    // Real templates do this: the third-person starter imports its 22 MB character twice, so the
+    // package lists it under two ids. The install must fetch and store it once.
+    const bytes = await readFile(join(PUBLIC, 'templates', 'Sword.glb'));
+    const hash = sha256(bytes);
+    const common = { url: 'templates/Sword.glb', sha256: hash, bytes: bytes.length, name: 'Dup.glb' };
+    const a = packageWithExternalModel({ ...common, assetId: 'asset-dup-1', prefabId: 'prefab-dup-1' });
+    const b = packageWithExternalModel({ ...common, assetId: 'asset-dup-2', prefabId: 'prefab-dup-2' });
+    // One package containing BOTH prefabs and BOTH asset entries.
+    const merged = {
+      ...a,
+      content: { ...a.content, prefabs: [...a.content.prefabs, ...b.content.prefabs] },
+      assets: [...a.assets, ...b.assets],
+    };
+    serve({ 'store/dup.nfpack': merged });
+    const fetchSpy = globalThis.fetch as ReturnType<typeof vi.fn>;
+
+    await useProjectStore.getState().importPackageFromUrl('store/dup.nfpack');
+
+    const installed = useEditorStore.getState().assets.filter((asset) => asset.name === 'Dup.glb');
+    expect(installed).toHaveLength(1);
+    // And the bytes were downloaded once, not twice — this is the 22 MB that matters.
+    const downloads = fetchSpy.mock.calls.filter(([input]) => String(input).includes('Sword.glb'));
+    expect(downloads).toHaveLength(1);
+    // Both prefabs still resolve to that single asset.
+    const prefabs = useEditorStore.getState().prefabs.filter((p) => p.name === 'Dup.glb');
+    expect(prefabs).toHaveLength(2);
+    expect(prefabs.every((p) => p.objects[0].renderer?.modelAssetId === installed[0].id)).toBe(true);
   });
 
   it('refuses a download that declares an absurd size before fetching it', async () => {

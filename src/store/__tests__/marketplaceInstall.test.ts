@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { NodeForgePackage } from '../../project/package';
+import type { SceneObject } from '../../types';
 import { useEditorStore } from '../editorStore';
 import { useProjectStore } from '../projectStore';
 import { useMarketplaceStore } from '../marketplaceStore';
@@ -62,7 +64,10 @@ describe('bundled asset store — catalog to installed content', () => {
     for (const listing of state.packages) {
       expect(listing.downloadUrl).toMatch(/^https?:/);
       expect(listing.title.length).toBeGreaterThan(0);
-      expect(listing.contents.prefabs + listing.contents.materials).toBeGreaterThan(0);
+      // Something must actually arrive on install. A template's content lives in its scenes, a
+      // module's in prefabs/materials — so count them all rather than assuming a shape.
+      const { scenes, prefabs, materials, blueprints } = listing.contents;
+      expect(scenes + prefabs + materials + blueprints, `${listing.slug} installs nothing`).toBeGreaterThan(0);
     }
   });
 
@@ -170,6 +175,63 @@ describe('bundled asset store — catalog to installed content', () => {
     expect(useProjectStore.getState().toast?.kind).toBe('error');
     expect(useMarketplaceStore.getState().installedIds).toEqual([]);
     expect(useMarketplaceStore.getState().installingId).toBeNull();
+  });
+});
+
+describe('shipped package integrity', () => {
+  /**
+   * Every asset a package's content points at must actually be in the package. A dangling id means
+   * an untextured model or a silent missing sound in someone's project — and the starter templates
+   * are exported from the running editor, so nothing else catches it.
+   */
+  it('has no dangling asset references and no asset without bytes or a source', async () => {
+    const dir = join(PUBLIC_STORE, 'packages');
+    const files = (await readdir(dir)).filter((file) => file.endsWith('.nfpack'));
+    expect(files.length).toBeGreaterThan(0);
+
+    for (const file of files) {
+      const pkg = JSON.parse(await readFile(join(dir, file), 'utf8')) as NodeForgePackage;
+      const available = new Set(pkg.assets.map((asset) => asset.id));
+      const referenced = new Set<string>();
+      const add = (id?: string) => {
+        if (id) referenced.add(id);
+      };
+      const scanObject = (object: SceneObject) => {
+        add(object.renderer?.modelAssetId);
+        add(object.renderer?.textureAssetId);
+        add(object.particles?.textureAssetId);
+        const character = object.character;
+        if (character) {
+          [
+            character.footstepSoundId,
+            character.jumpSoundId,
+            character.landSoundId,
+            character.swimSoundId,
+            character.attackSoundId,
+            character.hurtSoundId,
+          ].forEach(add);
+        }
+      };
+
+      for (const scene of pkg.content.scenes ?? []) {
+        scene.objects.forEach(scanObject);
+        add(scene.ambientSoundId);
+        add(scene.musicSoundId);
+      }
+      for (const prefab of pkg.content.prefabs) prefab.objects.forEach(scanObject);
+      for (const material of pkg.content.materials) {
+        add(material.textureAssetId);
+        add(material.normalMapAssetId);
+      }
+      for (const animation of pkg.content.animations) add(animation.sourceAssetId);
+      for (const skeleton of pkg.content.skeletons) add(skeleton.sourceAssetId);
+
+      const missing = [...referenced].filter((id) => !available.has(id));
+      expect(missing, `${file} references assets it does not ship`).toEqual([]);
+
+      const bodiless = pkg.assets.filter((asset) => !asset.data && !asset.source);
+      expect(bodiless.map((asset) => asset.name), `${file} has assets with no bytes`).toEqual([]);
+    }
   });
 });
 
