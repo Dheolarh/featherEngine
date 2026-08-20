@@ -84,6 +84,74 @@ export async function openEditor({ baseUrl, query = '', timeoutMs = 60_000, widt
     await delay(120);
   };
 
+  /**
+   * Pixel statistics for a region, without any image-decoding dependency: capture via CDP, hand the
+   * base64 PNG back to the page, draw it into a canvas and read it with getImageData.
+   *
+   * Catches the class of bug that only ever showed up by eye — e.g. the graph minimap rendering as a
+   * large WHITE slab over a dark canvas, because xyflow's default bgColor/maskColor are light and
+   * are SVG paint attributes that CSS cannot reach.
+   */
+  const pixelStats = async (selector, { brightness = 200 } = {}) => {
+    const rect = await evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+    })()`);
+    assert.ok(rect && rect.w > 0 && rect.h > 0, `No laid-out element to sample: ${selector}`);
+    const shot = await page.call('Page.captureScreenshot', { format: 'png' });
+    return evaluate(`(async () => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,${shot.data}';
+      await img.decode();
+      const r = ${JSON.stringify(rect)};
+      const c = document.createElement('canvas');
+      c.width = r.w; c.height = r.h;
+      const ctx = c.getContext('2d');
+      // The capture is in CSS pixels at dpr 1 for our headless window, so rect maps 1:1.
+      ctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+      const data = ctx.getImageData(0, 0, r.w, r.h).data;
+      let bright = 0, sum = 0;
+      const total = data.length / 4;
+      for (let i = 0; i < data.length; i += 4) {
+        const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+        sum += lum;
+        if (lum >= ${brightness}) bright += 1;
+      }
+      return { meanLuminance: sum / total, brightRatio: bright / total, pixels: total };
+    })()`);
+  };
+
+  /**
+   * Elements inside `root` whose rects overlap despite being siblings in the layout flow — the
+   * signature of a panel squeezed past its usable width. This is what the Tree panel did when it was
+   * tabbed into the 330px Inspector column: its labels sat on top of its own sliders.
+   */
+  const overlaps = (root, selector) =>
+    evaluate(`(() => {
+      const scope = document.querySelector(${JSON.stringify(root)});
+      if (!scope) return [];
+      const items = [...scope.querySelectorAll(${JSON.stringify(selector)})]
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .filter((i) => i.r.width > 0 && i.r.height > 0);
+      const hits = [];
+      for (let a = 0; a < items.length; a += 1) {
+        for (let b = a + 1; b < items.length; b += 1) {
+          const A = items[a], B = items[b];
+          if (A.el.contains(B.el) || B.el.contains(A.el)) continue;
+          const ox = Math.min(A.r.right, B.r.right) - Math.max(A.r.left, B.r.left);
+          const oy = Math.min(A.r.bottom, B.r.bottom) - Math.max(A.r.top, B.r.top);
+          // A couple of px of overlap is normal (borders, negative margins); real collisions are big.
+          if (ox > 6 && oy > 6) {
+            hits.push((A.el.textContent || A.el.className).trim().slice(0, 28) + ' ↔ ' +
+                      (B.el.textContent || B.el.className).trim().slice(0, 28));
+          }
+        }
+      }
+      return hits.slice(0, 8);
+    })()`);
+
   const consoleErrors = [];
   await page.call('Log.enable').catch(() => {});
 
@@ -91,5 +159,5 @@ export async function openEditor({ baseUrl, query = '', timeoutMs = 60_000, widt
   // The editor is ready once the toolbar exists; individual specs wait for what they need.
   await waitFor(`document.querySelector('.toolbar')`, { label: 'editor toolbar' });
 
-  return { page, evaluate, waitFor, count, text, boxOf, realClick, consoleErrors, dispose, url };
+  return { page, evaluate, waitFor, count, text, boxOf, realClick, pixelStats, overlaps, consoleErrors, dispose, url };
 }

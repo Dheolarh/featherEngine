@@ -137,9 +137,21 @@ export async function launch({ width = 1600, height = 1000 } = {}) {
       try {
         page.close();
         browser.close();
-      } finally {
-        chrome.kill();
-        rmSync(profileDir, { recursive: true, force: true });
+      } catch {
+        /* sockets may already be gone */
+      }
+      chrome.kill();
+      // Wait for the process to actually exit before removing its profile: rmSync raced Chrome's
+      // final writes and threw EACCES "Directory not empty", failing otherwise-passing specs.
+      await Promise.race([
+        new Promise((done) => chrome.once('exit', done)),
+        delay(5_000),
+      ]);
+      // A leftover temp dir is never worth failing a test over — the OS reaps it.
+      try {
+        rmSync(profileDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      } catch {
+        /* ignore */
       }
     },
   };

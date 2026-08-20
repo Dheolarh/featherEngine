@@ -108,6 +108,59 @@ spec('node search offers to build from a plain-English description', async () =>
   }
 });
 
+spec('the graph canvas has no large near-white slab on a dark theme', async () => {
+  // Regression guard for the minimap rendering as a white rectangle over the canvas: xyflow's
+  // MiniMap defaults to a light bgColor/maskColor, and those are SVG paint attributes that the
+  // dark CSS on .react-flow__minimap could never reach.
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script&theme=nova' });
+  try {
+    await openScripting(app);
+    await app.waitFor(`document.querySelector('.react-flow__minimap')`, { label: 'minimap present' });
+    const canvas = await app.pixelStats('.flow-shell');
+    assert.ok(
+      canvas.brightRatio < 0.08,
+      `graph canvas is ${(canvas.brightRatio * 100).toFixed(1)}% near-white — something light is covering it`,
+    );
+    const minimap = await app.pixelStats('.react-flow__minimap');
+    assert.ok(
+      minimap.meanLuminance < 120,
+      `minimap mean luminance ${minimap.meanLuminance.toFixed(0)} is too light for a dark theme`,
+    );
+  } finally {
+    await app.dispose();
+  }
+});
+
+spec('Inspector controls do not collide at their docked width', async () => {
+  // Regression guard for panels squeezed past their usable width — the Tree editor's labels sat on
+  // top of its own sliders when it was tabbed into the ~330px Inspector column.
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script&theme=nova' });
+  try {
+    await app.waitFor(`document.querySelector('.inspector-panel .inspector-section')`, { label: 'inspector rendered' });
+    const collisions = await app.overlaps('.inspector-panel', '.field-row, .inspector-section-head, .full-button');
+    assert.deepEqual(collisions, [], `overlapping Inspector controls: ${collisions.join(' | ')}`);
+  } finally {
+    await app.dispose();
+  }
+});
+
+spec('play and stop round-trips without leaving runtime state behind', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script' });
+  try {
+    await app.waitFor(`document.querySelector('.run-button')`, { label: 'run button' });
+    assert.equal(await app.count("[title^='Pause preview']"), 0, 'pause/step hidden while stopped');
+
+    await app.realClick('.run-button');
+    await app.waitFor(`document.querySelectorAll("[title^='Pause preview']").length === 1`, { label: 'Play started' });
+
+    await app.realClick('.run-button');
+    await app.waitFor(`document.querySelectorAll("[title^='Pause preview']").length === 0`, { label: 'Play stopped' });
+    assert.equal(await app.count('.exec-broke'), 0, 'no stale breakpoint marker after Stop');
+  } finally {
+    await app.dispose();
+  }
+});
+
 async function serverUp() {
   try {
     const response = await fetch(BASE_URL, { signal: AbortSignal.timeout(2000) });
