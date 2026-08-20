@@ -8,6 +8,7 @@ import {
   type NodeForgeNode,
   type ParticleSystemDefinition,
   type Prefab,
+  type ProjectFolder,
   type ProjectGraph,
   type ProjectVariable,
   type Scene,
@@ -88,6 +89,12 @@ export interface PackageContent {
   dataAssets: DataAsset[];
   uiDocuments: UIDocument[];
   variables: ProjectVariable[];
+  /**
+   * The Project-browser folders the content sits in, with their tree preserved. On import an ASSET
+   * package's folders are re-parented under one new folder named after the package, so installing
+   * never scatters loose prefabs and materials through someone's project root.
+   */
+  folders?: ProjectFolder[];
   /** Only present for `kind: 'project'` packages. */
   scenes?: Scene[];
 }
@@ -379,8 +386,34 @@ export function collectPackage(
     uiDocuments: pick(src.uiDocuments, ids.uiDocument),
     variables: pick(src.variables, ids.variable),
   };
-  // Only present for project packages; a module package leaves `scenes` undefined.
+  // Only present for project packages; an asset package leaves `scenes` undefined.
   if (ids.scene.size) content.scenes = pick(src.scenes ?? [], ids.scene);
+
+  // Carry the folders the collected content lives in, plus every ancestor, so the package keeps its
+  // shape in the Project browser instead of arriving as a loose pile.
+  const folderIds = new Set<string>();
+  const addFolderChain = (id?: string) => {
+    let current = id;
+    while (current && !folderIds.has(current)) {
+      folderIds.add(current);
+      current = (src.folders ?? []).find((folder) => folder.id === current)?.parentId;
+    }
+  };
+  const foldered = [
+    ...content.prefabs,
+    ...content.blueprints,
+    ...content.materials,
+    ...content.particleSystems,
+    ...content.animatorControllers,
+    ...content.dataAssets,
+    ...content.uiDocuments,
+    ...content.animations,
+    ...content.skeletalMeshes,
+    ...content.skeletons,
+  ] as Array<{ folderId?: string }>;
+  for (const entity of foldered) addFolderChain(entity.folderId);
+  for (const asset of src.assets) if (ids.asset.has(asset.id)) addFolderChain(asset.folderId);
+  if (folderIds.size) content.folders = (src.folders ?? []).filter((folder) => folderIds.has(folder.id));
 
   return { content, assetIds: [...ids.asset] };
 }
@@ -437,7 +470,29 @@ export function remapPackageForImport(
     uiElement: new Map<string, string>(),
     scene: new Map<string, string>(),
     cinematic: new Map<string, string>(),
+    folder: new Map<string, string>(),
   };
+
+  /**
+   * An ASSET package lands entirely inside one new folder named after it — the Unreal convention,
+   * and the difference between "installed a pack" and "something dumped 20 loose items in my
+   * project". A PROJECT package IS the project, so its folders stay at the root where they were.
+   */
+  const wrapperFolderId = pkg.kind === 'project' ? undefined : newId('folder');
+  const importedFolders: ProjectFolder[] = wrapperFolderId
+    ? [{ id: wrapperFolderId, name: pkg.meta?.name?.trim() || 'Imported package' }]
+    : [];
+  for (const folder of c.folders ?? []) maps.folder.set(folder.id, newId('folder'));
+  for (const folder of c.folders ?? []) {
+    importedFolders.push({
+      id: maps.folder.get(folder.id)!,
+      name: folder.name,
+      // A folder whose parent didn't travel becomes a child of the wrapper (or a root, for a project).
+      parentId: (folder.parentId && maps.folder.get(folder.parentId)) || wrapperFolderId,
+    });
+  }
+  /** Where an entity ends up: its own folder if that travelled, otherwise the package's folder. */
+  const intoFolder = (id?: string) => (id && maps.folder.get(id)) || wrapperFolderId;
 
   // Skeletons: reuse an existing identical rig (by signature) when present; otherwise import fresh.
   const importedSkeletons: SkeletonAsset[] = [];
@@ -637,14 +692,14 @@ export function remapPackageForImport(
   }
   for (const prefab of c.prefabs) {
     prefab.id = remap(maps.prefab, prefab.id)!;
-    prefab.folderId = undefined;
+    prefab.folderId = intoFolder(prefab.folderId);
     prefab.objects = prefab.objects.map(rewriteObject);
     prefab.rootId = remap(maps.object, prefab.rootId)!;
   }
   for (const bp of c.blueprints) {
     bp.id = remap(maps.blueprint, bp.id)!;
     bp.graphId = remap(maps.graph, bp.graphId)!;
-    bp.folderId = undefined;
+    bp.folderId = intoFolder(bp.folderId);
   }
   c.graphs.forEach(rewriteGraph);
   for (const mat of c.materials) {
@@ -652,17 +707,17 @@ export function remapPackageForImport(
     mat.textureAssetId = remap(maps.asset, mat.textureAssetId);
     mat.normalMapAssetId = remap(maps.asset, mat.normalMapAssetId);
     mat.graphId = remap(maps.graph, mat.graphId);
-    mat.folderId = undefined;
+    mat.folderId = intoFolder(mat.folderId);
   }
   for (const ps of c.particleSystems) {
     ps.id = remap(maps.particleSystem, ps.id)!;
     ps.textureAssetId = remap(maps.asset, ps.textureAssetId);
-    ps.folderId = undefined;
+    ps.folderId = intoFolder(ps.folderId);
   }
   for (const ac of c.animatorControllers) {
     ac.id = remap(maps.animatorController, ac.id)!;
     ac.skeletonId = remap(maps.skeleton, ac.skeletonId);
-    ac.folderId = undefined;
+    ac.folderId = intoFolder(ac.folderId);
     // Re-id internal parameter/state/transition ids and rewire the references between them.
     const paramMap: IdMap = new Map();
     const stateMap: IdMap = new Map();
@@ -690,29 +745,29 @@ export function remapPackageForImport(
     anim.id = remap(maps.animation, anim.id)!;
     anim.sourceAssetId = remap(maps.asset, anim.sourceAssetId)!;
     anim.skeletonId = remap(maps.skeleton, anim.skeletonId)!;
-    anim.folderId = undefined;
+    anim.folderId = intoFolder(anim.folderId);
   }
   for (const sm of c.skeletalMeshes) {
     sm.id = remap(maps.skeletalMesh, sm.id)!;
     sm.sourceAssetId = remap(maps.asset, sm.sourceAssetId)!;
     sm.skeletonId = remap(maps.skeleton, sm.skeletonId)!;
-    sm.folderId = undefined;
+    sm.folderId = intoFolder(sm.folderId);
   }
   for (const sk of importedSkeletons) {
     sk.id = remap(maps.skeleton, sk.id)!;
     sk.sourceAssetId = remap(maps.asset, sk.sourceAssetId)!;
     for (const socket of sk.sockets ?? []) socket.id = newId('socket');
-    sk.folderId = undefined;
+    sk.folderId = intoFolder(sk.folderId);
   }
   for (const doc of c.uiDocuments) {
     doc.id = remap(maps.uiDocument, doc.id)!;
     doc.logicBlueprintId = remap(maps.blueprint, doc.logicBlueprintId);
-    doc.folderId = undefined;
+    doc.folderId = intoFolder(doc.folderId);
     rewriteUIElement(doc.root);
   }
   for (const data of c.dataAssets) {
     data.id = remap(maps.dataAsset, data.id)!;
-    data.folderId = undefined;
+    data.folderId = intoFolder(data.folderId);
   }
   for (const v of c.variables) {
     v.id = remap(maps.variable, v.id)!;
@@ -725,11 +780,13 @@ export function remapPackageForImport(
     id: remap(maps.asset, asset.id)!,
     path: undefined,
     url: undefined,
-    folderId: undefined,
+    folderId: intoFolder(asset.folderId),
   }));
 
   // Only emit the skeletons we actually imported (deduped ones reuse an existing rig).
   c.skeletons = importedSkeletons;
+  // The package's own folder plus its internal tree, ready to append to the project.
+  c.folders = importedFolders;
 
   const prefabIdMap: Record<string, string> = {};
   maps.prefab.forEach((to, from) => {

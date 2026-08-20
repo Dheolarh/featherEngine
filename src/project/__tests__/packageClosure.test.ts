@@ -186,6 +186,70 @@ describe('package dependency closure — everything referenced ships', () => {
     expect(available.has(scene.musicSoundId!)).toBe(true);
   });
 
+  it('lands an asset package inside one folder named after it, keeping its internal tree', () => {
+    // Installing a pack must not scatter loose prefabs and materials through someone's project
+    // root — everything goes under a single folder, exactly like Unreal's content packs.
+    const src = source();
+    src.folders = [
+      { id: 'f-kit', name: 'Brick Kit' },
+      { id: 'f-mats', name: 'Materials', parentId: 'f-kit' },
+    ];
+    src.materials[0].folderId = 'f-mats';
+
+    const collected = collectPackage(src, { materials: ['mat-1'] });
+    // The material's folder AND its ancestor travelled.
+    expect(collected.content.folders?.map((folder) => folder.name).sort()).toEqual(['Brick Kit', 'Materials']);
+
+    const pkg = buildPackage('asset', collected.content, [], {
+      id: 'pkg-folders',
+      name: 'Brick Pack',
+      version: '1.0.0',
+    });
+    const { content } = remapPackageForImport(JSON.parse(JSON.stringify(pkg)), [], []);
+
+    const folders = content.folders ?? [];
+    // A wrapper folder named after the package, sitting at the root.
+    const wrapper = folders.find((folder) => folder.name === 'Brick Pack');
+    expect(wrapper).toBeDefined();
+    expect(wrapper!.parentId).toBeUndefined();
+
+    // The package's own tree hangs beneath it, structure intact.
+    const kit = folders.find((folder) => folder.name === 'Brick Kit')!;
+    const mats = folders.find((folder) => folder.name === 'Materials')!;
+    expect(kit.parentId).toBe(wrapper!.id);
+    expect(mats.parentId).toBe(kit.id);
+
+    // And the content sits in its own folder, not at the root.
+    expect(content.materials[0].folderId).toBe(mats.id);
+    // Folder ids were regenerated, so they can't collide with the host project's folders.
+    expect(folders.some((folder) => folder.id === 'f-kit' || folder.id === 'f-mats')).toBe(false);
+  });
+
+  it('puts content with no folder of its own directly in the package folder', () => {
+    const collected = collectPackage(source(), { materials: ['mat-1'] });
+    const pkg = buildPackage('asset', collected.content, [], { id: 'p', name: 'Loose Pack', version: '1.0.0' });
+    const { content } = remapPackageForImport(JSON.parse(JSON.stringify(pkg)), [], []);
+
+    const wrapper = content.folders!.find((folder) => folder.name === 'Loose Pack')!;
+    expect(content.folders).toHaveLength(1);
+    expect(content.materials[0].folderId).toBe(wrapper.id);
+  });
+
+  it('leaves a project package at the root — it IS the project, not a pack inside one', () => {
+    const src = source();
+    src.folders = [{ id: 'f-world', name: 'World' }];
+    src.materials[0].folderId = 'f-world';
+
+    const collected = collectProjectPackage(src);
+    const pkg = buildPackage('project', collected.content, [], { id: 'p', name: 'My World', version: '1.0.0' });
+    const { content } = remapPackageForImport(JSON.parse(JSON.stringify(pkg)), [], []);
+
+    // No wrapper folder — the template's folders stay where the author put them.
+    expect(content.folders?.map((folder) => folder.name)).toEqual(['World']);
+    expect(content.folders![0].parentId).toBeUndefined();
+    expect(content.materials[0].folderId).toBe(content.folders![0].id);
+  });
+
   it('drags a material and its maps along when only an object is exported', () => {
     // The module case: exporting a single object must still bring its material's textures.
     const src = source();

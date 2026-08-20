@@ -12367,6 +12367,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       dataAssets: state.dataAssets,
       uiDocuments: state.uiDocuments,
       variables: state.variables,
+      folders: state.folders,
       assets: state.assets,
     };
     return collectPrefabPackage(src, prefabId);
@@ -12414,6 +12415,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       dataAssets: state.dataAssets,
       uiDocuments: state.uiDocuments,
       variables: state.variables,
+      folders: state.folders,
       assets: state.assets,
     };
     return { ...collectPackage(src, seeds), name: folder.name };
@@ -12436,6 +12438,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       dataAssets: state.dataAssets,
       uiDocuments: state.uiDocuments,
       variables: state.variables,
+      folders: state.folders,
       assets: state.assets,
     };
     return collectProjectPackage(src);
@@ -12458,6 +12461,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         dataAssets: [...state.dataAssets, ...content.dataAssets],
         uiDocuments: [...state.uiDocuments, ...content.uiDocuments],
         variables: [...state.variables, ...content.variables],
+        folders: [...state.folders, ...(content.folders ?? [])],
         prefabThumbnailQueue: [...state.prefabThumbnailQueue, ...content.prefabs.map((p) => p.id)],
         // The package's world replaces the blank starter scene rather than sitting beside it.
         ...(scenes.length ? { scenes, activeSceneId: scenes[0].id, selectedIds: [] } : {}),
@@ -12481,6 +12485,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       dataAssets: [...state.dataAssets, ...content.dataAssets],
       uiDocuments: [...state.uiDocuments, ...content.uiDocuments],
       variables: [...state.variables, ...content.variables],
+      // The package's own folder (and its internal tree) so the content lands organised, not loose.
+      folders: [...state.folders, ...(content.folders ?? [])],
       prefabThumbnailQueue: [...state.prefabThumbnailQueue, ...content.prefabs.map((p) => p.id)],
       isDirty: true,
     })),
