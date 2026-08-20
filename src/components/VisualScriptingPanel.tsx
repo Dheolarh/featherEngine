@@ -4162,9 +4162,24 @@ export function VisualScriptingPanel() {
           <p className="sr-only" id="visual-scripting-help">
             Use the Essentials list or search to add nodes. Tab to a node, then press Enter or Space to select it and use arrow keys to move it. Use the Connections section in Details to create or remove wires. Press Delete to remove a selected node or wire. Press Shift F10 to open node search.
           </p>
-          <div className="flow-hud" aria-hidden>
-            <span>{selectedNodeDetail}</span>
-            <small>
+          {/* The add-node button shares this HUD row rather than floating separately — both used to
+              sit at top-left of .flow-shell and overlapped. aria-hidden moved onto the text children
+              so the button itself stays reachable. */}
+          <div className="flow-hud">
+            <button
+              type="button"
+              className="flow-add-node"
+              title="Add a node — or describe what you want and press Enter"
+              onClick={(event) => {
+                const bounds = event.currentTarget.closest('.flow-shell')!.getBoundingClientRect();
+                setSearchMenu({ x: bounds.left + 24, y: bounds.top + 56 });
+              }}
+            >
+              <Plus size={14} aria-hidden />
+              <span>Add node</span>
+            </button>
+            <span aria-hidden>{selectedNodeDetail}</span>
+            <small aria-hidden>
               {graph.nodes.length} nodes / {graph.edges.length} wires
               {clipboard ? ` / ${clipboard.nodes.length} copied` : ''} · Drag a pin to empty space (or
               right-click) to add a node · Shift+drag to box-select
@@ -4242,25 +4257,24 @@ export function VisualScriptingPanel() {
             snapGrid={snapGrid}
             fitView
           >
-            <MiniMap ariaLabel="Visual script overview" pannable zoomable nodeStrokeWidth={3} />
+            {/* xyflow's MiniMap defaults to a LIGHT mask (rgba(240,240,240,.6)) and light node
+                fills, which rendered as a big white slab covering the bottom of the canvas on a dark
+                theme. These are SVG paint attributes, so CSS on .react-flow__minimap can't reach
+                them — they have to be passed as props. */}
+            <MiniMap
+              ariaLabel="Visual script overview"
+              pannable
+              zoomable
+              nodeStrokeWidth={3}
+              bgColor="#12161d"
+              maskColor="rgba(8, 11, 16, 0.62)"
+              maskStrokeColor="rgba(150, 180, 220, 0.28)"
+              nodeColor="#4d9dff"
+              nodeStrokeColor="rgba(140, 175, 220, 0.35)"
+            />
             <Controls aria-label="Visual script zoom controls" position="bottom-right" />
             <Background color="#30394D" gap={18} size={1} />
           </ReactFlow>
-          {/* The node search was reachable only by right-click, Shift+F10, or dragging a pin into
-              empty space — all invisible. This is the same search, one obvious click away: press it,
-              type what you want, hit Enter. */}
-          <button
-            type="button"
-            className="flow-add-node"
-            title="Add a node — or describe what you want and press Enter"
-            onClick={(event) => {
-              const bounds = event.currentTarget.closest('.flow-shell')!.getBoundingClientRect();
-              setSearchMenu({ x: bounds.left + 24, y: bounds.top + 56 });
-            }}
-          >
-            <Plus size={14} aria-hidden />
-            <span>Add node</span>
-          </button>
         </div>
         <NodeInspector node={selectedGraphNode} />
       </div>

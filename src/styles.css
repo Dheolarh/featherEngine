@@ -3950,7 +3950,7 @@ body.is-scrubbing * {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  max-width: min(520px, calc(100% - 132px));
+  max-width: min(640px, calc(100% - 132px));
   min-height: 32px;
   padding: 0 10px;
   border: 1px solid var(--border);
@@ -7474,10 +7474,7 @@ body.is-scrubbing * {
 
 /* Visible entry to the node search, floating over the graph canvas. */
 .flow-add-node {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 5;
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;

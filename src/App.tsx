@@ -35,14 +35,25 @@ function useDemoAutoload() {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const demo = new URLSearchParams(window.location.search).get('demo');
-    if (demo !== 'meadows' && demo !== 'store') return;
+    if (demo !== 'meadows' && demo !== 'store' && demo !== 'script') return;
     let cancelled = false;
     void (async () => {
       const project = useProjectStore.getState();
       if (project.hasProject) return;
-      await project.newProject(demo === 'store' ? 'Store Preview' : 'Meadows Preview');
+      await project.newProject(
+        demo === 'store' ? 'Store Preview' : demo === 'script' ? 'Script Preview' : 'Meadows Preview',
+      );
       if (cancelled || !useProjectStore.getState().hasProject) return;
       if (demo === 'store') return;
+      // `?demo=script` gives the Scripting panel a real graph to render, so the node editor can be
+      // screenshot-reviewed. Without it every fresh load shows only the empty-graph welcome screen.
+      if (demo === 'script') {
+        useEditorStore.getState().createObject('cube');
+        // createObject returns void but selects what it made, so read the id back off the store.
+        const objectId = useEditorStore.getState().selectedObjectId;
+        if (objectId) useEditorStore.getState().attachBehaviorPreset(objectId, 'health-and-death');
+        return;
+      }
       await createMeadowTemplate();
       // Auto-enter Play so a screenshot shows the eye-level third-person game camera (reference framing).
       setTimeout(() => {
