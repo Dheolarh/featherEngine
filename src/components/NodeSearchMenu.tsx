@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X } from 'lucide-react';
+import { Search, Sparkles, X } from 'lucide-react';
 import type { GraphNodeCategory, GraphNodeKind, GraphValueType, NodeForgeNodeData } from '../types';
 
 export interface NodeChoice {
@@ -30,6 +30,7 @@ export function NodeSearchMenu({
   onPick,
   onClose,
   filterHint,
+  onAskAI,
 }: {
   x: number;
   y: number;
@@ -38,6 +39,10 @@ export function NodeSearchMenu({
   onClose: () => void;
   /** When opened from a pin drag, explain which sockets are being filtered. */
   filterHint?: string | null;
+  /** Hand the raw query to the AI assistant, which can author a whole wired graph from a plain
+   *  description. Offered as the last row so typing something that isn't a node name and pressing
+   *  Enter builds it, instead of dead-ending on "No matching nodes". */
+  onAskAI?: (prompt: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -104,6 +109,22 @@ export function NodeSearchMenu({
     activeOptionRef.current?.scrollIntoView({ block: 'nearest' });
   }, [active]);
 
+  // The "ask AI" row lives at index `filtered.length`, i.e. one past the last node match. Keeping it
+  // in the same index space as the node results means Enter needs no special case: with matches,
+  // index 0 is the best node and Enter adds it (unchanged); with none, index 0 IS this row, so
+  // "type a sentence, press Enter" just works.
+  const trimmedQuery = query.trim();
+  const showAsk = Boolean(onAskAI && trimmedQuery);
+  const askIndex = filtered.length;
+  const optionCount = filtered.length + (showAsk ? 1 : 0);
+  const askActive = showAsk && active === askIndex;
+  const askId = `node-search-option-${reactId}-${askIndex}`;
+  const runAsk = () => {
+    if (!onAskAI || !trimmedQuery) return;
+    onAskAI(trimmedQuery);
+    onClose();
+  };
+
   const menuWidth = Math.min(378, Math.max(280, window.innerWidth - 24));
   const menuHeight = Math.min(458, Math.max(260, window.innerHeight - 24));
   const left = Math.max(12, Math.min(x, window.innerWidth - menuWidth - 12));
@@ -143,7 +164,7 @@ export function NodeSearchMenu({
           aria-expanded="true"
           aria-controls={listId}
           aria-describedby={`${filterHint ? `${hintId} ` : ''}${countId}`}
-          aria-activedescendant={filtered[active] ? `node-search-option-${reactId}-${active}` : undefined}
+          aria-activedescendant={filtered[active] ? `node-search-option-${reactId}-${active}` : askActive ? askId : undefined}
           onChange={(event) => {
             setQuery(event.target.value);
             setActive(0);
@@ -151,13 +172,19 @@ export function NodeSearchMenu({
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault();
-              setActive((index) => Math.min(index + 1, filtered.length - 1));
+              setActive((index) => Math.min(index + 1, optionCount - 1));
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setActive((index) => Math.max(index - 1, 0));
-            } else if (event.key === 'Enter' && filtered[active]) {
-              event.preventDefault();
-              onPick(filtered[active]);
+            } else if (event.key === 'Enter') {
+              // A node match wins; otherwise the active row is the AI one (see askIndex above).
+              if (filtered[active]) {
+                event.preventDefault();
+                onPick(filtered[active]);
+              } else if (showAsk) {
+                event.preventDefault();
+                runAsk();
+              }
             }
           }}
         />
@@ -205,7 +232,35 @@ export function NodeSearchMenu({
             })}
           </section>
         ))}
-        {filtered.length === 0 && <div className="node-search-empty" role="status">No matching nodes</div>}
+        {showAsk && (
+          <section className="node-search-group" role="group">
+            <div className="node-search-group-title">
+              <span>Describe it</span>
+            </div>
+            <button
+              ref={askActive ? activeOptionRef : undefined}
+              id={askId}
+              type="button"
+              role="option"
+              tabIndex={-1}
+              aria-selected={askActive}
+              className={askActive ? 'node-search-ask active' : 'node-search-ask'}
+              onMouseEnter={() => setActive(askIndex)}
+              onClick={runAsk}
+            >
+              <span className="node-search-result-main">
+                <span className="node-search-result-title">
+                  <Sparkles size={13} aria-hidden /> Build “{trimmedQuery}”
+                </span>
+                <small>Let the assistant wire this up for you</small>
+              </span>
+              <span className="node-search-pill node-search-ask-pill">↵</span>
+            </button>
+          </section>
+        )}
+        {filtered.length === 0 && !showAsk && (
+          <div className="node-search-empty" role="status">No matching nodes</div>
+        )}
       </div>
     </div>,
     document.body,

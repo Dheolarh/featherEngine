@@ -132,6 +132,26 @@ export function AIChatWidget() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
+  // `nf:ask-ai` lets anywhere in the editor hand a prompt to the assistant. The node search uses it
+  // so "just describe what you want" is offered where people actually get stuck — in front of the
+  // 161-node palette — instead of only inside this widget.
+  // Read through a ref so the listener is attached once and never sees a stale sendMessage.
+  const askRef = useRef({ hasKey, send: (_text: string) => {} });
+  askRef.current = { hasKey, send: (text: string) => void sendMessage(text) };
+  useEffect(() => {
+    const onAsk = (event: Event) => {
+      const prompt = (event as CustomEvent<{ prompt?: string }>).detail?.prompt?.trim();
+      setOpen(true);
+      if (!prompt) return;
+      // With no API key we cannot send. Park the text in the draft so the user's typing survives the
+      // detour through settings rather than being silently swallowed.
+      if (askRef.current.hasKey) askRef.current.send(prompt);
+      else setDraft(prompt);
+    };
+    window.addEventListener('nf:ask-ai', onAsk);
+    return () => window.removeEventListener('nf:ask-ai', onAsk);
+  }, []);
+
   const submit = () => {
     const text = draft;
     setDraft('');

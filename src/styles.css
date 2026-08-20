@@ -7472,6 +7472,55 @@ body.is-scrubbing * {
   text-align: center;
 }
 
+/* Visible entry to the node search, floating over the graph canvas. */
+.flow-add-node {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--text);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  transition:
+    background var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
+}
+
+.flow-add-node:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* "Build <what you typed>" — the escape hatch from a 161-node palette. Tinted so it reads as a
+   different kind of action from the node results above it, without shouting over them. */
+.node-search-ask .node-search-result-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.node-search-ask.active,
+.node-search-ask:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* The ↵ hint doubles as the affordance for "just press Enter". */
+.node-search-ask-pill {
+  font-family: var(--mono);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 /* ---------- Save toast ---------- */
 .save-toast {
   padding: 6px 12px;

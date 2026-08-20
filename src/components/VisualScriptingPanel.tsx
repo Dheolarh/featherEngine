@@ -4246,6 +4246,21 @@ export function VisualScriptingPanel() {
             <Controls aria-label="Visual script zoom controls" position="bottom-right" />
             <Background color="#30394D" gap={18} size={1} />
           </ReactFlow>
+          {/* The node search was reachable only by right-click, Shift+F10, or dragging a pin into
+              empty space — all invisible. This is the same search, one obvious click away: press it,
+              type what you want, hit Enter. */}
+          <button
+            type="button"
+            className="flow-add-node"
+            title="Add a node — or describe what you want and press Enter"
+            onClick={(event) => {
+              const bounds = event.currentTarget.closest('.flow-shell')!.getBoundingClientRect();
+              setSearchMenu({ x: bounds.left + 24, y: bounds.top + 56 });
+            }}
+          >
+            <Plus size={14} aria-hidden />
+            <span>Add node</span>
+          </button>
         </div>
         <NodeInspector node={selectedGraphNode} />
       </div>
@@ -4259,6 +4274,21 @@ export function VisualScriptingPanel() {
           filterHint={searchFilterHint}
           onPick={(choice) => addNodeAt(choice, searchMenu)}
           onClose={() => setSearchMenu(null)}
+          onAskAI={(prompt) =>
+            window.dispatchEvent(
+              new CustomEvent('nf:ask-ai', {
+                detail: {
+                  // Name the target blueprint so the assistant doesn't have to guess which graph,
+                  // and insist on preserving what's there — set_blueprint_script replaces the whole
+                  // script, so a vaguer prompt risks wiping the user's existing nodes.
+                  prompt:
+                    `In the blueprint "${activeBlueprint.name}", add this behavior: ${prompt}\n\n` +
+                    `Keep every existing node and wire the new logic into the current graph. ` +
+                    `Read the current script first, then write back the full script including what was already there.`,
+                },
+              }),
+            )
+          }
         />
       )}
     </section>
