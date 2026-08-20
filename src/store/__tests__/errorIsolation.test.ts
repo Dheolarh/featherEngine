@@ -8,6 +8,11 @@ vi.mock('../../runtime/execTrace', () => ({
   markExec: () => {
     throw new Error('simulated node failure');
   },
+  // The store also imports the breakpoint plumbing; stub it inertly so this test keeps isolating
+  // the per-node error guard and nothing else.
+  execTrace: { enabled: false, nodes: new Map(), counts: new Map(), breakpoints: new Set(), hit: null },
+  takeExecHit: () => null,
+  toggleBreakpoint: () => false,
 }));
 
 import { useEditorStore } from '../editorStore';

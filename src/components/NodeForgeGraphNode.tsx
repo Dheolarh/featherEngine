@@ -691,6 +691,7 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
   // Runtime error this node threw during the current Play session (see tickRuntime executeFrom) — paint
   // a badge so the user sees exactly which node failed, not just a console line.
   const runtimeError = useEditorStore((state) => state.runtimeNodeErrors[id]);
+  const isBreakpoint = useEditorStore((state) => state.breakpointNodeIds.includes(id));
 
   // Comment frame: a resizable, pin-less note that sits BEHIND real nodes — purely organizational.
   // Rendered after the hooks above so the hook count never changes between node kinds.
@@ -777,6 +778,24 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
       onClick={() => useEditorStore.getState().selectGraphNode(id)}
       onPointerDown={() => useEditorStore.getState().selectGraphNode(id)}
     >
+      {/* Breakpoint gutter dot. Only exec nodes can pause — a pure value node is evaluated on demand
+          rather than executed, so it never reaches markExec and could never trigger. */}
+      {!isValueProducer && (
+        <button
+          type="button"
+          // `nodrag` is required or ReactFlow's drag handler (a native pointerdown listener that
+          // runs before React's synthetic one) starts a node drag and swallows the click.
+          className={isBreakpoint ? 'nfn-breakpoint on nodrag' : 'nfn-breakpoint nodrag'}
+          title={isBreakpoint ? 'Remove breakpoint' : 'Pause Play when this node runs'}
+          aria-label={isBreakpoint ? `Remove breakpoint on ${data.label}` : `Add breakpoint on ${data.label}`}
+          aria-pressed={isBreakpoint}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            useEditorStore.getState().toggleGraphBreakpoint(id);
+          }}
+        />
+      )}
       {runtimeError && (
         <span className="nfn-error-badge" title={runtimeError} aria-label={`Runtime error: ${runtimeError}`}>
           <AlertTriangle size={12} aria-hidden /> error

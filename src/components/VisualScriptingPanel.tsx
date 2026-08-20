@@ -2984,6 +2984,9 @@ export function VisualScriptingPanel() {
     };
   }, [isPlaying]);
 
+  // The node a breakpoint stopped Play on, so it can be marked distinctly from a normal pulse.
+  const brokeHere = useEditorStore((state) => state.runtimeBreakNodeId);
+
   // Nodes fed to React Flow, tagged with the exec-hot pulse class while executing and carrying a
   // transient `liveValue` / `execHitCount` (read by NodeForgeGraphNode).
   const flowNodes = useMemo<NodeForgeNode[]>(() => {
@@ -2998,7 +3001,8 @@ export function VisualScriptingPanel() {
       return {
         ...node,
         ariaLabel: `${node.data.label}, ${node.data.category} node${node.selected ? ', selected' : ''}`,
-        ...(hot ? { className: 'exec-hot' } : {}),
+        ...(hot ? { className: brokeHere === node.id ? 'exec-hot exec-broke' : 'exec-hot' } : {}),
+        ...(brokeHere === node.id && !hot ? { className: 'exec-broke' } : {}),
         ...((hasValues || hasHits) && (live || hits)
           ? {
               data: {
@@ -3010,7 +3014,7 @@ export function VisualScriptingPanel() {
           : {}),
       };
     });
-  }, [graph, hotNodes, liveValues, hitCounts]);
+  }, [graph, hotNodes, liveValues, hitCounts, brokeHere]);
 
   const nodeChoices = useMemo<NodeChoice[]>(
     () => [

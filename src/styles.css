@@ -4690,6 +4690,55 @@ body.is-scrubbing * {
 }
 
 /* Exec hit count during Play: how many times this node ran in the last poll window. */
+/* Breakpoint gutter dot — a hollow ring until armed, then a filled red bead, mirroring the
+   convention every code debugger uses. Sits outside the node's left edge so it never collides with
+   the error/hit badges above it. */
+.nfn-breakpoint {
+  position: absolute;
+  top: 14px;
+  left: -9px;
+  z-index: 4;
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  /* Faint but always present. Fully hidden until hover would make it undiscoverable — the same
+     mistake the right-click-only node search made — and unhittable for pointer automation. */
+  opacity: 0.3;
+  transition:
+    opacity var(--motion) var(--ease),
+    background var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
+}
+
+.nodeforge-node:hover .nfn-breakpoint,
+.nfn-breakpoint:focus-visible,
+.nfn-breakpoint.on {
+  opacity: 1;
+}
+
+.nfn-breakpoint:hover {
+  border-color: var(--danger);
+}
+
+.nfn-breakpoint.on {
+  border-color: var(--danger);
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 26%, transparent);
+}
+
+/* Where Play actually stopped — distinct from the ordinary exec pulse. */
+.react-flow__node .nodeforge-node.exec-broke,
+.exec-broke .nodeforge-node {
+  border-color: var(--danger);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--danger) 65%, transparent),
+    0 16px 32px rgba(0, 0, 0, 0.38);
+}
+
 .nfn-hit-badge {
   position: absolute;
   top: -10px;

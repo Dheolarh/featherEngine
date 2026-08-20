@@ -104,7 +104,7 @@ import { pushExplosion, clearExplosions } from '../runtime/explosionBus';
 import { addDecal, clearDecals, type DecalKind } from '../runtime/decalBus';
 import { cameraPitch as mouseCameraPitch, cameraYaw as mouseCameraYaw } from '../runtime/mouseLook';
 import { gamepadInput } from '../runtime/gamepadInput';
-import { markExec } from '../runtime/execTrace';
+import { execTrace, markExec, takeExecHit, toggleBreakpoint } from '../runtime/execTrace';
 import { recordValue } from '../runtime/valueTrace';
 import { addSkidMark } from '../runtime/skidMarks';
 import { isRagdoll, setRagdoll, getRagdollRoot } from '../runtime/ragdollState';
@@ -551,6 +551,11 @@ interface EditorState {
   /** Blueprint node id → the error it threw this Play session, so the node editor can badge the exact
    *  failing node. Identity-stable across frames (see nodeErrorsSnapshot); reset on Play start. */
   runtimeNodeErrors: Record<string, string>;
+  /** Node a breakpoint paused Play on, so the editor can highlight where it stopped. */
+  /** Nodes flagged to pause Play. Mirrored into execTrace for the runtime hot lookup. */
+  breakpointNodeIds: string[];
+  toggleGraphBreakpoint: (nodeId: string) => void;
+  runtimeBreakNodeId: string | null;
   /** Screen UI documents currently shown during Play (keyed by doc id). Seeded from `visibleOnStart`. */
   runtimeVisibleUI: Record<string, boolean>;
   /** Per-object instance variables during Play (e.g. each enemy's health), read by world-UI `self.*` bindings. */
@@ -1396,6 +1401,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   runtimeVehicleSound: null,
   runtimeLog: [],
   runtimeNodeErrors: {},
+  runtimeBreakNodeId: null,
+  breakpointNodeIds: [],
   runtimeVisibleUI: {},
   runtimeObjectVariables: {},
   runtimeUITextOverrides: {},
@@ -5893,6 +5900,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           runtimeVehicleSound: null,
           runtimeLog: scriptIssues.slice(-100),
           runtimeNodeErrors: {},
+          runtimeBreakNodeId: null,
           // Show every screen HUD flagged visibleOnStart; world docs render whenever their object exists.
           runtimeVisibleUI: Object.fromEntries(
             state.uiDocuments.filter((doc) => doc.surface === 'screen' && doc.visibleOnStart).map((doc) => [doc.id, true]),
@@ -6023,6 +6031,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeVehicleSound: null,
         runtimeLog: [],
         runtimeNodeErrors: {},
+        runtimeBreakNodeId: null,
         runtimeVisibleUI: {},
         runtimeObjectVariables: {},
         runtimeUITextOverrides: {},
@@ -12191,11 +12200,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           : {}),
         // Editor frame-step: consume one queued sim frame after this tick advances.
         ...(consumedPlayStep ? { playStepFrames: Math.max(0, (state.playStepFrames ?? 0) - 1) } : {}),
+        // A node with a breakpoint executed during THIS tick → pause here, in the same frame, so
+        // Play stops on the marked node instead of several frames past it. Read (and cleared) at the
+        // commit point rather than from markExec so the runtime never reaches into the store mid-walk.
+        // Suppressed while frame-stepping, otherwise F7 could never step off a breakpoint.
+        // The hit is ALWAYS consumed (even while stepping) so a stale one can't pause a later frame.
+        ...((hitNode) =>
+          hitNode !== null && !consumedPlayStep ? { isPlayPaused: true, runtimeBreakNodeId: hitNode } : {})(
+          takeExecHit(),
+        ),
         // A Start Replay node fired → slice the buffer (incl. this frame, captured above) and play it back
         // from the next tick. Ignored if a replay is already running or too little motion is buffered.
         ...(pendingReplaySeconds !== undefined && !state.replayPlayback
           ? ((duration) => (duration != null ? { replayPlayback: { t: 0, duration } } : {}))(beginReplay(runtimeTime, pendingReplaySeconds))
           : {}),
+      };
+    }),
+  toggleGraphBreakpoint: (nodeId) =>
+    set((state) => {
+      // execTrace owns the copy the runtime reads per node (a plain Set lookup, no subscription);
+      // the store copy exists purely so the node component can render it reactively.
+      const on = toggleBreakpoint(nodeId);
+      return {
+        breakpointNodeIds: on
+          ? [...state.breakpointNodeIds, nodeId]
+          : state.breakpointNodeIds.filter((id) => id !== nodeId),
       };
     }),
   onNodesChange: (changes) =>
@@ -12489,6 +12518,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeVehicleSound: null,
         runtimeLog: [],
         runtimeNodeErrors: {},
+        runtimeBreakNodeId: null,
         runtimeVisibleUI: {},
         runtimeObjectVariables: {},
         runtimeUITextOverrides: {},

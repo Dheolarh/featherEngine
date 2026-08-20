@@ -13,12 +13,35 @@ export const execTrace = {
   nodes: new Map<string, number>(),
   /** nodeId → executions since the last panel poll window (cleared by resetExecWindowCounts). */
   counts: new Map<string, number>(),
+  /** Nodes the user has flagged to pause Play on. Lives here rather than in the store so the hot
+   *  per-node check below is a plain Set lookup with no subscription cost. */
+  breakpoints: new Set<string>(),
+  /** Set by markExec the moment a breakpoint node runs; the runtime tick reads it at the end of the
+   *  same frame and pauses, so Play stops on the marked node rather than several frames past it. */
+  hit: null as string | null,
 };
 
 export function markExec(nodeId: string) {
   if (!execTrace.enabled) return;
   execTrace.nodes.set(nodeId, performance.now());
   execTrace.counts.set(nodeId, (execTrace.counts.get(nodeId) ?? 0) + 1);
+  // First breakpoint of the frame wins — keep it so the editor can highlight exactly where it
+  // stopped instead of the last node that happened to run.
+  if (execTrace.hit === null && execTrace.breakpoints.has(nodeId)) execTrace.hit = nodeId;
+}
+
+/** Toggle a breakpoint. Returns the new state so callers can render without re-reading. */
+export function toggleBreakpoint(nodeId: string): boolean {
+  if (execTrace.breakpoints.delete(nodeId)) return false;
+  execTrace.breakpoints.add(nodeId);
+  return true;
+}
+
+/** Consume the pending breakpoint hit (returns it and clears the flag). */
+export function takeExecHit(): string | null {
+  const hit = execTrace.hit;
+  execTrace.hit = null;
+  return hit;
 }
 
 /** Snapshot helper: clear per-window hit counts after the editor has read them. */
@@ -31,5 +54,8 @@ export function setExecTraceEnabled(enabled: boolean) {
   if (!enabled) {
     execTrace.nodes.clear();
     execTrace.counts.clear();
+    // Breakpoints deliberately survive — they are authored state, not trace data, so stopping Play
+    // must not silently discard where the user asked to stop.
+    execTrace.hit = null;
   }
 }
