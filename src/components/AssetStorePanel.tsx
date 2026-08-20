@@ -158,11 +158,7 @@ export function AssetStorePanel() {
 
   return (
     <section className="panel store-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Marketplace</span>
-          <h2>Asset Store</h2>
-        </div>
+      <div className="panel-header panel-header-actions-only">
         <button
           className="icon-button compact"
           title="Refresh catalog"

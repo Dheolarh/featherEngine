@@ -133,6 +133,62 @@
   }
 }
 
+/* ============================================================================
+   NOVA — the default. Built for long sessions: a cool low-chroma graphite shell
+   that stays out of the way, so the thing you are actually building (the viewport)
+   is the most saturated thing on screen. The "futuristic" read comes from cool
+   blue-grey neutrals and one crisp electric accent, NOT from glow or gradients —
+   decoration competes with 3D content, which is why UE5's editor is so restrained.
+   Text is a slightly cool off-white rather than #fff to cut glare over hours.
+   ============================================================================ */
+:root[data-theme="nova"] {
+  color-scheme: dark;
+  background: #0d1015;
+  color: #e7ecf3;
+  --background: #0d1015;
+  --panel: #161a21;
+  --panel-light: #1f242e;
+  --panel-soft: #12161c;
+  /* Cool hairlines — a neutral white border reads grey/dead against blue-grey panels. */
+  --border: rgba(150, 180, 220, 0.11);
+  --border-strong: rgba(160, 190, 230, 0.22);
+  --text: #e7ecf3;
+  --muted: #8d97a8;
+  --accent: #4d9dff;
+  --success: #35d39a;
+  --warning: #f5b544;
+  --danger: #ff6b6b;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  /* Squared and precise — an instrument. Matches the engine tools it sits beside. */
+  --radius-sm: 4px;
+  --radius: 5px;
+  --radius-lg: 9px;
+}
+
+/* Flat surfaces. One faint cool wash from above for depth, nothing more. */
+:root[data-theme="nova"] .editor-shell {
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgba(77, 157, 255, 0.05), transparent 60%),
+    var(--background);
+}
+
+:root[data-theme="nova"] .toolbar,
+:root[data-theme="nova"] .status-bar,
+:root[data-theme="nova"] .toast {
+  background: #12161d;
+  backdrop-filter: none;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+:root[data-theme="nova"] .nf-dockview-host {
+  --dv-tabs-and-actions-container-background-color: #0f1319;
+  --dv-activegroup-visiblepanel-tab-background-color: #1a1f28;
+  --dv-activegroup-hiddenpanel-tab-background-color: #12161d;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #151920;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #11151b;
+  --dv-tab-divider-color: var(--border);
+}
+
 /* Midnight: same vibe as the default dark but deeper blacks for OLED + focus. */
 :root[data-theme="midnight"] {
   color-scheme: dark;
@@ -1047,7 +1103,9 @@ button {
   grid-area: viewport;
   position: relative;
   display: grid;
-  grid-template-rows: 44px minmax(0, 1fr);
+  /* Single row: the tool dock is absolutely positioned over the canvas, so reserving a band for
+     it would leave a 44px gap under the floating bar. */
+  grid-template-rows: minmax(0, 1fr);
   background: #0d1018;
 }
 
@@ -1332,24 +1390,43 @@ button {
   border: 0 !important;
 }
 
-.panel-header,
-.viewport-topbar {
+/* Panel chrome is deliberately quiet: the dock tab above already names the panel, so this row
+   exists only to carry the panel's actions and (for the Inspector) the selected object's name.
+   It used to be a 44px slab with its own border, background and an "eyebrow" label repeating the
+   tab title — six of those stacked up cost ~260px of vertical space and read as visual noise. */
+.panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  min-height: 44px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(15, 17, 23, 0.5);
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  background: none;
+  border-bottom: none;
 }
 
-.panel-header h2,
-.viewport-title span {
+.panel-header h2 {
   margin: 0;
   color: var(--text);
-  font-size: var(--text-md);
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A header carrying only buttons — push them to the trailing edge. */
+.panel-header-actions-only {
+  justify-content: flex-end;
+}
+
+/* Secondary descriptor next to a panel title (the Inspector's object kind). */
+.panel-header-kind {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .eyebrow {
@@ -1359,11 +1436,45 @@ button {
   line-height: 1.2;
 }
 
-.viewport-title {
-  display: inline-flex;
+/* Inside a panel header the dock tab already says the same word — but the Launcher and the AI
+   widget use .eyebrow as a real label, so only the duplicate case is suppressed. */
+.panel-header .eyebrow {
+  display: none;
+}
+
+/* Spline-style floating tool dock: the viewport is full-bleed and the tools ride on top of it as
+   a single rounded bar, instead of a full-width strip that ate a 44px band of canvas. Wrapping is
+   allowed so a narrow viewport pushes tools onto a second row rather than clipping them off the
+   right edge (which is what used to happen once the dock got below ~700px wide). */
+.viewport-topbar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  color: var(--muted);
+  justify-content: center;
+  gap: 6px;
+  /* An absolutely-positioned flex container shrink-to-fits, and with wrap enabled that collapses
+     it to its widest single child (the dock stacked into 4 rows). max-content lays the tools out
+     on one line; max-width then caps it and only wraps when the viewport is genuinely narrow. */
+  width: max-content;
+  /* Keeps clear of the Play cluster (top-left, ~180px) and the ViewCube (top-right, ~110px). */
+  max-width: calc(100% - 320px);
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.34);
+  pointer-events: auto;
+}
+
+/* The dock tab already reads "Viewport" — no need to label the canvas a second time. */
+.viewport-title {
+  display: none;
 }
 
 .viewport-mode {
@@ -1513,17 +1624,18 @@ button {
 }
 
 /* Floating Play/Stop control on the viewport canvas (so it's right where you're looking). */
+/* Play and Maximize sit top-left of the canvas. They used to be centred at top:54px, which now
+   collides with the floating tool dock (top-centre) and the ViewCube (top-right). */
 .viewport-play {
   position: absolute;
-  top: 54px;
-  left: 50%;
+  top: 10px;
+  left: 52px;
   z-index: 6;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   height: 34px;
   padding: 0 18px;
-  transform: translateX(-50%);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 26%, rgba(8, 10, 15, 0.72));
@@ -1540,7 +1652,7 @@ button {
 }
 
 .viewport-play:hover {
-  transform: translateX(-50%) translateY(-1px);
+  transform: translateY(-1px);
 }
 
 .viewport-play.active {
@@ -1550,15 +1662,14 @@ button {
 
 .viewport-maximize {
   position: absolute;
-  top: 54px;
-  left: 50%;
+  top: 10px;
+  left: 10px;
   z-index: 6;
   display: inline-grid;
   place-items: center;
   width: 34px;
   height: 34px;
   padding: 0;
-  transform: translateX(calc(-50% - 78px));
   border: 1px solid var(--border);
   border-radius: 999px;
   background: rgba(8, 10, 15, 0.72);
@@ -1573,7 +1684,7 @@ button {
 }
 
 .viewport-maximize:hover {
-  transform: translateX(calc(-50% - 78px)) translateY(-1px);
+  transform: translateY(-1px);
   border-color: var(--border-strong);
 }
 
@@ -1657,16 +1768,26 @@ button {
   user-select: none;
 }
 
+/* Orientation widget. Every view it used to offer is still here (6 clickable faces + the 4 preset
+   chips, which stay because a face pointing away from you cannot be clicked) — it is only quieter:
+   the cube used to outline all six faces in 50%-accent and fill them with a hardcoded blue-grey,
+   so it glowed like a toy and clashed with any non-blue theme. Neutral now, accent on hover. */
 .view-cube-scene {
-  width: 56px;
-  height: 56px;
-  perspective: 320px;
+  width: 48px;
+  height: 48px;
+  perspective: 300px;
+  opacity: 0.72;
+  transition: opacity var(--motion) var(--ease);
+}
+
+.view-cube:hover .view-cube-scene {
+  opacity: 1;
 }
 
 .view-cube-cube {
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   margin: 2px;
   transform-style: preserve-3d;
   /* transform is set live from the camera orientation in JS */
@@ -1678,16 +1799,19 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 52px;
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  background: rgba(20, 26, 40, 0.82);
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
   color: var(--muted);
   font-size: var(--text-3xs);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
   backface-visibility: hidden;
+  transition:
+    background var(--motion) var(--ease),
+    color var(--motion) var(--ease);
 }
 
 .view-cube-face:hover {
@@ -1698,17 +1822,27 @@ button {
 .view-cube-presets {
   display: flex;
   gap: 3px;
+  opacity: 0.62;
+  transition: opacity var(--motion) var(--ease);
+}
+
+.view-cube:hover .view-cube-presets {
+  opacity: 1;
 }
 
 .view-cube-presets button {
   padding: 2px 6px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(8, 10, 15, 0.7);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
   color: var(--muted);
   font-size: var(--text-3xs);
   cursor: pointer;
   backdrop-filter: blur(6px);
+  transition:
+    background var(--motion) var(--ease),
+    border-color var(--motion) var(--ease),
+    color var(--motion) var(--ease);
 }
 
 .view-cube-presets button:hover {
@@ -1755,9 +1889,9 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease;
+    transform var(--motion) var(--ease),
+    border-color var(--motion) var(--ease),
+    color var(--motion) var(--ease);
 }
 
 .fallback-stage button:hover {
@@ -4460,16 +4594,22 @@ body.is-scrubbing * {
   position: relative;
   width: 214px;
   border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   color: var(--text);
+  /* Body derives from the theme's panel tokens. It used to be a hardcoded blue-grey
+     (rgba(28,33,47) → rgba(13,17,26)), so on any non-blue theme every node in the graph
+     clashed with the panels around it — most visibly under Forge's warm palette. */
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--tone) 7%, transparent), transparent 72px),
-    linear-gradient(180deg, rgba(28, 33, 47, 0.98), rgba(13, 17, 26, 0.98));
+    linear-gradient(180deg, var(--panel-light), var(--panel-soft));
   box-shadow:
     0 16px 32px rgba(0, 0, 0, 0.38),
     0 1px 0 rgba(255, 255, 255, 0.06) inset;
   /* No overflow:hidden — it would clip the connection handles that sit just outside the node. */
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition:
+    border-color var(--motion) var(--ease),
+    box-shadow var(--motion) var(--ease),
+    transform var(--motion) var(--ease);
 }
 
 .nodeforge-node::before {
@@ -4480,7 +4620,7 @@ body.is-scrubbing * {
   background: linear-gradient(90deg, color-mix(in srgb, var(--tone) 18%, transparent), transparent 42%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion) var(--ease);
 }
 
 .nodeforge-node:hover {
@@ -4602,7 +4742,7 @@ body.is-scrubbing * {
   opacity: 0;
   pointer-events: none;
   transform: scaleY(0.72);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity var(--motion) var(--ease), transform var(--motion) var(--ease);
 }
 
 .nodeforge-node.selected .nfn-selection-mark {
@@ -8186,7 +8326,7 @@ body.is-scrubbing * {
   font-size: var(--text-xs);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease);
 }
 .chip-button:hover {
   background: var(--accent, var(--accent));

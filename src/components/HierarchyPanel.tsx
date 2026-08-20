@@ -422,11 +422,9 @@ export function HierarchyPanel() {
 
   return (
     <aside className="panel hierarchy-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">{editingPrefabId ? 'Prefab' : 'Scene'}</span>
-          <h2>Hierarchy</h2>
-        </div>
+      {/* No title here: the dock tab says "Objects" and the scene-root row below already names the
+          scene (or the prefab being edited, with its own icon). The row is just the actions. */}
+      <div className="panel-header panel-header-actions-only">
         <div className="panel-actions">
           <button className="icon-button compact" title="Create empty object" onClick={() => createObject('empty')}>
             <FilePlus2 size={14} aria-hidden />

@@ -50,6 +50,10 @@ const tmpDelta = new THREE.Vector3();
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const HALF_PI = Math.PI / 2 - 0.01;
 
+/** How much of the remaining distance the focus/view glide closes in one 60Hz frame. The frame loop
+ *  rescales this by the real delta so the glide takes the same wall-clock time at any refresh rate. */
+const FOCUS_EASE_PER_60HZ_FRAME = 0.18;
+
 /**
  * Unreal-style editor viewport camera. Replaces OrbitControls in edit mode.
  *  - Right-mouse drag  → free-look; while held, WASD fly + Q/E down/up, Shift = boost, wheel = fly speed.
@@ -271,13 +275,19 @@ export function EditorCamera({ focusNonce, viewCommand }: { focusNonce: number; 
     editorViewOrientation.pitch = s.pitch;
 
     if (s.focusing) {
-      s.target.lerp(s.focusTarget, 0.18);
-      s.distance += (s.focusDistance - s.distance) * 0.18;
+      // Framerate-independent ease. This used to apply a flat 0.18 PER FRAME, so the glide ran at
+      // whatever rate the display happened to tick: ~2.4x faster on a 144Hz panel than on 60Hz, and
+      // crawling on a struggling frame. Converting to an exponential decay over dt keeps the motion
+      // identical at 60Hz (alpha == 0.18 there, so the tuned feel is preserved) while making every
+      // other refresh rate take the same wall-clock time.
+      const alpha = 1 - Math.pow(1 - FOCUS_EASE_PER_60HZ_FRAME, dt * 60);
+      s.target.lerp(s.focusTarget, alpha);
+      s.distance += (s.focusDistance - s.distance) * alpha;
       // Ease the viewing angle toward the focus orientation (shortest yaw path).
       let yawDelta = s.focusYaw - s.yaw;
       yawDelta = Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
-      s.yaw += yawDelta * 0.18;
-      s.pitch += (s.focusPitch - s.pitch) * 0.18;
+      s.yaw += yawDelta * alpha;
+      s.pitch += (s.focusPitch - s.pitch) * alpha;
       s.euler.set(s.pitch, s.yaw, 0, 'YXZ');
       camera.quaternion.setFromEuler(s.euler);
       tmpForward.set(0, 0, -1).applyEuler(s.euler);

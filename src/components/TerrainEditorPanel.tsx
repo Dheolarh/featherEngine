@@ -491,11 +491,7 @@ export function TerrainEditorPanel() {
 
   return (
     <section className="panel material-panel terrain-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">World</span>
-          <h2>Terrain</h2>
-        </div>
+      <div className="panel-header panel-header-actions-only">
         {terrains.length > 0 && (
           <select
             className="blueprint-select"

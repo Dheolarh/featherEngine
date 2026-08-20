@@ -2,17 +2,18 @@ import { useEffect, useRef } from 'react';
 import { editorViewOrientation, type ViewPreset } from '../three/EditorCamera';
 
 /**
- * Corner orientation cube + view presets (Unreal/Blender style). The CSS-3D cube mirrors the live
+ * Corner orientation cube + view presets (Unreal/Blender style). Face offset is HALF the cube
+ * side from .view-cube-face — keep the two in sync or the cube comes apart. The CSS-3D cube mirrors the live
  * editor-camera orientation (read each frame from `editorViewOrientation`); clicking a face — or a
  * preset button — asks the camera to snap to that standard view via `onView`.
  */
 const FACES: Array<{ view: ViewPreset; label: string; transform: string }> = [
-  { view: 'front', label: 'FRONT', transform: 'translateZ(26px)' },
-  { view: 'back', label: 'BACK', transform: 'rotateY(180deg) translateZ(26px)' },
-  { view: 'right', label: 'RIGHT', transform: 'rotateY(90deg) translateZ(26px)' },
-  { view: 'left', label: 'LEFT', transform: 'rotateY(-90deg) translateZ(26px)' },
-  { view: 'top', label: 'TOP', transform: 'rotateX(90deg) translateZ(26px)' },
-  { view: 'bottom', label: 'BOT', transform: 'rotateX(-90deg) translateZ(26px)' },
+  { view: 'front', label: 'FRONT', transform: 'translateZ(22px)' },
+  { view: 'back', label: 'BACK', transform: 'rotateY(180deg) translateZ(22px)' },
+  { view: 'right', label: 'RIGHT', transform: 'rotateY(90deg) translateZ(22px)' },
+  { view: 'left', label: 'LEFT', transform: 'rotateY(-90deg) translateZ(22px)' },
+  { view: 'top', label: 'TOP', transform: 'rotateX(90deg) translateZ(22px)' },
+  { view: 'bottom', label: 'BOT', transform: 'rotateX(-90deg) translateZ(22px)' },
 ];
 
 const PRESETS: Array<{ view: ViewPreset; label: string }> = [

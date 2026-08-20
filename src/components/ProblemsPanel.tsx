@@ -237,6 +237,10 @@ export function ProblemsButton() {
   const errorCount = problems.filter((p) => p.severity === 'error').length;
   const warnCount = problems.filter((p) => p.severity === 'warning').length;
 
+  // Nothing wrong, nothing to say. This is a notification, not a tool — a permanent green tick in
+  // the toolbar is one more glyph to scan past on every project that is, normally, fine.
+  if (problems.length === 0 && !open) return null;
+
   return (
     <div className="problems-anchor">
       <button

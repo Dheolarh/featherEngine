@@ -78,9 +78,15 @@ function AppearanceSync() {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.theme = themeMode;
+    // DEV-only `?theme=nova` override so appearance work can be screenshot-checked without
+    // wiping persisted prefs (they are per-origin and survive between QA runs).
+    const override = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('theme') : null;
+    root.dataset.theme = override ?? themeMode;
     root.dataset.density = density;
-    root.style.setProperty('--accent', accent);
+    // Under the override, drop the inline accent so the theme block's own --accent wins and you
+    // see the palette as designed rather than blended with a persisted accent.
+    if (override) root.style.removeProperty('--accent');
+    else root.style.setProperty('--accent', accent);
     root.style.setProperty('--font-scale', String(fontScale));
   }, [themeMode, accent, density, fontScale]);
 

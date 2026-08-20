@@ -163,7 +163,25 @@ export function blankProject(name: string): NodeForgeProject {
   // New projects open on the signature Stylized Nature look (lush painterly outdoors). The look layer is
   // stamped explicitly HERE so it only affects new work — the default*() factories stay ACES/flat so that
   // loading a legacy project (which predates these fields) is never silently re-graded on open.
-  const environment = { ...defaultSceneEnvironment(), ...renderPresetEnvironmentPatch(DEFAULT_RENDER_PRESET), atmosphericFog: true };
+  //
+  // The empty-scene SKY is stamped here for the same reason. The factory default is a sunset
+  // (warm #F0B56A horizon); at the editor's default low camera angle that horizon fills most of the
+  // viewport, so every new project opened onto a wall of orange that fought the editor chrome and
+  // tinted whatever the user built. A calm cool studio gradient keeps the brightest, most saturated
+  // thing on screen the user's own content. Templates and saved projects carry their own
+  // environment and are untouched.
+  const environment = {
+    ...defaultSceneEnvironment(),
+    ...renderPresetEnvironmentPatch(DEFAULT_RENDER_PRESET),
+    atmosphericFog: true,
+    skyTopColor: '#42658F',
+    skyHorizonColor: '#BCCADA',
+    skyGroundColor: '#171C25',
+    // Fog has to sit on the horizon colour or distance reads as a dark vignette against a pale sky.
+    fogColor: '#AFBDCE',
+    fogNear: 28,
+    fogFar: 120,
+  };
   const renderSettings = { ...defaultRenderSettings(), ...renderPresetRenderPatch(DEFAULT_RENDER_PRESET) };
   return {
     version: PROJECT_VERSION,

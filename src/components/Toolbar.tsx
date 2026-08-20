@@ -7,7 +7,6 @@ import {
   ChevronDown,
   Circle,
   Command,
-  Copy,
   FolderOpen,
   Gamepad2,
   LampDesk,
@@ -20,11 +19,9 @@ import {
   Redo2,
   Rocket,
   Save,
-  Settings,
   SkipForward,
   Square,
   Store,
-  Trash2,
   TreePine,
   Undo2,
   X,
@@ -35,7 +32,7 @@ import { useEditorStore } from '../store/editorStore';
 import { undo, redo } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
 import { useEditorPrefs } from '../store/editorPrefsStore';
-import { applyCustomLayout, applyWorkspaceLayout, resetWorkspaceLayout, WORKSPACE_LAYOUTS } from './Workspace';
+import { applyCustomLayout, applyWorkspaceLayout, openBuiltInPanel, resetWorkspaceLayout, WORKSPACE_LAYOUTS, WORKSPACE_PANELS } from './Workspace';
 import { PreferencesModal } from './PreferencesModal';
 import { BuildReportDialog } from './BuildReportDialog';
 import type { SceneObjectKind, TreeArchetype } from '../types';
@@ -245,7 +242,7 @@ function ViewMenu({ onOpenPrefs }: { onOpenPrefs: () => void }) {
   };
 
   return (
-    <div className="file-menu" ref={ref}>
+    <div className="file-menu" data-menu="view" ref={ref}>
       <button className="file-menu-trigger" onClick={() => setOpen((value) => !value)}>
         View
       </button>
@@ -274,18 +271,13 @@ function ViewMenu({ onOpenPrefs }: { onOpenPrefs: () => void }) {
           )}
           <hr />
           <div className="file-menu-section">Panels</div>
-          <button
-            onClick={run(() =>
-              openWorkspacePanel({
-                id: 'store',
-                title: 'Asset Store',
-                placement: { referencePanel: 'project', direction: 'within' },
-              }),
-            )}
-          >
-            <Store size={14} aria-hidden />
-            <span>Asset Store</span>
-          </button>
+          {/* The default shell only docks Objects/Assets/Store, the viewport and the Inspector,
+              so every other panel has to be openable from here. */}
+          {WORKSPACE_PANELS.map((panel) => (
+            <button key={panel.id} onClick={run(() => openBuiltInPanel(panel.id))}>
+              <span>{panel.title}</span>
+            </button>
+          ))}
           {extensionPanels.length > 0 && (
             <>
               <hr />
@@ -407,9 +399,6 @@ function SceneSwitcher() {
 }
 
 export function Toolbar() {
-  const duplicateSelectedObject = useEditorStore((state) => state.duplicateSelectedObject);
-  const deleteSelectedObject = useEditorStore((state) => state.deleteSelectedObject);
-  const createPrefabFromObject = useEditorStore((state) => state.createPrefabFromObject);
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const isPlayPaused = useEditorStore((state) => state.isPlayPaused);
   const canUndo = useEditorStore((state) => state.undoDepth > 0);
@@ -418,11 +407,6 @@ export function Toolbar() {
   const setPlaying = useEditorStore((state) => state.setPlaying);
   const setPlayPaused = useEditorStore((state) => state.setPlayPaused);
   const stepPlayFrame = useEditorStore((state) => state.stepPlayFrame);
-  // Subscribe to the selected object's id+name as primitives, not the object itself: the runtime
-  // tick replaces the object array every frame, so subscribing to the object would re-render the
-  // whole toolbar 60×/sec during Play even though only these two fields are used.
-  const selectedObjectId = useEditorStore((state) => state.selectedObject()?.id);
-  const selectedObjectName = useEditorStore((state) => state.selectedObject()?.name);
   const isDirty = useEditorStore((state) => state.isDirty);
   const projectName = useProjectStore((state) => state.projectName);
   const save = useProjectStore((state) => state.save);
@@ -490,30 +474,10 @@ export function Toolbar() {
         </button>
       </div>
 
-      <div className="tool-group" aria-label="Object actions">
-        <button className="icon-button" title="Duplicate selected object" onClick={duplicateSelectedObject}>
-          <Copy size={16} aria-hidden />
-        </button>
-        <button
-          className="icon-button"
-          title="Save selected object as a reusable Prefab"
-          disabled={!selectedObjectId}
-          onClick={() => {
-            if (!selectedObjectId) return;
-            const id = createPrefabFromObject(selectedObjectId);
-            useProjectStore.setState({
-              toast: id
-                ? { kind: 'success', message: `Saved "${selectedObjectName}" as a prefab — see the Project browser.` }
-                : { kind: 'error', message: `Couldn't create a prefab from "${selectedObjectName}".` },
-            });
-          }}
-        >
-          <Boxes size={16} aria-hidden />
-        </button>
-        <button className="icon-button danger" title="Delete selected object" onClick={deleteSelectedObject}>
-          <Trash2 size={16} aria-hidden />
-        </button>
-      </div>
+      {/* Duplicate / Create Prefab / Delete used to live here. They are all on the object's
+          right-click menu in Objects, which is where people look for selection actions anyway —
+          three permanent top-bar buttons for them was duplicate surface, and two of them didn't
+          even grey out when nothing was selected. */}
 
       <div className="toolbar-spacer" />
 
@@ -530,13 +494,7 @@ export function Toolbar() {
         )}
       </div>
 
-      <button
-        className="icon-button"
-        title="Preferences (theme, layout, density)"
-        onClick={() => setPrefsOpen(true)}
-      >
-        <Settings size={16} aria-hidden />
-      </button>
+      {/* No settings cog: View → Preferences… opens the same modal. */}
 
       <div className="tool-group" aria-label="Runtime controls">
         <button
@@ -548,22 +506,22 @@ export function Toolbar() {
           {isPlaying ? <Square size={16} aria-hidden /> : <Play size={16} aria-hidden />}
           <span>{isPlaying ? 'Stop' : 'Play'}</span>
         </button>
-        <button
-          className={isPlayPaused ? 'icon-button active' : 'icon-button'}
-          title="Pause preview (F6)"
-          disabled={!isPlaying}
-          onClick={() => setPlayPaused(!isPlayPaused)}
-        >
-          <Pause size={16} aria-hidden />
-        </button>
-        <button
-          className="icon-button"
-          title="Step one frame (F7)"
-          disabled={!isPlaying}
-          onClick={() => stepPlayFrame()}
-        >
-          <SkipForward size={16} aria-hidden />
-        </button>
+        {/* Pause and frame-step are only meaningful mid-preview — permanently greyed-out buttons
+            are two more things to read past every time you look at the toolbar. */}
+        {isPlaying && (
+          <>
+            <button
+              className={isPlayPaused ? 'icon-button active' : 'icon-button'}
+              title="Pause preview (F6)"
+              onClick={() => setPlayPaused(!isPlayPaused)}
+            >
+              <Pause size={16} aria-hidden />
+            </button>
+            <button className="icon-button" title="Step one frame (F7)" onClick={() => stepPlayFrame()}>
+              <SkipForward size={16} aria-hidden />
+            </button>
+          </>
+        )}
         <RuntimeErrorBadge />
         <ProblemsButton />
         <button className="export-button" title="Save project (⌘S)" onClick={() => void save()} disabled={busy}>

@@ -687,11 +687,7 @@ export function UIEditorPanel() {
 
   return (
     <section className="panel ui-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Interface</span>
-          <h2>UI</h2>
-        </div>
+      <div className="panel-header panel-header-actions-only">
         {uiDocuments.length > 0 && (
           <select className="blueprint-select" value={doc?.id ?? ''} onChange={(event) => setActiveUIDocument(event.target.value)} title="Select UI document">
             {uiDocuments.map((item) => (

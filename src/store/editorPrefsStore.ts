@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type ThemeMode = 'forge' | 'unreal' | 'dark' | 'light' | 'midnight' | 'high-contrast';
+export type ThemeMode = 'nova' | 'forge' | 'unreal' | 'dark' | 'light' | 'midnight' | 'high-contrast';
 export type Density = 'comfortable' | 'compact';
 export type FontScale = 0.9 | 1.0 | 1.1;
 
@@ -27,8 +27,11 @@ interface EditorPrefsState {
 }
 
 const DEFAULTS = {
-  themeMode: 'forge' as ThemeMode,
-  accent: '#5b8cff',
+  themeMode: 'nova' as ThemeMode,
+  // Kept in sync with Nova's --accent. AppearanceSync writes this as an INLINE style on <html>,
+  // which outranks any --accent a [data-theme] block sets — so a theme can never actually choose
+  // its own accent, and this default is what a new user sees.
+  accent: '#4d9dff',
   density: 'comfortable' as Density,
   fontScale: 1.0 as FontScale,
 };

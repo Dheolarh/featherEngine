@@ -452,11 +452,7 @@ export function MaterialEditorPanel() {
 
   return (
     <section className="panel material-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Surface</span>
-          <h2>Material</h2>
-        </div>
+      <div className="panel-header panel-header-actions-only">
         {materials.length > 0 && (
           <select
             className="blueprint-select"

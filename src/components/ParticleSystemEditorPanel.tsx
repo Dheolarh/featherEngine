@@ -198,11 +198,7 @@ export function ParticleSystemEditorPanel() {
 
   return (
     <section className="panel material-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Effect</span>
-          <h2>Particle System</h2>
-        </div>
+      <div className="panel-header panel-header-actions-only">
         {particleSystems.length > 0 && (
           <select
             className="blueprint-select"

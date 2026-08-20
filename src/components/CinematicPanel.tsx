@@ -1831,11 +1831,7 @@ export function CinematicPanel() {
 
   return (
     <aside className="panel cinematic-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Film Mode</span>
-          <h2>Cinematics</h2>
-        </div>
+      <div className="panel-header panel-header-actions-only">
         <button className="icon-button" title="Create cinematic" onClick={() => createCinematic('Opening Shot', 8)}>
           <Plus size={14} aria-hidden />
         </button>

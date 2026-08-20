@@ -19,7 +19,12 @@ const num = (value: string, fallback: number) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-export function SceneSettingsPanel() {
+/**
+ * The scene settings sections, without any panel chrome. Rendered two ways:
+ *  - inside the Inspector when nothing is selected (the default right-hand view, as in Spline),
+ *  - inside the standalone Scene panel, for saved layouts and pop-out windows that still use it.
+ */
+export function SceneSettingsBody() {
   const activeSceneId = useEditorStore((state) => state.activeSceneId);
   // Stable scene subscription — the raw scene reference is replaced every Play tick (its objects
   // array is), but this panel only reads environment/name/count, so motion must not re-render it.
@@ -37,13 +42,7 @@ export function SceneSettingsPanel() {
   const audioAssets = useMemo(() => assets.filter((asset) => asset.type === 'audio'), [assets]);
   const imageAssets = useMemo(() => assets.filter((asset) => asset.type === 'image'), [assets]);
 
-  if (!scene) {
-    return (
-      <aside className="panel scene-settings-panel">
-        <div className="empty-state compact">No active scene.</div>
-      </aside>
-    );
-  }
+  if (!scene) return <div className="empty-state compact">No active scene.</div>;
 
   const environment = withSceneEnvironmentDefaults(scene.environment);
   const updateEnvironment = (patch: Partial<SceneEnvironmentSettings>) => updateSceneEnvironment(scene.id, patch);
@@ -53,14 +52,7 @@ export function SceneSettingsPanel() {
       : environment.backgroundColor;
 
   return (
-    <aside className="panel scene-settings-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Scene</span>
-          <h2>{scene.name}</h2>
-        </div>
-      </div>
-
+    <>
       <section className="inspector-section">
         <h3>Settings</h3>
         <label className="field-row">
@@ -628,6 +620,16 @@ export function SceneSettingsPanel() {
           Reset to Earth
         </button>
       </section>
+    </>
+  );
+}
+
+/** Standalone Scene panel — kept for saved layouts and pop-out windows. The default shell shows
+ *  these settings in the Inspector instead. */
+export function SceneSettingsPanel() {
+  return (
+    <aside className="panel scene-settings-panel">
+      <SceneSettingsBody />
     </aside>
   );
 }

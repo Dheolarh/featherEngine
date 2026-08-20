@@ -1170,11 +1170,8 @@ export function AssetBrowser() {
 
   return (
     <section className="panel asset-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Project</span>
-          <h2>Browser</h2>
-        </div>
+      {/* Title dropped: the dock tab already says "Assets". This row is the toolbar. */}
+      <div className="panel-header panel-header-actions-only">
         <button
           className={clsx('icon-button compact', showFolders && 'active')}
           title="Toggle folders panel"

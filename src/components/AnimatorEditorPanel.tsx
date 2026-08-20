@@ -573,11 +573,7 @@ export function AnimatorEditorPanel() {
 
   return (
     <section className="panel scripting-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Animation</span>
-          <h2>Animator</h2>
-        </div>
+      <div className="panel-header panel-header-actions-only">
         {controllers.length > 0 && controller && (
           <input
             className="name-input"

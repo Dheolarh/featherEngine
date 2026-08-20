@@ -1,4 +1,6 @@
-import { ChevronRight, Link2, MousePointer2, Palette, Settings2, Trash2, Unlink } from 'lucide-react';
+import { ChevronRight, Link2, Palette, Trash2, Unlink } from 'lucide-react';
+import { SceneSettingsBody } from './SceneSettingsPanel';
+import { QUALITY_LEVELS } from '../three/quality';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useGLTF } from '@react-three/drei';
@@ -8,7 +10,7 @@ import { useAssetUrl } from '../three/ModelAsset';
 import { DRACO_DECODER_PATH, extendGLTFLoader } from '../three/gltfDecoders';
 import { focusWorkspacePanel } from './workspacePanels';
 import { SocketPickerModal } from './SocketPickerModal';
-import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, AxisLockTuple, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, ReflectionProbeComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, TreeArchetype, TreeComponent, TreeSpec, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
+import type { AnimationAsset, AnimatorComponent, AnimatorController, AssetItem, AxisLockTuple, CableComponent, CharacterControllerComponent, ClothComponent, ExtraCollider, JointComponent, JointType, LightComponent, MaterialDefinition, MeshRendererComponent, ParticleEmitterShape, ParticleSystemComponent, PhysicsComponent, QualityLevel, ReflectionProbeComponent, SceneObject, SkeletalMeshAsset, TerrainComponent, TransformComponent, TreeArchetype, TreeComponent, TreeSpec, Vector3Tuple, VehicleComponent, VehicleWheelSetup, WaterVolumeComponent } from '../types';
 import { resolveVehicleWheels } from '../runtime/vehicleWheels';
 import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { particlePresetIds } from '../runtime/particlePresets';
@@ -1807,6 +1809,34 @@ function ReflectionProbeSection({
 }
 
 /** Project-wide post-processing (bloom + vignette). Shown when nothing is selected (a "world" setting). */
+/** Scalability (resolution / shadows / post-FX budget). Moved here from the viewport tool dock:
+ *  it is a render setting, not a manipulation tool, and it belongs next to the other ones. */
+function QualitySection() {
+  const quality = useEditorStore((state) => state.renderSettings.quality) ?? 'High';
+  const autoQuality = useEditorStore((state) => state.renderSettings.autoQuality !== false);
+  const update = useEditorStore((state) => state.updateRenderSettings);
+  return (
+    <InspectorSection title="Quality" defaultOpen={false}>
+      <p className="field-hint">Resolution, shadows and post-FX budget. Applies in Play and the exported game.</p>
+      <label className="field-row">
+        <span>Level</span>
+        <select className="quality-select" value={quality} onChange={(e) => update({ quality: e.target.value as QualityLevel })}>
+          {QUALITY_LEVELS.map((level) => (
+            <option key={level} value={level}>
+              {level}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field-row">
+        <span>Auto</span>
+        <input type="checkbox" checked={autoQuality} onChange={(e) => update({ autoQuality: e.target.checked })} />
+      </label>
+      <p className="field-hint">Auto drops the level under load while playing.</p>
+    </InspectorSection>
+  );
+}
+
 function RenderSettingsSection() {
   const rs = useEditorStore((state) => state.renderSettings);
   const update = useEditorStore((state) => state.updateRenderSettings);
@@ -3167,20 +3197,16 @@ export function InspectorPanel() {
   return (
     <aside className="panel inspector-panel">
       <div className="panel-header">
-        <div>
-          <span className="eyebrow">Object</span>
-          <h2>Inspector</h2>
-        </div>
-        <Settings2 size={18} aria-hidden />
+        <h2>{object ? object.name : 'Scene'}</h2>
+        <span className="panel-header-kind">{object ? object.kind : 'properties'}</span>
       </div>
 
       {!object ? (
+        // Nothing selected — this is the scene's own property sheet, the way Spline's right panel
+        // falls back to scene settings. No "nothing here" dead end.
         <div className="inspector-content">
-          <div className="empty-state">
-            <MousePointer2 size={20} aria-hidden />
-            <span>No object selected</span>
-            <small>Click an object in the Hierarchy or viewport to edit it — or use <strong>+ Add</strong> in the toolbar to create one. Scene-wide settings are below.</small>
-          </div>
+          <SceneSettingsBody />
+          <QualitySection />
           <RenderSettingsSection />
         </div>
       ) : (

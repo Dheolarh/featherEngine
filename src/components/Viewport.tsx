@@ -1,9 +1,10 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { ContactShadows, Edges, PerformanceMonitor, TransformControls } from '@react-three/drei';
-import { ArrowDownToLine, Aperture, Camera, ChevronDown, Globe, Gauge, Magnet, Maximize2, Minimize2, Move3D, Play, Rotate3D, Scaling, Square, View } from 'lucide-react';
+import { ContactShadows, Edges, Grid, PerformanceMonitor, TransformControls } from '@react-three/drei';
+import { ArrowDownToLine, Aperture, Camera, Globe, Magnet, Maximize2, Minimize2, Move3D, Play, Rotate3D, Scaling, Square, View } from 'lucide-react';
 import { useViewportPrefs } from '../store/viewportPrefsStore';
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import * as THREE from 'three';
+import { useEditorPrefs } from '../store/editorPrefsStore';
 import { effectiveSelection, selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { isTransientVfx, nonVfxObjectsSignature, useVfxObjects } from '../store/stableSelectors';
 import { undo, redo } from '../store/history';
@@ -59,7 +60,7 @@ import {
   batchSignature,
   InstancedIdsContext,
 } from '../three/modelInstancing';
-import { qualityProfile, QUALITY_LEVELS } from '../three/quality';
+import { qualityProfile } from '../three/quality';
 import { autoQualityStep, resetAutoQuality } from '../runtime/autoQuality';
 import { CinematicOverlay } from './CinematicOverlay';
 import { SceneEnvironment } from '../three/SceneEnvironment';
@@ -147,6 +148,10 @@ const EMPTY_BATCHES: Map<string, SceneObject[]> = new Map();
 const hideInRuntime = (object: SceneObject) => object.renderer?.hideInPlay ?? Boolean(object.physics?.isTrigger);
 
 function Primitive({ object, selected }: { object: SceneObject; selected: boolean }) {
+  // Selection outlines follow the editor accent. They were hardcoded amber, picked back when the
+  // default theme was warm — against Nova's cool palette that reads as a stray colour rather than
+  // "this thing is selected".
+  const selectionColor = useEditorPrefs((s) => s.accent);
   // Floating combat damage number.
   if (object.effect?.kind === 'damage') return <DamageNumber effect={object.effect} />;
   // Runtime particle burst (bullet impact, etc.) — render the points effect, nothing else.
@@ -387,7 +392,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
         <mesh>
           <octahedronGeometry args={[0.28, 0]} />
           <meshBasicMaterial color={l?.color ?? '#F7B955'} wireframe={!selected} />
-          {selected && <Edges color="#F7B955" scale={1.08} />}
+          {selected && <Edges color={selectionColor} scale={1.08} />}
         </mesh>
       </>
     );
@@ -398,7 +403,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <coneGeometry args={[0.32, 0.62, 4]} />
         <meshBasicMaterial color="#3DDC97" wireframe={!selected} />
-        {selected && <Edges color="#F7B955" scale={1.08} />}
+        {selected && <Edges color={selectionColor} scale={1.08} />}
       </mesh>
     );
   }
@@ -408,7 +413,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
       <mesh>
         <boxGeometry args={[0.34, 0.34, 0.34]} />
         <meshBasicMaterial color="#9CA3AF" wireframe />
-        {selected && <Edges color="#F7B955" scale={1.2} />}
+        {selected && <Edges color={selectionColor} scale={1.2} />}
       </mesh>
     );
   }
@@ -418,7 +423,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
       <mesh castShadow receiveShadow>
         <primitive object={SHARED_GEO.sphere} attach="geometry" dispose={null} />
         {commonMaterial}
-        {selected && <Edges color="#F7B955" scale={1.04} />}
+        {selected && <Edges color={selectionColor} scale={1.04} />}
       </mesh>
     );
   }
@@ -428,7 +433,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
       <mesh castShadow receiveShadow>
         <primitive object={SHARED_GEO.capsule} attach="geometry" dispose={null} />
         {commonMaterial}
-        {selected && <Edges color="#F7B955" scale={1.05} />}
+        {selected && <Edges color={selectionColor} scale={1.05} />}
       </mesh>
     );
   }
@@ -438,7 +443,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
       <mesh receiveShadow>
         <primitive object={SHARED_GEO.plane} attach="geometry" dispose={null} />
         {commonMaterial}
-        {selected && <Edges color="#F7B955" scale={1.01} />}
+        {selected && <Edges color={selectionColor} scale={1.01} />}
       </mesh>
     );
   }
@@ -447,7 +452,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
     <mesh castShadow receiveShadow>
       <primitive object={SHARED_GEO.box} attach="geometry" dispose={null} />
       {commonMaterial}
-      {selected && <Edges color="#F7B955" scale={1.03} />}
+      {selected && <Edges color={selectionColor} scale={1.03} />}
     </mesh>
   );
 }
@@ -1227,7 +1232,31 @@ function SceneContent({
       <CinematicPathGizmo />
       {/* Editor ground aids — hidden during Play so they don't show up (or sit at the origin over terrain) in
           the running game. */}
-      {!isPlaying && <gridHelper args={[24, 24, '#30394D', '#202737']} position={[0, 0.01, 0]} />}
+      {/* Infinite ground grid that dissolves into the distance instead of ending at a hard square.
+          The old gridHelper was a fixed 24x24 plane with hardcoded blue-grey lines: it stopped
+          abruptly 12 units out (so the world visibly "ran out" as soon as you panned) and clashed
+          with any sky that wasn't dark blue. This follows the camera and fades, so the floor reads
+          as endless and the horizon stays clean. */}
+      {!isPlaying && (
+        <Grid
+          position={[0, 0.01, 0]}
+          infiniteGrid
+          followCamera={false}
+          cellSize={1}
+          cellThickness={1}
+          /* Lines read DARKER than the floor, the way Spline's do — the studio sky is pale, so the
+             old light-on-dark values disappeared against it. */
+          cellColor="#5b6880"
+          sectionSize={10}
+          sectionThickness={1.8}
+          sectionColor="#3d4859"
+          /* Strength >1 crushed the near cells to nothing; 1 keeps them crisp underfoot and still
+             dissolves the horizon. */
+          fadeDistance={70}
+          fadeStrength={1}
+          side={THREE.DoubleSide}
+        />
+      )}
       {!isPlaying && (sceneEnvironment?.contactShadows ?? true) && (
         <ContactShadows
           position={[0, (sceneEnvironment?.contactShadowY ?? 0) - 0.01, 0]}
@@ -1470,55 +1499,6 @@ const SNAP_ANGLES = [5, 15, 45, 90];
 const SNAP_SCALES = [0.1, 0.25, 0.5, 1];
 
 /** Quality preset + Auto toggle, tucked into a popover so the topbar shows only frequent controls. */
-function QualityControl() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const quality = useEditorStore((state) => state.renderSettings.quality) ?? 'High';
-  const autoQuality = useEditorStore((state) => state.renderSettings.autoQuality !== false);
-  const updateRenderSettings = useEditorStore((state) => state.updateRenderSettings);
-
-  useEffect(() => {
-    const onClick = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, []);
-
-  return (
-    <div className="file-menu" ref={ref}>
-      <button
-        className={open ? 'viewport-tool-trigger active' : 'viewport-tool-trigger'}
-        title="Game quality (scalability) — resolution, shadows, post-FX"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Gauge size={14} aria-hidden />
-        <span>{quality}</span>
-        <ChevronDown size={12} aria-hidden />
-      </button>
-      {open && (
-        <div className="file-menu-popover quality-popover">
-          <div className="file-menu-section">Game quality</div>
-          {QUALITY_LEVELS.map((level) => (
-            <button
-              key={level}
-              className={quality === level ? 'active' : undefined}
-              onClick={() => updateRenderSettings({ quality: level })}
-            >
-              {level}
-            </button>
-          ))}
-          <hr />
-          <label className="quality-auto">
-            <input type="checkbox" checked={autoQuality} onChange={(event) => updateRenderSettings({ autoQuality: event.target.checked })} />
-            <span>Auto — drop under load while playing</span>
-          </label>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function ViewportPanel() {
   const [transformMode, setTransformMode] = useState<TransformMode>('translate');
   // Snap + coordinate space persist across reloads (browser-only viewport prefs).
@@ -1908,10 +1888,6 @@ export function ViewportPanel() {
   return (
     <section className={isPlaying ? 'viewport-panel is-playing' : 'viewport-panel'}>
       <div className="viewport-topbar">
-        <div className="viewport-title">
-          <View size={16} aria-hidden />
-          <span>Viewport</span>
-        </div>
         {editingPrefabId ? (
           <span className="viewport-mode editing-prefab" title={`Editing prefab "${editingPrefabName}"`}>
             Editing Prefab: {editingPrefabName}
@@ -1919,11 +1895,11 @@ export function ViewportPanel() {
               Done
             </button>
           </span>
-        ) : (
-          <span className={isPlaying ? 'viewport-mode running' : 'viewport-mode'}>
-            {isPlaying ? 'Preview Running' : 'Edit Mode'}
-          </span>
-        )}
+        ) : isPlaying ? (
+          // Only worth a badge while running. An "Edit Mode" chip when you are, self-evidently,
+          // editing is pure chrome — and it was the widest item in the dock.
+          <span className="viewport-mode running">Preview Running</span>
+        ) : null}
         <div className="segmented labeled" aria-label="Transform mode">
           {modes.map(({ mode, label, icon: Icon }) => {
             const key = mode === 'translate' ? 'W' : mode === 'rotate' ? 'E' : 'R';
@@ -1936,7 +1912,6 @@ export function ViewportPanel() {
               >
                 <Icon size={14} aria-hidden />
                 <span>{label}</span>
-                <kbd>{key}</kbd>
               </button>
             );
           })}
@@ -2033,7 +2008,8 @@ export function ViewportPanel() {
             <ArrowDownToLine size={14} aria-hidden />
           </button>
         </div>
-        <QualityControl />
+        {/* Quality moved to the Inspector's scene view (Quality section) — the dock is for tools
+            you use while manipulating objects, not render settings you set once. */}
       </div>
       {!editingPrefabId && (
         <>

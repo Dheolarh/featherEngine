@@ -24,6 +24,7 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof Palette }> = [
 ];
 
 const THEME_OPTIONS: Array<{ id: ThemeMode; label: string; hint: string }> = [
+  { id: 'nova', label: 'Nova', hint: 'Default — cool low-chroma graphite, one electric accent. Calm over long sessions.' },
   { id: 'forge', label: 'Forge', hint: 'NodeForge signature — warm industrial dark, molten-ember accents, mono numerics.' },
   { id: 'unreal', label: 'Unreal', hint: 'Flat neutral grays, squared corners — Unreal Engine feel.' },
   { id: 'dark', label: 'Dark', hint: 'Soft blue-grey panels.' },

@@ -26,7 +26,7 @@ import { TreeBuilderPanel } from './TreeBuilderPanel';
 import { AssetStorePanel } from './AssetStorePanel';
 import { SceneSettingsPanel } from './SceneSettingsPanel';
 import { CinematicPanel } from './CinematicPanel';
-import { getWorkspaceApi, setWorkspaceApi } from './workspacePanels';
+import { ensureWorkspacePanel, focusWorkspacePanel, getWorkspaceApi, registerPanelDefs, setWorkspaceApi } from './workspacePanels';
 import { onPanelClosed } from '../sync/storeSync';
 import { POPPABLE_PANELS, openPanelWindow } from '../sync/popoutWindow';
 import { extensionRegistry } from '../extensions/host';
@@ -34,31 +34,61 @@ import { useExtensionSnapshot } from '../extensions/react';
 import { ExtensionPanelBoundary } from '../extensions/ExtensionPanelBoundary';
 
 const LAYOUT_KEY = 'nodeforge.layout';
-// Bumped to 12 to add the Asset Store panel — a stale saved layout is discarded so it shows up.
-const LAYOUT_VERSION = 12;
+// Bumped to 14: the Spline-style three-zone default (left sidebar / viewport / contextual
+// inspector), plus moving the full editors (Terrain/Tree/Animator/UI) to the bottom dock — they
+// broke visibly when tabbed into the Inspector's narrow column. A stale saved layout is discarded
+// so existing users actually get the corrected shell.
+const LAYOUT_VERSION = 14;
 
 // Where each panel sits when (re)added to the dock — used to restore a panel after
 // its popped-out window closes.
 type PanelDir = 'left' | 'right' | 'above' | 'below' | 'within';
+
+/** Sidebar widths for the default shell. The Inspector is wider because it carries labelled
+ *  field rows; the object/asset list only needs room for a name and a badge. */
+const SIDEBAR_WIDTH = 300;
+const INSPECTOR_WIDTH = 330;
 type PanelDef = { component: string; title: string; ref?: string; direction?: PanelDir };
 const PANEL_DEFS: Record<string, PanelDef> = {
   viewport: { component: 'viewport', title: 'Viewport' },
-  hierarchy: { component: 'hierarchy', title: 'Hierarchy', ref: 'viewport', direction: 'left' },
+  // Left sidebar trio — all tabs of one group, so opening one never splits the sidebar.
+  hierarchy: { component: 'hierarchy', title: 'Objects', ref: 'viewport', direction: 'left' },
+  project: { component: 'project', title: 'Assets', ref: 'hierarchy', direction: 'within' },
+  store: { component: 'store', title: 'Store', ref: 'hierarchy', direction: 'within' },
+  // Right: the one contextual property panel.
   inspector: { component: 'inspector', title: 'Inspector', ref: 'viewport', direction: 'right' },
+  // Right side = property sheets. These are plain forms, so they read fine in a ~330px column
+  // and tab in beside the Inspector.
+  materials: { component: 'materials', title: 'Material', ref: 'inspector', direction: 'within' },
+  particles: { component: 'particles', title: 'Particles', ref: 'inspector', direction: 'within' },
+  // Bottom = full editors. Terrain (brush + tabs), Tree (asset list + params), Animator (a state
+  // graph) and UI (element tree + canvas) all lay out in two or more columns and visibly break
+  // when squeezed into the Inspector's width — labels collide with their own controls.
+  terrain: { component: 'terrain', title: 'Terrain', ref: 'viewport', direction: 'below' },
+  trees: { component: 'trees', title: 'Tree', ref: 'viewport', direction: 'below' },
+  animator: { component: 'animator', title: 'Animator', ref: 'viewport', direction: 'below' },
+  ui: { component: 'ui', title: 'UI', ref: 'viewport', direction: 'below' },
   scripting: { component: 'scripting', title: 'Scripting', ref: 'viewport', direction: 'below' },
-  project: { component: 'project', title: 'Project', ref: 'hierarchy', direction: 'below' },
-  materials: { component: 'materials', title: 'Material', ref: 'inspector', direction: 'below' },
-  terrain: { component: 'terrain', title: 'Terrain', ref: 'materials', direction: 'within' },
-  trees: { component: 'trees', title: 'Tree Builder', ref: 'materials', direction: 'within' },
-  // The store is where content comes from, so it tabs alongside the Project browser.
-  store: { component: 'store', title: 'Asset Store', ref: 'project', direction: 'within' },
-  particles: { component: 'particles', title: 'Particle System', ref: 'materials', direction: 'within' },
-  animator: { component: 'animator', title: 'Animator', ref: 'inspector', direction: 'below' },
-  ui: { component: 'ui', title: 'UI', ref: 'inspector', direction: 'below' },
+  cinematic: { component: 'cinematic', title: 'Film Mode', ref: 'viewport', direction: 'below' },
+  // Kept registered so old saved layouts and pop-out windows still resolve it, but no longer
+  // docked by default — the Inspector shows scene settings when nothing is selected.
   scene: { component: 'scene', title: 'Scene', ref: 'inspector', direction: 'within' },
-  // Film Mode is a Sequencer — it wants width, so it docks along the bottom next to Scripting.
-  cinematic: { component: 'cinematic', title: 'Film Mode', ref: 'scripting', direction: 'within' },
 };
+
+/** Panels the View menu offers, in menu order. Excludes `viewport` (never closable) and `scene`
+ *  (folded into the Inspector's no-selection state). */
+export const WORKSPACE_PANELS: Array<{ id: string; title: string }> = [
+  'hierarchy', 'project', 'store', 'inspector',
+  'materials', 'terrain', 'trees', 'particles', 'animator', 'ui',
+  'scripting', 'cinematic',
+].map((id) => ({ id, title: PANEL_DEFS[id].title }));
+
+// Hand the placement table to workspacePanels so focusWorkspacePanel can dock a panel on demand
+// instead of no-oping when it isn't already open.
+registerPanelDefs(PANEL_DEFS);
+
+/** Open a built-in panel by id (adding it at its usual spot if it isn't docked) and focus it. */
+export const openBuiltInPanel = focusWorkspacePanel;
 
 // Each panel is wrapped in a React <Profiler> feeding the perf overlay's render-attribution table
 // (dev builds only — onRender is a no-op in production), so a panel re-rendering during Play shows
@@ -90,19 +120,14 @@ const builtInComponents = {
 /** Re-add a panel to the dock (after its popped-out window closes), avoiding duplicates. */
 function restoreDockPanel(api: DockviewApi, id: string) {
   if (api.getPanel(id)) return;
+  // Built-in panels are placed by the shared helper; extensions carry their own placement.
+  if (ensureWorkspacePanel(id)) return;
   const extensionPanel = extensionRegistry.getPanel(id);
-  const def = PANEL_DEFS[id] ?? (extensionPanel
-    ? {
-        component: extensionPanel.id,
-        title: extensionPanel.title,
-        ref: extensionPanel.placement?.referencePanel,
-        direction: extensionPanel.placement?.direction,
-      }
-    : undefined);
-  if (!def) return;
-  // Position relative to its usual neighbour, but fall back to a plain add if that's gone.
-  const position = def.ref && def.direction && api.getPanel(def.ref) ? { referencePanel: def.ref, direction: def.direction } : undefined;
-  api.addPanel({ id, component: def.component, title: def.title, position });
+  if (!extensionPanel) return;
+  const ref = extensionPanel.placement?.referencePanel;
+  const direction = extensionPanel.placement?.direction;
+  const position = ref && direction && api.getPanel(ref) ? { referencePanel: ref, direction } : undefined;
+  api.addPanel({ id, component: extensionPanel.id, title: extensionPanel.title, position });
 }
 
 /** Pop a panel out into its own OS window and remove it from the dock (restored on close). */
@@ -151,73 +176,62 @@ function HeaderActions(props: IDockviewHeaderActionsProps) {
   );
 }
 
+/**
+ * Default shell — three zones, modelled on Spline: a single left sidebar, a dominant viewport,
+ * and one contextual property panel on the right.
+ *
+ * The deliberate omission is the bottom dock. Scripting, Film Mode, the Animator and the
+ * per-component editors (Material/Terrain/Trees/Particles/UI) are NOT docked up-front: on a blank
+ * project they were six empty panels competing for attention and squeezing the viewport into a
+ * quarter of the screen. They open on demand from View → Panels, from the command palette, or
+ * automatically when you select an object that actually uses them (see revealPanelForSelection).
+ */
 function buildDefaultLayout(api: DockviewApi) {
-  api.clear();
-  // Keep the viewport always-rendered so its WebGL context survives tab/float changes.
-  api.addPanel({ id: 'viewport', component: 'viewport', title: 'Viewport', renderer: 'always' });
-  api.addPanel({ id: 'hierarchy', component: 'hierarchy', title: 'Hierarchy', position: { referencePanel: 'viewport', direction: 'left' } });
-  api.addPanel({ id: 'inspector', component: 'inspector', title: 'Inspector', position: { referencePanel: 'viewport', direction: 'right' } });
-  api.addPanel({ id: 'scene', component: 'scene', title: 'Scene', position: { referencePanel: 'inspector', direction: 'within' } });
-  api.addPanel({ id: 'scripting', component: 'scripting', title: 'Scripting', position: { referencePanel: 'viewport', direction: 'below' } });
-  api.addPanel({ id: 'project', component: 'project', title: 'Project', position: { referencePanel: 'hierarchy', direction: 'below' } });
-  api.addPanel({ id: 'materials', component: 'materials', title: 'Material', position: { referencePanel: 'inspector', direction: 'below' } });
-  api.addPanel({ id: 'terrain', component: 'terrain', title: 'Terrain', position: { referencePanel: 'materials', direction: 'within' } });
-  api.addPanel({ id: 'trees', component: 'trees', title: 'Tree Builder', position: { referencePanel: 'materials', direction: 'within' } });
-  api.addPanel({ id: 'store', component: 'store', title: 'Asset Store', position: { referencePanel: 'project', direction: 'within' } });
-  // Adding a tab activates it — hand the group back to Project so the store doesn't hijack the default view.
-  api.getPanel('project')?.api.setActive();
-  // Animator shares the Material group as a tab (both author reusable assets next to the Inspector).
-  api.addPanel({ id: 'animator', component: 'animator', title: 'Animator', position: { referencePanel: 'materials', direction: 'within' } });
-  // UI editor joins the same group as another tab.
-  api.addPanel({ id: 'ui', component: 'ui', title: 'UI', position: { referencePanel: 'materials', direction: 'within' } });
-  api.addPanel({ id: 'particles', component: 'particles', title: 'Particle System', position: { referencePanel: 'materials', direction: 'within' } });
-  // Film Mode is a wide Sequencer — dock it along the bottom as a tab beside Scripting.
-  api.addPanel({ id: 'cinematic', component: 'cinematic', title: 'Film Mode', position: { referencePanel: 'scripting', direction: 'within' } });
+  buildShell(api);
 }
 
-/** Modeling-first layout: big viewport with Hierarchy/Inspector hugging the sides. No Scripting at the bottom. */
-function buildModelingLayout(api: DockviewApi) {
+/**
+ * The three zones every preset shares: viewport in the middle, Objects/Assets/Store tabbed into
+ * one left sidebar, contextual Inspector on the right. Presets then add their specialist panel.
+ */
+function buildShell(api: DockviewApi) {
   api.clear();
   api.addPanel({ id: 'viewport', component: 'viewport', title: 'Viewport', renderer: 'always' });
-  api.addPanel({ id: 'hierarchy', component: 'hierarchy', title: 'Hierarchy', position: { referencePanel: 'viewport', direction: 'left' } });
-  api.addPanel({ id: 'project', component: 'project', title: 'Project', position: { referencePanel: 'hierarchy', direction: 'below' } });
+  api.addPanel({ id: 'hierarchy', component: 'hierarchy', title: 'Objects', position: { referencePanel: 'viewport', direction: 'left' } });
+  api.addPanel({ id: 'project', component: 'project', title: 'Assets', position: { referencePanel: 'hierarchy', direction: 'within' } });
+  api.addPanel({ id: 'store', component: 'store', title: 'Store', position: { referencePanel: 'hierarchy', direction: 'within' } });
+  api.getPanel('hierarchy')?.api.setActive();
   api.addPanel({ id: 'inspector', component: 'inspector', title: 'Inspector', position: { referencePanel: 'viewport', direction: 'right' } });
-  api.addPanel({ id: 'scene', component: 'scene', title: 'Scene', position: { referencePanel: 'inspector', direction: 'within' } });
-  api.addPanel({ id: 'materials', component: 'materials', title: 'Material', position: { referencePanel: 'inspector', direction: 'below' } });
-  api.addPanel({ id: 'terrain', component: 'terrain', title: 'Terrain', position: { referencePanel: 'materials', direction: 'within' } });
-  api.addPanel({ id: 'particles', component: 'particles', title: 'Particle System', position: { referencePanel: 'materials', direction: 'within' } });
+  // Dockview splits evenly by default, which left the viewport at a third of the window — the
+  // thing you are actually building should dominate, so pin the sidebars to a readable fixed
+  // width and let the viewport take the rest.
+  api.getPanel('hierarchy')?.api.setSize({ width: SIDEBAR_WIDTH });
+  api.getPanel('inspector')?.api.setSize({ width: INSPECTOR_WIDTH });
+}
+
+/** Modeling-first: the bare shell, with the material editor tabbed behind the Inspector. */
+function buildModelingLayout(api: DockviewApi) {
+  buildShell(api);
+  api.addPanel({ id: 'materials', component: 'materials', title: 'Material', position: { referencePanel: 'inspector', direction: 'within' } });
+  api.getPanel('inspector')?.api.setActive();
 }
 
 /** Scripting-first: graph dominates the bottom half. */
 function buildScriptingLayout(api: DockviewApi) {
-  api.clear();
-  api.addPanel({ id: 'viewport', component: 'viewport', title: 'Viewport', renderer: 'always' });
-  api.addPanel({ id: 'scripting', component: 'scripting', title: 'Scripting', position: { referencePanel: 'viewport', direction: 'right' } });
-  api.addPanel({ id: 'hierarchy', component: 'hierarchy', title: 'Hierarchy', position: { referencePanel: 'viewport', direction: 'left' } });
-  api.addPanel({ id: 'project', component: 'project', title: 'Project', position: { referencePanel: 'hierarchy', direction: 'below' } });
-  api.addPanel({ id: 'inspector', component: 'inspector', title: 'Inspector', position: { referencePanel: 'scripting', direction: 'right' } });
-  api.addPanel({ id: 'scene', component: 'scene', title: 'Scene', position: { referencePanel: 'inspector', direction: 'within' } });
+  buildShell(api);
+  api.addPanel({ id: 'scripting', component: 'scripting', title: 'Scripting', position: { referencePanel: 'viewport', direction: 'below' } });
 }
 
-/** Animation-first: Animator front-and-centre, Inspector + Hierarchy nearby. */
+/** Animation-first: Animator front-and-centre. */
 function buildAnimationLayout(api: DockviewApi) {
-  api.clear();
-  api.addPanel({ id: 'viewport', component: 'viewport', title: 'Viewport', renderer: 'always' });
+  buildShell(api);
   api.addPanel({ id: 'animator', component: 'animator', title: 'Animator', position: { referencePanel: 'viewport', direction: 'below' } });
-  api.addPanel({ id: 'hierarchy', component: 'hierarchy', title: 'Hierarchy', position: { referencePanel: 'viewport', direction: 'left' } });
-  api.addPanel({ id: 'inspector', component: 'inspector', title: 'Inspector', position: { referencePanel: 'viewport', direction: 'right' } });
-  api.addPanel({ id: 'scene', component: 'scene', title: 'Scene', position: { referencePanel: 'inspector', direction: 'within' } });
-  api.addPanel({ id: 'project', component: 'project', title: 'Project', position: { referencePanel: 'hierarchy', direction: 'below' } });
 }
 
-/** Cinematic-first: Film Mode owns the bottom; everything else collapses around the viewport. */
+/** Cinematic-first: Film Mode owns the bottom. */
 function buildCinematicLayout(api: DockviewApi) {
-  api.clear();
-  api.addPanel({ id: 'viewport', component: 'viewport', title: 'Viewport', renderer: 'always' });
+  buildShell(api);
   api.addPanel({ id: 'cinematic', component: 'cinematic', title: 'Film Mode', position: { referencePanel: 'viewport', direction: 'below' } });
-  api.addPanel({ id: 'hierarchy', component: 'hierarchy', title: 'Hierarchy', position: { referencePanel: 'viewport', direction: 'left' } });
-  api.addPanel({ id: 'inspector', component: 'inspector', title: 'Inspector', position: { referencePanel: 'viewport', direction: 'right' } });
-  api.addPanel({ id: 'scene', component: 'scene', title: 'Scene', position: { referencePanel: 'inspector', direction: 'within' } });
 }
 
 export type WorkspaceLayoutId = 'default' | 'modeling' | 'scripting' | 'animation' | 'cinematic';

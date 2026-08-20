@@ -85,12 +85,6 @@ export function TreeBuilderPanel() {
   if (!spec) {
     return (
       <section className="panel material-panel">
-        <div className="panel-header">
-          <div>
-            <span className="eyebrow">Vegetation</span>
-            <h2>Tree Builder</h2>
-          </div>
-        </div>
         <div className="empty-state wide">
           <TreePine size={18} aria-hidden />
           <span>No tree assets yet</span>
@@ -107,11 +101,7 @@ export function TreeBuilderPanel() {
 
   return (
     <section className="panel material-panel terrain-panel">
-      <div className="panel-header">
-        <div>
-          <span className="eyebrow">Vegetation</span>
-          <h2>Tree Builder</h2>
-        </div>
+      <div className="panel-header panel-header-actions-only">
         <button className="icon-button compact" title="New tree asset" onClick={() => createTreeSpec('broadleaf')}>
           <Plus size={14} aria-hidden />
         </button>
