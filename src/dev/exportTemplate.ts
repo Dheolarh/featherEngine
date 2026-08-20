@@ -18,7 +18,15 @@ import type { AssetItem } from '../types';
  * of JSON in a single unstreamable document.
  */
 
-type TemplateKey = 'third-person' | 'first-person' | 'driving' | 'sim-racing' | 'cinematic' | 'meadows' | 'cube-realm';
+type TemplateKey =
+  | 'third-person'
+  | 'first-person'
+  | 'driving'
+  | 'sim-racing'
+  | 'cinematic'
+  | 'meadows'
+  | 'cube-realm'
+  | 'physics-lab';
 
 interface TemplateDef {
   slug: string;
@@ -71,6 +79,13 @@ const TEMPLATES: Record<TemplateKey, TemplateDef> = {
     description: 'Stylized BOTW-style grass, wildflowers and trees to walk through.',
     tags: ['template', 'world', 'vegetation', 'outdoor'],
     build: async () => (await import('../project/meadowTemplate')).createMeadowTemplate(),
+  },
+  'physics-lab': {
+    slug: 'template-physics-lab',
+    title: 'Physics Lab',
+    description: 'A rig for exploring axis locks, stay events, spin and gravity overrides.',
+    tags: ['template', 'world', 'physics', 'prototyping'],
+    build: async () => (await import('../project/physicsLabTemplate')).createPhysicsLabTemplate(),
   },
   'cube-realm': {
     slug: 'template-cube-realm',

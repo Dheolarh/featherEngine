@@ -486,6 +486,77 @@ describe('FeatherScript round-trip: text -> graph -> text', () => {
     expect(motors).toHaveLength(2);
   });
 
+  it('physics, tween, VFX, camera, vehicles, and environment statements', () => {
+    const { first, printed } = roundTrip(
+      [
+        'blueprint Effects',
+        '',
+        'on start:',
+        '    set_physics(self, { enabled: true, body: "dynamic", collider: "box", mass: 1 })',
+        '    set_ragdoll(self, true)',
+        '    tween(self, property: "position", to: vec3(0, 2, 0), duration: 1)',
+        '    fracture(self)',
+        '    burst_particles(self, 16)',
+        '    set_particles(self, true)',
+        '    spawn_particles("fx-1", location: self.position)',
+        '    play_animation("wave")',
+        '    set_movement_mode(self, "swimming")',
+        '    enter_vehicle(self)',
+        '    exit_vehicle(self)',
+        '    spawn_projectile(speed: 20, damage: 25)',
+        '    spawn_attached("weapon", bone: "hand_r")',
+        '    cut_cable(self)',
+        '    set_cable_length(self, 4)',
+        '    Camera.set(distance: 6, height: 2.6)',
+        '    Screen.fade(1, duration: 0.5, color: "#000000")',
+        '    Replay.start(8)',
+        '    Environment.set({ fogEnabled: true, fogColor: "#88aacc" })',
+        '    Time.of_day = 0.35',
+        '    print(Time.of_day)',
+        '',
+        'on land:',
+        '    print(speed)',
+      ].join('\n'),
+    );
+
+    for (const line of [
+      'set_physics(self, { enabled: true, body: "dynamic", collider: "box", mass: 1 })',
+      'set_ragdoll(self, true)',
+      'tween(self, property: "position", to: vec3(0, 2, 0), duration: 1)',
+      'fracture(self)',
+      'burst_particles(self, 16)',
+      'set_particles(self, true)',
+      'spawn_particles("fx-1", location: self.position)',
+      'play_animation("wave")',
+      'set_movement_mode(self, "swimming")',
+      'enter_vehicle(self)',
+      'exit_vehicle(self)',
+      'spawn_projectile(speed: 20, damage: 25)',
+      'spawn_attached("weapon", bone: "hand_r")',
+      'cut_cable(self)',
+      'set_cable_length(self, 4)',
+      'Camera.set(distance: 6, height: 2.6)',
+      'Screen.fade(1, duration: 0.5, color: "#000000")',
+      'Replay.start(8)',
+      'Environment.set({ fogEnabled: true, fogColor: "#88aacc" })',
+      'Time.of_day = 0.35',
+      'print(Time.of_day)',
+      'on land:',
+      'print(speed)',
+    ]) {
+      expect(printed).toContain(line);
+    }
+
+    const graph = first.graph!;
+    nodeOf(graph, 'action.setPhysics');
+    nodeOf(graph, 'action.tweenProperty');
+    nodeOf(graph, 'action.setEnvironment');
+    nodeOf(graph, 'action.setTimeOfDay');
+    nodeOf(graph, 'query.getTimeOfDay');
+    const land = nodeOf(graph, 'event.land');
+    expect(graph.edges.some((edge) => edge.source === land.id && edge.targetHandle === 'message')).toBe(true);
+  });
+
   it('timer, interact, and custom-event firing', () => {
     const { printed } = roundTrip(
       [

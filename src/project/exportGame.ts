@@ -1,5 +1,6 @@
 import { PROJECT_VERSION, type AssetItem, type NodeForgeProject } from '../types';
 import { sha256Hex } from '../utils/contentHash';
+import { migrateLoaded } from './serialize';
 
 /** Bundle format version, bumped independently of the project file format. */
 export const GAME_BUNDLE_VERSION = '1.0.0';
@@ -143,11 +144,13 @@ function resolveEmbeddedAssets(project: NodeForgeProject): NodeForgeProject {
 /** Parse a loaded game bundle back into a runnable project. Accepts a raw `NodeForgeProject` too. */
 export function readGameBundle(raw: unknown): { project: NodeForgeProject; startSceneId: string } {
   const data = raw as Partial<GameBundle> & Partial<NodeForgeProject>;
-  if (data && typeof data === 'object' && 'project' in data && data.project) {
-    const project = resolveEmbeddedAssets(data.project as NodeForgeProject);
-    return { project, startSceneId: data.startSceneId ?? project.activeSceneId };
-  }
-  // Fall back to treating the payload as a bare project (e.g. a raw .nforge file).
-  const project = resolveEmbeddedAssets(raw as NodeForgeProject);
-  return { project, startSceneId: project.activeSceneId };
+  const isBundle = Boolean(data && typeof data === 'object' && 'project' in data && data.project);
+  // Bundles exported by older engine versions predate whole project collections, so run the same
+  // migration the editor uses when opening a project file. Without it the player would hand the
+  // runtime a project whose collections are `undefined` rather than empty arrays.
+  // The payload may also be a bare `NodeForgeProject` (e.g. a raw .nforge file dropped next to
+  // the player), which `migrateLoaded` accepts and normalizes the same way.
+  const project = resolveEmbeddedAssets(migrateLoaded(isBundle ? data.project : raw));
+  const startSceneId = (isBundle ? data.startSceneId : undefined) ?? project.activeSceneId;
+  return { project, startSceneId };
 }

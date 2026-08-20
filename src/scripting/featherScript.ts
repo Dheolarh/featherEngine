@@ -209,6 +209,8 @@ class FeatherScriptPrinter {
         return 'on receive_damage(amount):';
       case 'event.timer':
         return `on timer(${formatNumber(Number(root.data.numberValue ?? 1))}):`;
+      case 'event.land':
+        return 'on land:';
       case 'event.functionEntry':
         return `function ${sanitizeIdentifier(root.data.functionName || 'MyFunction', 'MyFunction')}(a, b, c):`;
       default:
@@ -477,6 +479,81 @@ class FeatherScriptPrinter {
           ['collider', quote(node.data.physicsCollider ?? 'box')],
           ['mass', this.valueInput(node, 'mass', Number(node.data.physicsMass ?? 1))],
         ])})`;
+      case 'action.setRagdoll':
+        return `set_ragdoll(${this.targetArgument(node)}, ${this.valueInput(node, 'on', node.data.booleanValue ?? true)})`;
+      case 'action.tweenProperty': {
+        const args = [
+          this.targetArgument(node),
+          `property: ${quote(node.data.tweenProperty ?? 'position')}`,
+          `to: ${this.valueInput(node, 'to', node.data.vectorValue ?? [0, 0, 0])}`,
+          `duration: ${this.valueInput(node, 'duration', Number(node.data.numberValue ?? 1))}`,
+        ];
+        const easing = node.data.easing ?? 'easeInOut';
+        if (easing !== 'easeInOut') args.push(`easing: ${quote(easing)}`);
+        return `tween(${args.join(', ')})`;
+      }
+      case 'action.fractureObject':
+        return `fracture(${this.targetArgument(node)})`;
+      case 'action.burstParticles':
+        return `burst_particles(${this.targetArgument(node)}, ${this.valueInput(node, 'count', Number(node.data.numberValue ?? 16))})`;
+      case 'action.setParticlesEmitting':
+        return `set_particles(${this.targetArgument(node)}, ${this.valueInput(node, 'on', node.data.booleanValue ?? true)})`;
+      case 'action.spawnParticleSystem': {
+        const args = [quote(node.data.particleSystemId ?? 'particles')];
+        args.push(`location: ${this.valueInput(node, 'location', raw('self.position'))}`);
+        if (node.data.particleAttach) args.push('attach: true');
+        return `spawn_particles(${args.join(', ')})`;
+      }
+      case 'action.playAnimation': {
+        const args = [quote(node.data.animationId ?? 'animation')];
+        const target = this.targetArgument(node);
+        if (target !== 'self') args.push(`target: ${target}`);
+        const speed = this.valueInput(node, 'speed', Number(node.data.animationSpeed ?? 1));
+        if (speed !== '1') args.push(`speed: ${speed}`);
+        return `play_animation(${args.join(', ')})`;
+      }
+      case 'action.setMovementMode':
+        return `set_movement_mode(${this.targetArgument(node)}, ${quote(node.data.movementMode ?? 'walking')})`;
+      case 'action.enterVehicle':
+        return `enter_vehicle(${this.targetArgument(node)})`;
+      case 'action.exitVehicle': {
+        const args = [this.targetArgument(node)];
+        const offset = this.linkedValueInput(node, 'offset');
+        if (offset) args.push(`offset: ${offset}`);
+        else if (node.data.vectorValue) args.push(`offset: ${formatVector(node.data.vectorValue)}`);
+        return `exit_vehicle(${args.join(', ')})`;
+      }
+      case 'action.spawnProjectile': {
+        const args = [
+          `speed: ${this.valueInput(node, 'speed', Number(node.data.projectileSpeed ?? 20))}`,
+          `damage: ${this.valueInput(node, 'damage', Number(node.data.projectileDamage ?? 25))}`,
+        ];
+        return `spawn_projectile(${args.join(', ')})`;
+      }
+      case 'action.spawnAttached': {
+        const args = [quote(node.data.assetId ?? 'asset')];
+        if (node.data.attachBoneName) args.push(`bone: ${quote(node.data.attachBoneName)}`);
+        if (node.data.attachSocketName) args.push(`socket: ${quote(node.data.attachSocketName)}`);
+        const target = this.targetArgument(node);
+        if (target !== 'self') args.push(`target: ${target}`);
+        return `spawn_attached(${args.join(', ')})`;
+      }
+      case 'action.cutCable':
+        return `cut_cable(${this.targetArgument(node)})`;
+      case 'action.setCableLength':
+        return `set_cable_length(${this.targetArgument(node)}, ${this.valueInput(node, 'length', Number(node.data.numberValue ?? 2))})`;
+      case 'action.setCamera':
+        return `Camera.set(distance: ${this.valueInput(node, 'distance', 6)}, height: ${this.valueInput(node, 'height', 2.6)})`;
+      case 'action.screenFade': {
+        const args = [`${this.valueInput(node, 'to', Number(node.data.fadeTo ?? 1))}`];
+        args.push(`duration: ${this.valueInput(node, 'duration', Number(node.data.numberValue ?? 0.5))}`);
+        if (node.data.fadeColor) args.push(`color: ${quote(node.data.fadeColor)}`);
+        return `Screen.fade(${args.join(', ')})`;
+      }
+      case 'action.startReplay':
+        return `Replay.start(${this.valueInput(node, 'seconds', Number(node.data.numberValue ?? 8))})`;
+      case 'action.setTimeOfDay':
+        return `Time.of_day = ${this.valueInput(node, 'time', Number(node.data.timeOfDay ?? node.data.numberValue ?? 0.35))}`;
       case 'variable.set':
         return `${this.variableTarget(node)} = ${this.valueInput(node, 'value', this.literalForType(node.data.valueType as GraphValueType | undefined, node))}`;
       case 'variable.setObject': {
@@ -647,6 +724,9 @@ class FeatherScriptPrinter {
       case 'event.receiveDamage':
         result = 'amount';
         break;
+      case 'event.land':
+        result = 'speed';
+        break;
       case 'logic.cast':
         result = `cast(${this.valueInput(node, 'object', raw(this.targetLiteral(node.data.targetObjectId)), stack)}, ${quote(blueprintName(this.blueprints, node.data.castBlueprintId) ?? 'Blueprint')})`;
         break;
@@ -798,6 +878,9 @@ class FeatherScriptPrinter {
         break;
       case 'ai.playerLocation':
         result = 'Player.location';
+        break;
+      case 'query.getTimeOfDay':
+        result = 'Time.of_day';
         break;
       case 'ai.hasLineOfSight':
         result = 'AI.has_line_of_sight()';

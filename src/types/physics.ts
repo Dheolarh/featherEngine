@@ -33,7 +33,16 @@ export interface PhysicsComponent {
   /** COMPOUND COLLIDER: extra shapes welded to this body (hammer = box head + capsule handle).
    *  Each moves rigidly with the body; they share the body's material/trigger/layer settings. */
   extraColliders?: ExtraCollider[];
+  /** AXIS LOCK — freeze movement along a world axis so the solver can never translate the body on it.
+   *  `[x, y, z]`; a 2.5D side-scroller locks Z so props stay on the play plane. Undefined = free. */
+  lockedTranslation?: AxisLockTuple;
+  /** AXIS LOCK — freeze rotation about a world axis so the body can't tip over.
+   *  `[x, y, z]`; locking X+Z keeps a crate/barrel/character upright while it still spins about Y. */
+  lockedRotation?: AxisLockTuple;
 }
+
+/** Per-axis `[x, y, z]` lock flags; `true` = that degree of freedom is frozen. */
+export type AxisLockTuple = [boolean, boolean, boolean];
 
 export type PhysicsMaterialPresetId = 'default' | 'rubber' | 'slime' | 'ice' | 'metal' | 'stone' | 'wood' | 'mud';
 

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CloudFog, CloudSun, Image as ImageIcon, Music2, Palette, Sparkles, Sun, Volume2, Wind } from 'lucide-react';
+import { Boxes, CloudFog, CloudSun, Image as ImageIcon, Music2, Palette, Sparkles, Sun, Volume2, Wind } from 'lucide-react';
 import { useEditorStore } from '../store/editorStore';
 import { useStableActiveScene } from '../store/stableSelectors';
 import { withSceneEnvironmentDefaults } from '../three/environmentSettings';
@@ -10,6 +10,9 @@ function audioName(id: string | undefined, assets: Array<{ id: string; name: str
   if (!id) return 'None';
   return assets.find((asset) => asset.id === id)?.name ?? 'Missing audio asset';
 }
+
+/** Earth gravity — what a scene runs at until it authors its own. Mirrors physicsWorld's default. */
+const EARTH_GRAVITY: readonly [number, number, number] = [0, -9.81, 0];
 
 const num = (value: string, fallback: number) => {
   const parsed = Number(value);
@@ -595,6 +598,35 @@ export function SceneSettingsPanel() {
             onChange={(event) => updateEnvironment({ windTurbulence: num(event.target.value, environment.windTurbulence ?? 0) })}
           />
         </label>
+      </section>
+
+      <section className="settings-section">
+        <h3><Boxes size={14} aria-hidden /> Gravity</h3>
+        <p className="field-hint">
+          World gravity for this scene, in units/s². Earth is Y −9.81; try −1.62 for the Moon, 0 for space, or a
+          sideways/positive value for a gimmick level. Each body still scales this by its own Gravity setting.
+        </p>
+        {(['X', 'Y', 'Z'] as const).map((axis, index) => (
+          <label className="field-row" key={axis}>
+            <span>Gravity {axis}</span>
+            <input
+              type="number"
+              step={0.5}
+              value={(environment.gravity ?? EARTH_GRAVITY)[index]}
+              onChange={(event) => {
+                const next = [...(environment.gravity ?? EARTH_GRAVITY)] as [number, number, number];
+                next[index] = num(event.target.value, next[index]);
+                updateEnvironment({ gravity: next });
+              }}
+            />
+          </label>
+        ))}
+        <button
+          title="Restore Earth gravity (0, -9.81, 0)."
+          onClick={() => updateEnvironment({ gravity: [...EARTH_GRAVITY] as [number, number, number] })}
+        >
+          Reset to Earth
+        </button>
       </section>
     </aside>
   );

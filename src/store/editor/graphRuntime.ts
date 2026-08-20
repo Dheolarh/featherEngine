@@ -1,5 +1,6 @@
 import type { Edge } from '@xyflow/react';
 import type { NodeForgeNode, ProjectGraph } from '../../types';
+import { isStructuralGraphConnection } from './wireTypes';
 
 const LAYOUT_COL = 264;
 const LAYOUT_ROW = 152;
@@ -78,6 +79,9 @@ export interface GraphRuntime {
   timerRoots: NodeForgeNode[];
   /** The graph's On Receive Damage root, if any — read once per scripted object per tick. */
   receiveDamageRoot: NodeForgeNode | undefined;
+  /** True when the graph has a Collision Stay / Trigger Stay root. Physics only bothers replaying
+   *  resting contacts for objects running such a graph, so this is what gates that whole pass. */
+  hasStayRoot: boolean;
 }
 
 export interface CompiledGraphNode {
@@ -117,6 +121,10 @@ export const buildGraphRuntime = (graph: ProjectGraph): GraphRuntime => {
   const incomingValueByHandle = new Map<string, Map<string, Edge>>();
 
   graph.edges.forEach((edge) => {
+    const sourceNode = nodesById.get(edge.source);
+    const targetNode = nodesById.get(edge.target);
+    if (!sourceNode || !targetNode || edge.source === edge.target) return;
+    if (!isStructuralGraphConnection(edge.sourceHandle, edge.targetHandle)) return;
     const isValueEdge = Boolean(edge.targetHandle && edge.targetHandle !== 'exec-in');
     if (isValueEdge) {
       const existing = incomingValues.get(edge.target);
@@ -182,6 +190,9 @@ export const buildGraphRuntime = (graph: ProjectGraph): GraphRuntime => {
       (node.data.nodeKind === 'event.update' && Number(node.data.numberValue ?? 0) > 0),
   );
   const receiveDamageRoot = eventRoots.find((node) => node.data.nodeKind === 'event.receiveDamage');
+  const hasStayRoot = dispatchEventRoots.some(
+    (node) => node.data.nodeKind === 'event.collisionStay' || node.data.nodeKind === 'event.triggerStay',
+  );
 
   return {
     graph,
@@ -197,6 +208,7 @@ export const buildGraphRuntime = (graph: ProjectGraph): GraphRuntime => {
     functionRoots,
     timerRoots,
     receiveDamageRoot,
+    hasStayRoot,
   };
 };
 

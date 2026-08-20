@@ -75,8 +75,10 @@ export const nodeDescriptions: Record<string, string> = {
   'Fire Event': 'Triggers a custom event by name.',
   'Collision Enter': 'Fires when this object starts touching another collider. Value outs: Other, Normal, Point, Speed.',
   'Collision Exit': 'Fires when this object stops touching a solid collider. Value outs: Other, Point.',
+  'Collision Stay': 'Fires EVERY frame this object is resting against a solid collider. Value out: Other.',
   'Trigger Enter': 'Fires when this object starts overlapping a trigger collider. Value outs: Other, Point.',
   'Trigger Exit': 'Fires when this object stops overlapping a trigger collider. Value outs: Other, Point.',
+  'Trigger Stay': 'Fires EVERY frame this object is inside a trigger volume. Value out: Other.',
   'On Land': 'Fires when a character lands after falling. Value out: Speed (impact speed, u/s).',
   Branch: 'Chooses a path from a boolean value.',
   Compare: 'Compares two values.',
@@ -148,8 +150,10 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Custom Event': 'event.custom',
   'Collision Enter': 'event.collisionEnter',
   'Collision Exit': 'event.collisionExit',
+  'Collision Stay': 'event.collisionStay',
   'Trigger Enter': 'event.triggerEnter',
   'Trigger Exit': 'event.triggerExit',
+  'Trigger Stay': 'event.triggerStay',
   Interact: 'event.interact',
   'On Land': 'event.land',
   'On Receive Damage': 'event.receiveDamage',
@@ -214,6 +218,9 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Set Physics': 'action.setPhysics',
   'Set Velocity': 'action.setVelocity',
   'Get Velocity': 'query.velocity',
+  'Set Angular Velocity': 'action.setAngularVelocity',
+  'Get Angular Velocity': 'query.angularVelocity',
+  'Set Gravity': 'action.setGravity',
   'Fire Event': 'action.fireEvent',
   'Spawn Object': 'action.spawnObject',
   'Spawn Prefab': 'action.spawnPrefab',
@@ -327,6 +334,9 @@ export const categoryByKind = (nodeKind: GraphNodeKind): GraphNodeCategory => {
     nodeKind === 'action.setPhysics' ||
     nodeKind === 'action.setVelocity' ||
     nodeKind === 'query.velocity' ||
+    nodeKind === 'action.setAngularVelocity' ||
+    nodeKind === 'query.angularVelocity' ||
+    nodeKind === 'action.setGravity' ||
     nodeKind === 'query.overlapSphere' ||
     nodeKind === 'query.sphereCast' ||
     nodeKind === 'action.setJointMotor' ||
@@ -373,6 +383,13 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
           ? 'Fires when this object stops touching the selected other object. Value outs: Other, Point.'
           : 'Fires when this object stops touching a solid collider. Value outs: Other, Point.',
       };
+    case 'event.collisionStay':
+      return {
+        label: 'Collision Stay',
+        description: data.otherObjectId
+          ? 'Fires EVERY frame this object is resting against the selected other object. Value out: Other.'
+          : 'Fires EVERY frame this object is touching a solid collider — "while standing on", "while pressed against". Collision Enter fires only once, so continuous logic belongs here. Value out: Other.',
+      };
     case 'event.triggerEnter':
       return {
         label: 'Trigger Enter',
@@ -386,6 +403,13 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
         description: data.otherObjectId
           ? 'Fires when this object stops overlapping the selected trigger participant. Value outs: Other, Point.'
           : 'Fires when this object stops overlapping a trigger collider. Value outs: Other, Point.',
+      };
+    case 'event.triggerStay':
+      return {
+        label: 'Trigger Stay',
+        description: data.otherObjectId
+          ? 'Fires EVERY frame this object is inside the selected trigger participant. Value out: Other.'
+          : 'Fires EVERY frame this object is overlapping a trigger volume — damage zones, healing auras, pressure plates, "hold to charge" pads. Value out: Other.',
       };
     case 'event.timer':
       return {
@@ -792,6 +816,24 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
         label: 'Get Velocity',
         description:
           "Outputs an actor's current velocity [x,y,z] (units/sec) — its speed and direction of travel. Works for dynamic physics bodies, characters, and vehicles. Wire into Make/➗ math for speed-based logic, or into a speedometer. Target defaults to self.",
+      };
+    case 'action.setAngularVelocity':
+      return {
+        label: 'Set Angular Velocity',
+        description:
+          "Hard-sets a DYNAMIC physics body's SPIN (radians/sec) — wire a Vector3 into Velocity, or set Axis + Amount. The body keeps spinning at that rate until something changes it, so this is the node for turntables, rolling boulders, spinning traps, and stabilising a tumbling projectile. Unlike Apply Torque (a one-off kick the body's inertia resists) this sets the rate exactly. No effect on character/kinematic/fixed bodies. Target defaults to self.",
+      };
+    case 'query.angularVelocity':
+      return {
+        label: 'Get Angular Velocity',
+        description:
+          "Outputs an actor's current spin [x,y,z] in radians/sec. Feed it into Vector Length for a raw spin rate (drift/roll scoring, 'is it still spinning?' checks, wheel audio pitch). Target defaults to self.",
+      };
+    case 'action.setGravity':
+      return {
+        label: 'Set Gravity',
+        description:
+          "Sets WORLD gravity for the whole scene as an acceleration vector (units/s²). Default Earth is [0, -9.81, 0]; use [0, -1.62, 0] for the Moon, [0, 0, 0] for space, or point it sideways/up for a gimmick level. Every dynamic body still scales this by its own Gravity value, and gravityMultiplier trigger volumes still layer on top. Sleeping bodies wake so the change bites immediately.",
       };
     case 'query.raycast':
       return {
@@ -1207,6 +1249,7 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
     nodeKind === 'query.sphereCast' ||
     nodeKind === 'query.cableTension' ||
     nodeKind === 'query.velocity' ||
+    nodeKind === 'query.angularVelocity' ||
     nodeKind === 'query.grounded' ||
     nodeKind === 'query.getTimeOfDay' ||
     nodeKind === 'save.has' ||
@@ -1216,6 +1259,12 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
 
   if ((nodeKind === 'variable.getObject' || nodeKind === 'variable.setObject') && typeof normalized.objectKey !== 'string') {
     normalized.objectKey = 'health';
+  }
+
+  // Set Gravity starts at Earth so a freshly dropped node reads as "this is the value you're changing"
+  // rather than silently doing nothing (an unset vector would leave gravity untouched at runtime).
+  if (nodeKind === 'action.setGravity' && !Array.isArray(normalized.vectorValue)) {
+    normalized.vectorValue = [0, -9.81, 0];
   }
 
   if (isPureValueNode) {

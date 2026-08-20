@@ -243,6 +243,8 @@ import {
   type ProjectileSetup,
 } from './editor/objectFactory';
 import { getGraphRuntimeMap, layoutGraphNodes } from './editor/graphRuntime';
+import { isGraphConnectionValid, inputTypeForHandle } from './editor/wireTypes';
+import { sanitizeGraph, scanBlueprintGraphProblems } from './editor/graphDiagnostics';
 import { buildContactIndex, contactMatches, contactOthers, contactTouches, firstContactEvent, firstContactOther, toIdSet, toLowerCaseSet } from './editor/runtimeIndexes';
 import { makeId, stripUndefined } from './editor/ids';
 import { compileFeatherScriptToGraph, type FeatherCompileResult } from '../scripting/featherCompiler';
@@ -287,6 +289,9 @@ import {
 import { recordRuntimeSection } from '../runtime/perfStats';
 
 const EMPTY_EXEC_TARGETS: string[] = [];
+
+/** Gravity a scene runs at until it authors `environment.gravity` (Set Gravity node / Scene Settings). */
+const EARTH_GRAVITY: Vector3Tuple = [0, -9.81, 0];
 
 // Per-frame lookup Maps over project-level arrays. The arrays are replaced
 // immutably only on edit, so these WeakMap-cached indexers return the same Map
@@ -385,6 +390,8 @@ interface EditorState {
    *  it enters from clean authored state; all are restored on Stop. */
   runtimeSceneSnapshots?: Record<string, SceneObject[]>;
   runtimeVelocities: Record<string, Vector3Tuple>;
+  /** Post-step angular velocity (rad/s) per dynamic body — drives the Get Angular Velocity node. */
+  runtimeAngularVelocities: Record<string, Vector3Tuple>;
   runtimeKeys: Record<string, boolean>;
   runtimePreviousKeys: Record<string, boolean>;
   /** Per-key press counters. Unlike runtimeKeys, this preserves a physical keydown until the next tick consumes it. */
@@ -517,6 +524,11 @@ interface EditorState {
   runtimeTriggersExit: PhysicsContactEvent[];
   /** Solid-contact pairs that ENDED in the previous physics step; drives event.collisionExit. */
   runtimeCollisionsExit: PhysicsContactEvent[];
+  /** Solid-contact pairs still touching as of the previous physics step; drives event.collisionStay.
+   *  Only ever populated for objects whose graph has a Stay root (see GraphRuntime.hasStayRoot). */
+  runtimeCollisionsStay: PhysicsContactEvent[];
+  /** Trigger-overlap pairs still overlapping as of the previous physics step; drives event.triggerStay. */
+  runtimeTriggersStay: PhysicsContactEvent[];
   /** HP lost per object during the previous tick (any source: Apply Damage node, projectile, melee, contact,
    *  explosion); drives event.receiveDamage (one-frame delayed, like collisions) + its Damage value-out. */
   runtimeDamageEvents: Record<string, number>;
@@ -1315,6 +1327,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isPlayPaused: false,
   playStepFrames: 0,
   runtimeVelocities: {},
+  runtimeAngularVelocities: {},
   runtimeKeys: {},
   runtimePreviousKeys: {},
   runtimeKeyPresses: {},
@@ -1370,8 +1383,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   runtimeMontageRequests: {},
   runtimeCollisions: [],
   runtimeCollisionsExit: [],
+  runtimeCollisionsStay: [],
   runtimeTriggers: [],
   runtimeTriggersExit: [],
+  runtimeTriggersStay: [],
   runtimeDamageEvents: {},
   runtimeLandEvents: {},
   runtimeDamageIndicators: [],
@@ -5523,6 +5538,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const blueprint = state.blueprints.find((item) => item.id === blueprintId);
       if (!blueprint) return state;
+      const graph = state.graphs.find((item) => item.id === blueprint.graphId);
+      const sourceNode = graph?.nodes.find((node) => node.id === sourceId);
+      const targetNode = graph?.nodes.find((node) => node.id === targetId);
+      if (!sourceNode || !targetNode || sourceId === targetId) return state;
+      if (
+        !isGraphConnectionValid(
+          sourceNode.data.nodeKind,
+          targetNode.data.nodeKind,
+          sourceHandle,
+          targetHandle,
+          sourceNode.data.valueType,
+          targetNode.data.valueType,
+        )
+      ) {
+        return state;
+      }
       const isValueEdge = Boolean(targetHandle && targetHandle !== 'exec-in');
       return {
         blueprints: invalidateFeatherSourceForGraph(state.blueprints, blueprint.graphId),
@@ -5614,12 +5645,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               source: idMap.get(edge.source)!,
               target: idMap.get(edge.target)!,
             }));
-          return {
+          const next = {
             ...graph,
-            // The pasted set becomes the new selection (originals deselect) so repeat-paste cascades read clearly.
             nodes: [...graph.nodes.map((node) => (node.selected ? { ...node, selected: false } : node)), ...pasted],
             edges: [...graph.edges, ...pastedEdges],
           };
+          return sanitizeGraph(next);
         }),
         isDirty: true,
       };
@@ -5781,6 +5812,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         pendingPartRestores.clear();
         resetNavCache(); // rebake the Move To navmesh from this run's static colliders
         resetStreamingCache(); // fresh activation-streaming set for this run
+        const scriptIssues: string[] = [];
+        for (const blueprint of state.blueprints) {
+          const graph = state.graphs.find((item) => item.id === blueprint.graphId);
+          if (!graph) continue;
+          const attached = objects.some((object) => object.script?.blueprintId === blueprint.id);
+          if (!attached) continue;
+          for (const problem of scanBlueprintGraphProblems(blueprint, graph, state.variables)) {
+            if (problem.severity === 'error') scriptIssues.push(`⚠️ ${problem.message}`);
+          }
+        }
         return {
           isPlaying,
           isPlayPaused: false,
@@ -5789,6 +5830,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           runtimeTimeScale: 1,
           replayPlayback: null,
           runtimeVelocities: makeRuntimeVelocityMap(objects),
+          runtimeAngularVelocities: {},
           runtimeKeys: {},
           runtimePreviousKeys: {},
           runtimeKeyPresses: {},
@@ -5838,8 +5880,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       runtimeMontageRequests: {},
           runtimeCollisions: [],
           runtimeCollisionsExit: [],
+          runtimeCollisionsStay: [],
           runtimeTriggers: [],
           runtimeTriggersExit: [],
+          runtimeTriggersStay: [],
           runtimeDamageEvents: {},
           runtimeLandEvents: {},
           runtimeDamageIndicators: [],
@@ -5847,7 +5891,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           runtimeScreenFade: undefined,
           runtimeSoundQueue: [],
           runtimeVehicleSound: null,
-          runtimeLog: [],
+          runtimeLog: scriptIssues.slice(-100),
           runtimeNodeErrors: {},
           // Show every screen HUD flagged visibleOnStart; world docs render whenever their object exists.
           runtimeVisibleUI: Object.fromEntries(
@@ -5916,6 +5960,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeTimeScale: 1,
         replayPlayback: null,
         runtimeVelocities: {},
+        runtimeAngularVelocities: {},
         runtimeKeys: {},
         runtimePreviousKeys: {},
         runtimeKeyPresses: {},
@@ -5965,8 +6010,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       runtimeMontageRequests: {},
         runtimeCollisions: [],
         runtimeCollisionsExit: [],
+        runtimeCollisionsStay: [],
         runtimeTriggers: [],
         runtimeTriggersExit: [],
+        runtimeTriggersStay: [],
         runtimeDamageEvents: {},
         runtimeLandEvents: {},
         runtimeDamageIndicators: [],
@@ -6163,7 +6210,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const priorTriggerIndex = buildContactIndex(state.runtimeTriggers);
       const priorTriggerExitIndex = buildContactIndex(state.runtimeTriggersExit);
       const priorCollisionExitIndex = buildContactIndex(state.runtimeCollisionsExit);
+      const priorCollisionStayIndex = buildContactIndex(state.runtimeCollisionsStay);
+      const priorTriggerStayIndex = buildContactIndex(state.runtimeTriggersStay);
       const graphRuntimes = getGraphRuntimeMap(state.graphs);
+      // Objects whose blueprint has a Collision/Trigger Stay root. Physics replays resting contacts ONLY
+      // for these, so a scene that never uses Stay pays nothing for the feature.
+      const stayListeners = new Set<string>();
+      for (const obj of activeObjects) {
+        if (!obj.script?.enabled) continue;
+        if (graphRuntimes.get(obj.script.graphId)?.hasStayRoot) stayListeners.add(obj.id);
+      }
       // Objects whose blueprint listens for "On Receive Damage". Having that event = intent to take damage,
       // so damage sources notify them automatically — no manual `health` var needed (that was a silent
       // footgun). A listener with NO health var is notify-only (fires the event, never dies); add a health
@@ -6205,6 +6261,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
       const runtimeTime = state.runtimeTime + delta;
       const nextVelocities = { ...state.runtimeVelocities };
+      const nextAngularVelocities = { ...state.runtimeAngularVelocities };
       // Per-frame Vehicle drive input set by the "Drive" blueprint node (throttle/steer/handbrake).
       // A scripted car (one with a blueprint) is driven ONLY by this — its graph is authoritative.
       const vehicleScriptInputs: Record<string, { throttle: number; steer: number; handbrake: boolean }> = {};
@@ -6284,6 +6341,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const physicsAngularImpulses: Record<string, Vector3Tuple> = {};
       // Hard velocity sets requested by action.setVelocity this frame (dynamic bodies), applied in physics.frame.
       const setVelocities: Record<string, Vector3Tuple> = {};
+      // Hard spin sets requested by action.setAngularVelocity this frame (dynamic bodies), same path.
+      const setAngularVelocities: Record<string, Vector3Tuple> = {};
       // Momentum hand-off for freshly torn-off car parts: their dynamic body is created during THIS
       // frame's physics sync, so the inherited velocity + tumble queued at detach time applies now.
       if (pendingPartKicks.size) {
@@ -6815,6 +6874,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             return contactMatches(priorTriggerIndex, objectId, node.data.otherObjectId);
           case 'event.triggerExit':
             return contactMatches(priorTriggerExitIndex, objectId, node.data.otherObjectId);
+          case 'event.collisionStay':
+            return contactMatches(priorCollisionStayIndex, objectId, node.data.otherObjectId);
+          case 'event.triggerStay':
+            return contactMatches(priorTriggerStayIndex, objectId, node.data.otherObjectId);
           case 'event.interact':
             return interactedThisFrame.has(objectId);
           case 'event.receiveDamage':
@@ -6872,7 +6935,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           // input degrades to the origin rather than throwing).
           const asVec3 = (value: GraphValue | undefined): Vector3Tuple =>
             Array.isArray(value)
-              ? [Number(value[0]) || 0, Number(value[1]) || 0, Number(value[2]) || 0]
+              ? [toNumber(value[0]), toNumber(value[1]), toNumber(value[2])]
               : [0, 0, 0];
           // ⚠️ The evaluator functions below are `const` arrows ON PURPOSE: `function` declarations are
           // instantiated at scope ENTRY, so every object in the scene — including the scriptless scenery
@@ -6887,10 +6950,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             // Pass which OUTPUT pin of the source we're reading, so multi-output value nodes (Raycast:
             // Hit/Actor/Point/Distance) can return a different value per handle.
             const resolved = evaluateValue(link.source, valueVisited, link.sourceHandle);
-            // Live value trace (no-op unless a graph editor is open in Play): record the value flowing
-            // out of the source node so the editor can show it on the node.
-            recordValue(link.source, resolved);
-            return resolved;
+            const expected = inputTypeForHandle(node.data.nodeKind, handle, node.data.valueType);
+            const value =
+              resolved === undefined || expected === 'any' || expected === 'exec'
+                ? resolved
+                : coerceGraphValue(resolved, expected);
+            recordValue(link.source, value);
+            return value ?? fallback;
           }
 
           const evaluateValue = (nodeId: string, visited: Set<string>, sourceHandle = 'value-out'): GraphValue | undefined => {
@@ -6960,6 +7026,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               if (sourceHandle === 'point') return contact?.point ? ([...contact.point] as Vector3Tuple) : ([position[0], position[1], position[2]] as Vector3Tuple);
               return contact?.otherObjectId;
             }
+
+            // Stay's value-out is Other only: a resting contact is replayed from the tracked pair list,
+            // not from a fresh manifold, so there is no normal/point/speed to report for it.
+            case 'event.collisionStay':
+              return firstContactEvent(priorCollisionStayIndex, object.id)?.otherObjectId;
+
+            case 'event.triggerStay':
+              return firstContactEvent(priorTriggerStayIndex, object.id)?.otherObjectId;
 
             case 'event.triggerEnter': {
               const contact = firstContactEvent(priorTriggerIndex, object.id);
@@ -7244,6 +7318,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             case 'query.velocity': {
               const tid = objectVarTarget(node);
               const v = nextVelocities[tid];
+              return (v ? [v[0], v[1], v[2]] : [0, 0, 0]) as Vector3Tuple;
+            }
+
+            case 'query.angularVelocity': {
+              const tid = objectVarTarget(node);
+              const v = nextAngularVelocities[tid];
               return (v ? [v[0], v[1], v[2]] : [0, 0, 0]) as Vector3Tuple;
             }
 
@@ -7543,8 +7623,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             return undefined;
           }
 
+          let execSteps = 0;
           const executeFrom = (nodeId: string, visited: Set<string>) => {
             if (visited.has(nodeId)) return;
+            if (execSteps >= 8192) {
+              const stuck = runtime.compiledNodesById.get(nodeId)?.node;
+              if (recordNodeError(nodeId, 'Execution limit reached (possible infinite loop).')) {
+                prints.push(
+                  `⚠️ Node error in "${object.name}" → ${stuck?.data.label ?? stuck?.data.nodeKind ?? nodeId}: execution limit reached — check loops and Update chains.`,
+                );
+              }
+              return;
+            }
+            execSteps += 1;
             visited.add(nodeId);
             const compiled = runtime.compiledNodesById.get(nodeId);
             if (!compiled) return;
@@ -7629,7 +7720,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             // this node so the body re-runs every pass but can't re-enter the loop (no infinite recursion).
             if (node.data.nodeKind === 'logic.forLoop') {
               const raw = Math.floor(toNumber(valueInput(node, 'count', Number(node.data.loopCount ?? 4))));
-              const count = Math.max(0, Math.min(raw, 10000));
+              const count = Math.max(0, Math.min(raw, 256));
               const bodyTargets = execTargetsFromHandle(nodeId, 'exec-body');
               for (let i = 0; i < count; i += 1) {
                 loopIndex.set(nodeId, i);
@@ -7988,6 +8079,40 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                   setVelocities[velTargetId] = v;
                   nextVelocities[velTargetId] = v; // so Get Velocity reflects it the same frame
                 }
+              }
+            }
+
+            // Set Angular Velocity: hard-set a DYNAMIC body's spin in rad/s (physics.frame applies it via
+            // setAngvel). Accepts a wired Vector3 or, like Apply Torque, an axis + signed amount — the
+            // common case is "spin about Y at N rad/s" for turntables, rollers, and spinning hazards.
+            if (node.data.nodeKind === 'action.setAngularVelocity') {
+              const spinVector = valueInput(node, 'vector');
+              const spinAmount = toNumber(valueInput(node, 'amount', Number(node.data.amount ?? 4)));
+              const spin = Array.isArray(spinVector)
+                ? ([Number(spinVector[0]) || 0, Number(spinVector[1]) || 0, Number(spinVector[2]) || 0] as Vector3Tuple)
+                : ([0, 0, 0].map((value, index) => (index === axisIndex(node.data.axis ?? 'y') ? spinAmount : value)) as Vector3Tuple);
+              const spinTargetId = resolveTarget(node.data.targetObjectId) || object.id;
+              const spinTarget = activeObjectById.get(spinTargetId);
+              if (spinTarget?.physics?.enabled && spinTarget.physics.bodyType === 'dynamic') {
+                setAngularVelocities[spinTargetId] = spin;
+                nextAngularVelocities[spinTargetId] = spin; // so Get Angular Velocity reflects it the same frame
+              }
+            }
+
+            // Set Gravity: patch the ACTIVE SCENE's gravity through the same end-of-tick environment merge
+            // Set Environment uses, so a level can flip to low-g/zero-g/inverted from a trigger and the
+            // change persists for the rest of the run (physics.frame reads it back out next frame).
+            if (node.data.nodeKind === 'action.setGravity') {
+              const gravityVector = valueInput(node, 'vector', node.data.vectorValue);
+              if (Array.isArray(gravityVector)) {
+                pendingEnvironment = {
+                  ...(pendingEnvironment ?? {}),
+                  gravity: [
+                    Number(gravityVector[0]) || 0,
+                    Number(gravityVector[1]) || 0,
+                    Number(gravityVector[2]) || 0,
+                  ] as Vector3Tuple,
+                };
               }
             }
 
@@ -10262,6 +10387,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       let triggers: PhysicsContactEvent[] = [];
       let triggersExit: PhysicsContactEvent[] = [];
       let collisionsExit: PhysicsContactEvent[] = [];
+      let collisionsStay: PhysicsContactEvent[] = [];
+      let triggersStay: PhysicsContactEvent[] = [];
       let groundedIds: string[] = [];
       // Smoothed render transforms from the fixed-timestep physics step (interpolated between the two
       // most recent sim states). Applied to the render buffer AFTER publishTransforms so the mesh glides
@@ -10417,11 +10544,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           physicsImpulses,
           delta,
           setVelocities,
+          setAngularVelocities,
           physicsAngularImpulses,
           sceneWind,
           sceneEnv?.windTurbulence ?? 0,
+          sceneEnv?.gravity ?? EARTH_GRAVITY,
           vehicleInputs,
           gravityZones,
+          stayListeners,
         );
         if (result.renderTransforms.size) {
           // The buffer's BufferedTransform needs a scale; physics never changes scale, so reuse each
@@ -10440,6 +10570,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
         collisions = result.collisions;
         triggers = result.triggers;
+        collisionsStay = result.collisionsStay;
+        triggersStay = result.triggersStay;
         triggersExit = result.triggersExit;
         collisionsExit = result.collisionsExit;
         groundedIds = result.grounded;
@@ -10495,6 +10627,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
         // Publish dynamic bodies' post-step velocity so Get Velocity (and vehicleSpeed) read the real value.
         for (const [id, v] of result.velocities) nextVelocities[id] = v;
+        for (const [id, v] of result.angularVelocities) nextAngularVelocities[id] = v;
         const groundedSet = new Set(groundedIds);
         resolvedObjects = movedObjects.map((object) => {
           // While ragdolling the limp body owns the transform (set from the pelvis above) — don't let
@@ -11880,6 +12013,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             runtimeTimeScale: 1, // a freshly loaded scene starts at normal speed (a pause carried across a load would soft-lock it)
             replayPlayback: null,
             runtimeVelocities: makeRuntimeVelocityMap(freshObjects),
+            runtimeAngularVelocities: {},
             // Project variables persist across the load — this is how run state survives a floor change.
             runtimeVariableValues: nextVariableValues,
             runtimeObjectVariables: Object.fromEntries(
@@ -11931,8 +12065,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             runtimeMontageRequests: {},
             runtimeCollisions: [],
             runtimeCollisionsExit: [],
+            runtimeCollisionsStay: [],
             runtimeTriggers: [],
             runtimeTriggersExit: [],
+            runtimeTriggersStay: [],
             runtimeDamageEvents: {},
             runtimeLandEvents: {},
             runtimeDamageIndicators: [],
@@ -11965,6 +12101,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         // keepRecord/keepArray: hand back the PREVIOUS reference when the fresh-built value is
         // content-identical, so 60fps subscribers only re-render for data that actually changed.
         runtimeVelocities: keepRecord(state.runtimeVelocities, nextVelocities),
+        runtimeAngularVelocities: keepRecord(state.runtimeAngularVelocities, nextAngularVelocities),
         runtimeVariableValues: keepRecord(state.runtimeVariableValues, nextVariableValues),
         runtimeAnimators: keepRecord(state.runtimeAnimators, nextAnimators),
         runtimeCameraOverrides: keepRecord(state.runtimeCameraOverrides, nextCameraOverrides),
@@ -12017,8 +12154,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeMontageRequests: keepRecord(state.runtimeMontageRequests, {}),
         runtimeCollisions: keepArray(state.runtimeCollisions, collisions),
         runtimeCollisionsExit: keepArray(state.runtimeCollisionsExit, collisionsExit),
+        runtimeCollisionsStay: keepArray(state.runtimeCollisionsStay, collisionsStay),
         runtimeTriggers: keepArray(state.runtimeTriggers, triggers),
         runtimeTriggersExit: keepArray(state.runtimeTriggersExit, triggersExit),
+        runtimeTriggersStay: keepArray(state.runtimeTriggersStay, triggersStay),
         runtimeDamageEvents: keepRecord(state.runtimeDamageEvents, damageThisFrame),
         runtimeLandEvents: keepRecord(state.runtimeLandEvents, landThisFrame),
         runtimeDamageIndicators: damageIndicators,
@@ -12106,6 +12245,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const activeBlueprint = state.blueprints.find((item) => item.id === state.activeBlueprintId);
       if (!activeBlueprint) return state;
+      const graph = state.graphs.find((item) => item.id === activeBlueprint.graphId);
+      const sourceNode = graph?.nodes.find((node) => node.id === connection.source);
+      const targetNode = graph?.nodes.find((node) => node.id === connection.target);
+      if (!sourceNode || !targetNode || connection.source === connection.target) return state;
+      if (
+        !isGraphConnectionValid(
+          sourceNode.data.nodeKind,
+          targetNode.data.nodeKind,
+          connection.sourceHandle,
+          connection.targetHandle,
+          sourceNode.data.valueType,
+          targetNode.data.valueType,
+        )
+      ) {
+        return state;
+      }
       const isValueEdge = Boolean(connection.targetHandle && connection.targetHandle !== 'exec-in');
       return {
         blueprints: invalidateFeatherSourceForGraph(state.blueprints, activeBlueprint.graphId),
@@ -12239,7 +12394,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ...materials.map((material) => material.graphId),
         ].filter(Boolean) as string[],
       );
-      const normalizedGraphs = graphs.filter((graph) => referencedGraphIds.has(graph.id));
+      const normalizedGraphs = graphs.filter((graph) => referencedGraphIds.has(graph.id)).map(sanitizeGraph);
 
       return {
         scenes,
@@ -12273,6 +12428,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         isPlaying: false,
         playSnapshot: undefined,
         runtimeVelocities: {},
+        runtimeAngularVelocities: {},
         runtimeKeys: {},
         runtimePreviousKeys: {},
         runtimeKeyPresses: {},
@@ -12322,6 +12478,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       runtimeMontageRequests: {},
         runtimeCollisions: [],
         runtimeCollisionsExit: [],
+        runtimeCollisionsStay: [],
+        runtimeTriggersStay: [],
         runtimeDamageEvents: {},
         runtimeLandEvents: {},
         runtimeDamageIndicators: [],

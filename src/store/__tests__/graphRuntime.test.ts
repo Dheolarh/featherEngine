@@ -86,4 +86,20 @@ describe('buildGraphRuntime', () => {
     expect(runtime.dispatchEventRoots.map((root) => root.id)).toEqual(['start']);
     expect(runtime.functionRoots.get('dothing')?.map((root) => root.id)).toEqual(['function-entry']);
   });
+
+  it('ignores dangling and type-mismatched wires so Play cannot follow them', () => {
+    const graph: ProjectGraph = {
+      id: 'graph',
+      name: 'Graph',
+      nodes: [makeNode('start', 'event.start'), makeNode('jump', 'action.jump'), makeNode('num', 'value.number', { numberValue: 1 })],
+      edges: [
+        makeEdge('ok', 'start', 'jump'),
+        makeEdge('ghost', 'start', 'missing'),
+        makeEdge('bad', 'num', 'jump', 'value-out', 'exec-in'),
+      ],
+    };
+    const runtime = buildGraphRuntime(graph);
+    expect(runtime.compiledNodesById.get('start')?.outgoing).toEqual(['jump']);
+    expect(runtime.compiledNodesById.get('jump')?.valueInputs.size).toBe(0);
+  });
 });

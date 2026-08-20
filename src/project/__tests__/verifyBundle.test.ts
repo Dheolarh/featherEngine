@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AssetItem, NodeForgeProject } from '../../types';
-import { buildGameBundle, stripUnusedAssets } from '../exportGame';
+import { PROJECT_VERSION, type AssetItem, type NodeForgeProject } from '../../types';
+import { GAME_BUNDLE_VERSION, buildGameBundle, readGameBundle, stripUnusedAssets } from '../exportGame';
 import { collectReferencedAssetIds, verifyGameBundle } from '../verifyBundle';
 import currentProjectFixture from './fixtures/project-v0.7.0.json';
 
@@ -116,5 +116,62 @@ describe('production bundle asset verification', () => {
     expect(verifyGameBundle(buildGameBundle(project)).errors).toEqual([
       expect.stringMatching(/Missing resource.*missing\.glb.*used by the game/),
     ]);
+  });
+});
+
+describe('legacy game bundles', () => {
+  // Collections added after v0.2 are legitimately absent from bundles exported by older engine
+  // versions. The player must migrate them back to empty arrays; leaving them `undefined` crashes
+  // anything that reads `project.materials.length` (the production preflight report, for one).
+  const LATE_COLLECTIONS = [
+    'folders',
+    'dataAssets',
+    'materials',
+    'particleSystems',
+    'skeletons',
+    'skeletalMeshes',
+    'animations',
+    'animatorControllers',
+    'prefabs',
+    'treeSpecs',
+  ] as const;
+
+  const legacyBundle = () => {
+    const bundle = buildGameBundle(projectWith([])) as unknown as {
+      startSceneId: string;
+      project: Record<string, unknown> & { version: string };
+    };
+    bundle.project.version = '0.2.0';
+    for (const collection of LATE_COLLECTIONS) delete bundle.project[collection];
+    return bundle;
+  };
+
+  it('restores collections that postdate the exporting engine version', () => {
+    const { project } = readGameBundle(legacyBundle());
+
+    for (const collection of LATE_COLLECTIONS) {
+      expect(Array.isArray(project[collection]), `project.${collection} was not restored`).toBe(true);
+    }
+    expect(project.version).toBe(PROJECT_VERSION);
+  });
+
+  it('verifies a migrated legacy bundle instead of throwing', () => {
+    const { project, startSceneId } = readGameBundle(legacyBundle());
+    const report = verifyGameBundle({ bundleVersion: GAME_BUNDLE_VERSION, startSceneId, project });
+
+    expect(report.errors).toEqual([]);
+    expect(report.summary.join('\n')).toContain('Materials: 0');
+  });
+
+  it('honors the bundle start scene over the saved active scene', () => {
+    const bundle = legacyBundle();
+    bundle.project.scenes = [
+      { id: 'scene-a', name: 'A', objects: [] },
+      { id: 'scene-b', name: 'B', objects: [] },
+    ];
+    bundle.project.activeSceneId = 'scene-a';
+    bundle.startSceneId = 'scene-b';
+
+    expect(readGameBundle(bundle).startSceneId).toBe('scene-b');
   });
 });

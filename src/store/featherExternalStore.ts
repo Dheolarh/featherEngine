@@ -2,13 +2,13 @@ import { create } from 'zustand';
 import { getPlatform } from '../platform';
 import type { ProjectTextWriteResult } from '../platform/types';
 import { compileFeatherScriptToGraph } from '../scripting/featherCompiler';
+import { isBlockingFeatherWarning } from '../scripting/featherDiagnostics';
 import {
   classifyFeatherSourceSync,
   hashFeatherSource,
   makeFeatherSourcePath,
 } from '../scripting/featherExternalSource';
 import { graphToFeatherScript } from '../scripting/featherScript';
-import type { FeatherDiagnostic } from '../scripting/featherParser';
 import type { ProjectGraph, ScriptBlueprint } from '../types';
 import { useEditorStore } from './editorStore';
 import { useProjectStore } from './projectStore';
@@ -59,10 +59,6 @@ interface FeatherSourceContext {
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const isBlockingWarning = (diagnostic: FeatherDiagnostic): boolean =>
-  diagnostic.severity === 'warning' &&
-  !diagnostic.message.startsWith('Add a blueprint declaration at the top');
-
 const sourceContext = (blueprintId: string): FeatherSourceContext | null => {
   const editor = useEditorStore.getState();
   const blueprint = editor.blueprints.find((item) => item.id === blueprintId);
@@ -100,7 +96,7 @@ const draftStatus = (
 ): Pick<FeatherExternalSyncStatus, 'kind' | 'message'> => {
   const preview = compilePreview(context, source);
   const errors = preview.diagnostics.filter((item) => item.severity === 'error');
-  const blockingWarnings = preview.diagnostics.filter(isBlockingWarning);
+  const blockingWarnings = preview.diagnostics.filter(isBlockingFeatherWarning);
   const blockers = errors.length ? errors : blockingWarnings;
   if (blockers.length > 0) {
     return {
@@ -226,7 +222,7 @@ const applyExternalSource = (
   if (!context) return;
   const preview = compilePreview(context, source);
   const errors = preview.diagnostics.filter((item) => item.severity === 'error');
-  const blockingWarnings = preview.diagnostics.filter(isBlockingWarning);
+  const blockingWarnings = preview.diagnostics.filter(isBlockingFeatherWarning);
   let blueprintRenamed = false;
 
   mutateEditor(() => {
@@ -381,7 +377,7 @@ const reconcileBlueprint = async (blueprintId: string): Promise<void> => {
 
       const preview = compilePreview(afterWrite, source);
       const errors = preview.diagnostics.filter((item) => item.severity === 'error');
-      const blockingWarnings = preview.diagnostics.filter(isBlockingWarning);
+      const blockingWarnings = preview.diagnostics.filter(isBlockingFeatherWarning);
       mutateEditor(() => {
         if (
           afterWrite.blueprint.featherSource !== undefined &&

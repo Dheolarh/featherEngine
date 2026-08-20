@@ -42,6 +42,7 @@ import { createCubeRealmTemplate } from '../project/cubeRealmTemplate';
 import { createFirstPersonTemplate } from '../project/firstPersonTemplate';
 import { createFilmModeTemplate } from '../project/filmModeTemplate';
 import { createDrivingTemplate } from '../project/drivingTemplate';
+import { createPhysicsLabTemplate } from '../project/physicsLabTemplate';
 import { createSimRacingTemplate } from '../project/simRacingTemplate';
 import { createStoryboardCinematic, STORYBOARD_PRESETS } from '../project/cinematicStoryboard';
 import { addLibraryShot, SHOT_LIBRARY, type ShotLibraryType } from '../project/cinematicShotLibrary';
@@ -173,6 +174,9 @@ const environmentPatchSchema = z.object({
   volumetricMaxDistance: z.number().min(1).optional().describe('Far clamp (world units) for the volumetric raymarch.'),
   wind: vec3.optional().describe('Global wind force vector [x,y,z] (world space). Drives all cloth and pushes dynamic bodies by their windInfluence. [0,0,0] = calm.'),
   windTurbulence: z.number().min(0).max(1).optional().describe('Global wind gust turbulence 0–1.'),
+  gravity: vec3
+    .optional()
+    .describe('World gravity acceleration [x,y,z] in units/s². Earth = [0,-9.81,0] (the default), Moon = [0,-1.62,0], space = [0,0,0]. Every dynamic body scales this by its own gravityScale.'),
   toneMapping: z
     .enum(['aces', 'agx', 'neutral', 'reinhard', 'cineon', 'linear', 'none'])
     .optional()
@@ -219,6 +223,7 @@ const runtimeEnvironmentPatchSchema = environmentPatchSchema.pick({
   volumetricMaxDistance: true,
   wind: true,
   windTurbulence: true,
+  gravity: true,
   dayCycleEnabled: true,
   dayCycleDuration: true,
   dayCycleTime: true,
@@ -411,8 +416,10 @@ const NODE_LABELS = [
   'Custom Event',
   'Collision Enter',
   'Collision Exit',
+  'Collision Stay',
   'Trigger Enter',
   'Trigger Exit',
+  'Trigger Stay',
   'Interact',
   'On Receive Damage',
   'On Land',
@@ -529,6 +536,9 @@ const NODE_LABELS = [
   'Set Physics',
   'Set Velocity',
   'Get Velocity',
+  'Set Angular Velocity',
+  'Get Angular Velocity',
+  'Set Gravity',
   'Find Actor By Blueprint',
   'Find Actor By Tag',
   'Raycast',
@@ -569,8 +579,10 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Custom Event': 'Events',
   'Collision Enter': 'Events',
   'Collision Exit': 'Events',
+  'Collision Stay': 'Events',
   'Trigger Enter': 'Events',
   'Trigger Exit': 'Events',
+  'Trigger Stay': 'Events',
   Interact: 'Events',
   'On Receive Damage': 'Events',
   'On Land': 'Events',
@@ -687,6 +699,9 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Set Physics': 'Physics',
   'Set Velocity': 'Physics',
   'Get Velocity': 'Physics',
+  'Set Angular Velocity': 'Physics',
+  'Get Angular Velocity': 'Physics',
+  'Set Gravity': 'Physics',
   'Find Actor By Blueprint': 'Runtime',
   'Find Actor By Tag': 'Runtime',
   Raycast: 'Runtime',
@@ -841,7 +856,7 @@ const rawEngineTools = {
 
   set_blueprint_script: tool({
     description:
-      'REPLACE a blueprint\'s entire logic by compiling FeatherScript source into its node graph (the fastest way to author behavior — one call instead of many add_graph_node/connect calls). See the FeatherScript section of the engine guide for the language. The source must be the COMPLETE script (start from get_blueprint_script when editing). Compile errors reject the change and are returned; warnings mean some lines became comment nodes — rewrite those lines onto the supported surface. Returns the resulting node/edge counts.',
+      'REPLACE a blueprint\'s entire logic by compiling FeatherScript source into its node graph (the fastest way to author behavior — one call instead of many add_graph_node/connect calls). See the FeatherScript section of the engine guide for the language. The source must be the COMPLETE script (start from get_blueprint_script when editing). Syntax errors AND unsupported lines reject the change and leave the previous graph intact — never applied as silent comment nodes. Returns the resulting node/edge counts.',
     inputSchema: z.object({
       blueprintId: z.string(),
       source: z.string().describe('Complete FeatherScript source, e.g. "blueprint Guard\\n\\non update(dt):\\n    if (AI.distance_to_player() < 5):\\n        self.jump()"'),
@@ -854,7 +869,7 @@ const rawEngineTools = {
         .join('\n');
       if (!result.ok) return `Script rejected — fix these and retry:\n${notes}`;
       const summary = `Applied script to blueprint ${blueprintId}: ${result.graph?.nodes.length ?? 0} nodes, ${result.graph?.edges.length ?? 0} edges.`;
-      return notes ? `${summary}\nWarnings (these lines were NOT compiled into behavior):\n${notes}` : summary;
+      return notes ? `${summary}\nNotes:\n${notes}` : summary;
     },
   }),
 
@@ -1662,7 +1677,7 @@ const rawEngineTools = {
     description:
       'Set the active scene sky/fog/base lighting. Use this for mood, time of day, sunset/night/daylight, panorama skyboxes, fog, and Unreal-style volumetric fog/light shafts (volumetricFog* fields — atmospheric mist, sun glow, god rays). This is scene-level World Settings, not a Blueprint node.',
     inputSchema: environmentPatchSchema,
-    execute: async ({ skyTextureAssetId, environmentMapAssetId, wind, ...patch }) => {
+    execute: async ({ skyTextureAssetId, environmentMapAssetId, wind, gravity, ...patch }) => {
       if (skyTextureAssetId) {
         const asset = findAsset(skyTextureAssetId);
         if (!asset) return `No asset with id ${skyTextureAssetId}.`;
@@ -1676,6 +1691,7 @@ const rawEngineTools = {
       const environmentPatch: Partial<SceneEnvironmentSettings> = {
         ...patch,
         ...(wind ? { wind: asVec3(wind) } : {}),
+        ...(gravity ? { gravity: asVec3(gravity) } : {}),
         ...(skyTextureAssetId !== undefined ? { skyTextureAssetId: skyTextureAssetId || undefined } : {}),
         ...(environmentMapAssetId !== undefined ? { environmentMapAssetId: environmentMapAssetId || undefined } : {}),
       };
@@ -1788,6 +1804,14 @@ const rawEngineTools = {
       restitution: z.number().min(0).max(1).optional().describe('Bounciness: 0 = no bounce, 1 = very elastic.'),
       linearDamping: z.number().optional(),
       angularDamping: z.number().optional(),
+      lockedTranslation: z
+        .tuple([z.boolean(), z.boolean(), z.boolean()])
+        .optional()
+        .describe('AXIS LOCK [x,y,z]: freeze this DYNAMIC body\'s position on those world axes. [false,false,true] pins a 2.5D side-scroller prop to the play plane.'),
+      lockedRotation: z
+        .tuple([z.boolean(), z.boolean(), z.boolean()])
+        .optional()
+        .describe('AXIS LOCK [x,y,z]: freeze this DYNAMIC body\'s rotation about those world axes. [true,false,true] keeps a crate/barrel/character upright while it can still turn.'),
       windInfluence: z.number().min(0).optional().describe('How strongly global scene wind pushes this DYNAMIC body (0 = ignores wind). Set the wind itself via set_environment.'),
       knockOverThreshold: z.number().min(0).optional().describe('BREAKAWAY PROP (GTA streetlight): on a FIXED body, an impact faster than this speed (u/s) converts it to a dynamic body that tumbles with the hit — lamp posts, signs, fences, bollards. 0/omit = solid.'),
       ccd: z.boolean().optional().describe('Continuous Collision Detection: stops a fast DYNAMIC body tunnelling through thin walls/floors at high speed. Small cost — enable for bullets, fast vehicles, fast-falling props. Projectiles always have it.'),
@@ -2548,6 +2572,18 @@ const rawEngineTools = {
     execute: async () => {
       const id = await createFilmModeTemplate();
       return id ? `Created "The Summit" cinematic with cinematicId ${id}. Press Play to watch the 32s mountain-peak opening — cloth banners + cape riding one global wind, dawn god rays, the monolith rune overload, and the t=24 shatter that converges into the wordmark — with synced orchestral music + SFX. Open the Cinematic panel to scrub the beat markers (ascent, runes wake, overload, shatter, reveal), and use Export WebM or Export MP4 (lazy ffmpeg.wasm transcode) to render the sequence to disk.` : `Couldn't build the Film Mode template.`;
+    },
+  }),
+
+  create_physics_lab_template: tool({
+    description:
+      'Build the "Physics Lab" — a compact, model-free showcase of the rigid-body feature set as five walk-between stations, each paired with an UNLOCKED/uncontrolled twin so the difference is visible rather than described. (1) AXIS LOCKS: Z-locked crates that can never leave the 2.5D play plane and an X/Z-rotation-locked barrel that can never tip, beside free twins that do both. (2) COLLISION STAY: a pressure plate whose emissive stays lit only while weight physically rests on it (Collision Enter fires once, so this is only possible with Stay), counting held seconds through a Cooldown gate into a PlateHoldTime var. (3) TRIGGER STAY: a hazard field ticking damage-over-time every 0.5s while the pawn stands inside, into a HazardTicks var. (4) ANGULAR VELOCITY: a turntable pinned by axis locks used AS a bearing (all translation frozen + X/Z rotation frozen = a hinge with no joint to configure), held at exactly 2.5 rad/s by Set Angular Velocity so rider friction cannot drag the rate down, with Get Angular Velocity → Vector Length published to a TurntableSpin var. (5) SET GRAVITY: keys 1/2/3 switch the whole scene between Earth, Moon, and zero-g under a pit of bouncing balls. Uses only primitives so it loads with no asset fetch. Returns the pawn objectId.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const id = await createPhysicsLabTemplate();
+      return id
+        ? `Created the Physics Lab — pawn objectId ${id}. Press Play and walk right through the five stations: shove the blue Z-locked crates (they stay on the plane) against the grey free ones, push the yellow weight onto the pressure plate (it lights only while held), stand in the red hazard field (it ticks every 0.5s), watch the turntable fling its riders at a fixed 2.5 rad/s, then press 1 / 2 / 3 at the ball pit for Earth / Moon / zero gravity. Open the Pressure Plate, Hazard Field, Turntable, and Gravity Console blueprints to see each pattern wired.`
+        : `Couldn't build the physics lab template.`;
     },
   }),
 
