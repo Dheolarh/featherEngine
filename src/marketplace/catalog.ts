@@ -22,6 +22,8 @@ export interface StoreListingContents {
   assets: number;
   /** Only meaningful for `kind: 'project'` listings — a template's worlds. */
   scenes: number;
+  /** Captured/authored screen or world UI documents the package installs. */
+  uiDocuments?: number;
 }
 
 /** One package as advertised in the catalog. The bytes live behind `downloadUrl`. */
@@ -94,6 +96,9 @@ function parseListing(raw: unknown, baseUrl: string): StoreListing | null {
       blueprints: num(contents.blueprints),
       assets: num(contents.assets),
       scenes: num(contents.scenes),
+      // Must be listed explicitly: this parser rebuilds `contents` field by field, so anything
+      // not named here is silently dropped and a UI-kit package renders as "Empty package".
+      uiDocuments: num(contents.uiDocuments),
     },
   };
 }

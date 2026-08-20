@@ -19,13 +19,14 @@ import { packageKindLabel } from '../project/package';
 
 /** Summarise what a package will add, so the cost of installing is visible before clicking. */
 function contentSummary(listing: StoreListing): string {
-  const { prefabs, materials, blueprints, assets, scenes } = listing.contents;
+  const { prefabs, materials, blueprints, assets, scenes, uiDocuments } = listing.contents;
   const parts = [
     scenes && `${scenes} scene${scenes === 1 ? '' : 's'}`,
     prefabs && `${prefabs} prefab${prefabs === 1 ? '' : 's'}`,
     materials && `${materials} material${materials === 1 ? '' : 's'}`,
     blueprints && `${blueprints} blueprint${blueprints === 1 ? '' : 's'}`,
     assets && `${assets} asset${assets === 1 ? '' : 's'}`,
+    uiDocuments && `${uiDocuments} UI screen${uiDocuments === 1 ? '' : 's'}`,
   ].filter(Boolean) as string[];
   return parts.length ? parts.join(' · ') : 'Empty package';
 }

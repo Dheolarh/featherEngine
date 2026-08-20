@@ -16,6 +16,10 @@ import { fileURLToPath } from 'node:url';
 // Run through vite-node so the container format has ONE implementation. A hand-rolled copy of the
 // zip layout here would drift from the engine's reader the first time either changed.
 import { readPackageFile, writePackageArchive } from '../src/project/packageArchive';
+// UI captured from the shipped builds of rpgMania and MomentumCup by scripts/uikit/capture.mjs.
+// Kept as data so this catalog stays byte-stable — re-running the capture is a deliberate act, not
+// a side effect of building the store.
+import uiKits from '../src/store-assets/uiKits.json';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'public', 'store');
@@ -189,7 +193,53 @@ const darkMetal = material('mat-store-dark-metal', 'Gantry Steel', {
   metalness: 0.8,
 });
 
+/**
+ * A captured UI kit as a UIDocument. `renderMode: 'dom'` plus the per-document `css` is exactly how
+ * the engine already renders game UI, so an imported kit looks identical to its source game.
+ * `visibleOnStart: false` so installing a kit never hijacks someone's running scene — they show it
+ * from a blueprint (or flip the flag) when they want it.
+ */
+const uiKitDoc = (id: string, kit: { name: string; root: unknown; css: string }) => ({
+  id,
+  name: kit.name,
+  surface: 'screen' as const,
+  renderMode: 'dom' as const,
+  root: kit.root,
+  css: kit.css,
+  visibleOnStart: false,
+  createdAt: EPOCH,
+});
+
 const PACKS = [
+  {
+    slug: 'ui-kit-rpg-hud',
+    meta: {
+      id: 'pkg-feather-ui-rpg-hud',
+      name: 'RPG Combat HUD',
+      description:
+        'A full action-RPG HUD lifted from a shipped game: player and target frames, cast bar, boss bar, action bar, build palette, minimap, toasts and pickup popups. Screen UI, hidden until you show it.',
+      author: 'TheDevRealm',
+      version: '1.0.0',
+      tags: ['ui', 'hud', 'rpg'],
+      thumbnail: thumbnail('#6C3BFF', '#FF9B3D', '\u{1F5E1}'),
+    },
+    content: { uiDocuments: [uiKitDoc('uidoc-store-rpg-hud', uiKits['rpg-hud'])] },
+  },
+  {
+    slug: 'ui-kit-arcade-hud',
+    meta: {
+      id: 'pkg-feather-ui-arcade-hud',
+      name: 'Arcade Racer HUD',
+      description:
+        'Arcade racing overlay from a shipped game — lap and timing readouts, boost and speed panels, menu chrome. Screen UI, hidden until you show it.',
+      author: 'TheDevRealm',
+      version: '1.0.0',
+      tags: ['ui', 'hud', 'racing'],
+      thumbnail: thumbnail('#00E5FF', '#FFE23D', '\u{1F3C1}'),
+    },
+    content: { uiDocuments: [uiKitDoc('uidoc-store-arcade-hud', uiKits['arcade-hud'])] },
+  },
+
   {
     slug: 'starter-props',
     meta: {
@@ -510,6 +560,7 @@ function catalogEntry({ pkg, slug, file, archiveBytes, thumbnail }) {
       blueprints: pkg.content.blueprints.length,
       assets: pkg.assets.length,
       scenes: pkg.content.scenes?.length ?? 0,
+      uiDocuments: pkg.content.uiDocuments?.length ?? 0,
     },
   };
 }

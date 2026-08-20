@@ -81,8 +81,11 @@ describe('bundled asset store — catalog to installed content', () => {
       expect(listing.title.length).toBeGreaterThan(0);
       // Something must actually arrive on install. A template's content lives in its scenes, a
       // module's in prefabs/materials — so count them all rather than assuming a shape.
-      const { scenes, prefabs, materials, blueprints } = listing.contents;
-      expect(scenes + prefabs + materials + blueprints, `${listing.slug} installs nothing`).toBeGreaterThan(0);
+      const { scenes, prefabs, materials, blueprints, uiDocuments = 0 } = listing.contents;
+      expect(
+        scenes + prefabs + materials + blueprints + uiDocuments,
+        `${listing.slug} installs nothing`,
+      ).toBeGreaterThan(0);
     }
   });
 
@@ -136,13 +139,14 @@ describe('bundled asset store — catalog to installed content', () => {
 
   it('keeps every material reference inside an installed prefab resolvable', async () => {
     await useMarketplaceStore.getState().load();
-    const [listing] = useMarketplaceStore.getState().packages;
-    await useMarketplaceStore.getState().install(listing);
+    const listing = useMarketplaceStore.getState().packages.find((entry) => entry.contents.prefabs > 0);
+    expect(listing, 'catalog has no package containing prefabs to check').toBeTruthy();
+    await useMarketplaceStore.getState().install(listing!);
 
     const editor = useEditorStore.getState();
     const materialIds = new Set(editor.materials.map((material) => material.id));
-    const installedPrefabs = editor.prefabs.slice(-listing.contents.prefabs);
-    expect(installedPrefabs.length).toBe(listing.contents.prefabs);
+    const installedPrefabs = editor.prefabs.slice(-listing!.contents.prefabs);
+    expect(installedPrefabs.length).toBe(listing!.contents.prefabs);
 
     // A dangling materialId after re-id'ing would render the prefab untextured — check every one.
     const referenced = installedPrefabs
