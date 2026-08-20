@@ -166,6 +166,7 @@ function ExportMenu() {
   const ref = useRef<HTMLDivElement>(null);
   const exportGame = useProjectStore((state) => state.exportGame);
   const exportProduction = useProjectStore((state) => state.exportProduction);
+  const exportProjectPackage = useProjectStore((state) => state.exportProjectPackage);
   const busy = useProjectStore((state) => state.busy);
 
   useEffect(() => {
@@ -197,6 +198,11 @@ function ExportMenu() {
           <button onClick={run(exportProduction)}>
             <Rocket size={14} aria-hidden />
             <span>Production — web + native app</span>
+          </button>
+          <hr />
+          <button onClick={run(() => void exportProjectPackage())}>
+            <Store size={14} aria-hidden />
+            <span>Share as template (.nfpack)</span>
           </button>
         </div>
       )}
