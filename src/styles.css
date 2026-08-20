@@ -4690,14 +4690,11 @@ body.is-scrubbing * {
 }
 
 /* Exec hit count during Play: how many times this node ran in the last poll window. */
-/* Breakpoint gutter dot — a hollow ring until armed, then a filled red bead, mirroring the
-   convention every code debugger uses. Sits outside the node's left edge so it never collides with
-   the error/hit badges above it. */
+/* Breakpoint toggle — a hollow ring until armed, then a filled red bead, the convention every code
+   debugger uses. Sits in the node header (see NodeForgeGraphNode) because the node's left edge is
+   owned by ReactFlow's exec Handle. */
 .nfn-breakpoint {
-  position: absolute;
-  top: 14px;
-  left: -9px;
-  z-index: 4;
+  flex: none;
   width: 11px;
   height: 11px;
   padding: 0;
@@ -4705,9 +4702,9 @@ body.is-scrubbing * {
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  /* Faint but always present. Fully hidden until hover would make it undiscoverable — the same
-     mistake the right-click-only node search made — and unhittable for pointer automation. */
-  opacity: 0.3;
+  /* Faint but always present: hidden-until-hover would be undiscoverable, the same mistake the
+     right-click-only node search made. */
+  opacity: 0.35;
   transition:
     opacity var(--motion) var(--ease),
     background var(--motion) var(--ease),

@@ -778,24 +778,6 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
       onClick={() => useEditorStore.getState().selectGraphNode(id)}
       onPointerDown={() => useEditorStore.getState().selectGraphNode(id)}
     >
-      {/* Breakpoint gutter dot. Only exec nodes can pause — a pure value node is evaluated on demand
-          rather than executed, so it never reaches markExec and could never trigger. */}
-      {!isValueProducer && (
-        <button
-          type="button"
-          // `nodrag` is required or ReactFlow's drag handler (a native pointerdown listener that
-          // runs before React's synthetic one) starts a node drag and swallows the click.
-          className={isBreakpoint ? 'nfn-breakpoint on nodrag' : 'nfn-breakpoint nodrag'}
-          title={isBreakpoint ? 'Remove breakpoint' : 'Pause Play when this node runs'}
-          aria-label={isBreakpoint ? `Remove breakpoint on ${data.label}` : `Add breakpoint on ${data.label}`}
-          aria-pressed={isBreakpoint}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            useEditorStore.getState().toggleGraphBreakpoint(id);
-          }}
-        />
-      )}
       {runtimeError && (
         <span className="nfn-error-badge" title={runtimeError} aria-label={`Runtime error: ${runtimeError}`}>
           <AlertTriangle size={12} aria-hidden /> error
@@ -843,6 +825,24 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
           <strong className="nfn-label">{data.label}</strong>
         </div>
         <span className="nfn-mode">{nodeMode}</span>
+        {/* Breakpoint toggle. Lives in the header rather than as a gutter dot on the node's left
+            edge: there it overlapped ReactFlow's exec Handle, which swallowed the click. Only exec
+            nodes can pause — a pure value node is evaluated on demand and never reaches markExec.
+            `nodrag` stops ReactFlow starting a node drag from the pointerdown. */}
+        {!isValueProducer && (
+          <button
+            type="button"
+            className={isBreakpoint ? 'nfn-breakpoint on nodrag' : 'nfn-breakpoint nodrag'}
+            title={isBreakpoint ? 'Remove breakpoint' : 'Pause Play when this node runs'}
+            aria-label={isBreakpoint ? `Remove breakpoint on ${data.label}` : `Add breakpoint on ${data.label}`}
+            aria-pressed={isBreakpoint}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              useEditorStore.getState().toggleGraphBreakpoint(id);
+            }}
+          />
+        )}
       </header>
 
       {typeof data.liveValue === 'string' && (
