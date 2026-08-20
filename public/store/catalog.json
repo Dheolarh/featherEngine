@@ -278,6 +278,34 @@
       }
     },
     {
+      "id": "pkg-feather-template-physics-lab",
+      "slug": "template-physics-lab",
+      "title": "Physics Lab",
+      "description": "A rig for exploring axis locks, stay events, spin and gravity overrides.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "physics",
+        "prototyping"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN0E4Q0ZGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjMyQzVDIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPvCfp6o8L3RleHQ+PC9zdmc+",
+      "sizeBytes": 8357,
+      "downloadUrl": "packages/projects/template-physics-lab.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 0,
+        "blueprints": 4,
+        "assets": 0,
+        "scenes": 1
+      }
+    },
+    {
       "id": "pkg-feather-template-sim-racing",
       "slug": "template-sim-racing",
       "title": "Sim Racing",
