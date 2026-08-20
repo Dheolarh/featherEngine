@@ -5,6 +5,7 @@ import { Launcher } from './components/Launcher';
 import { useProjectStore } from './store/projectStore';
 import { Toolbar } from './components/Toolbar';
 import { Workspace } from './components/Workspace';
+import { focusWorkspacePanel } from './components/workspacePanels';
 import { StatusBar } from './components/StatusBar';
 import { ToastHost } from './components/ToastHost';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -51,7 +52,22 @@ function useDemoAutoload() {
         useEditorStore.getState().createObject('cube');
         // createObject returns void but selects what it made, so read the id back off the store.
         const objectId = useEditorStore.getState().selectedObjectId;
-        if (objectId) useEditorStore.getState().attachBehaviorPreset(objectId, 'health-and-death');
+        // health-and-death is damage-driven, so nothing in it ever runs unattacked. For the
+        // breakpoint path use rotating-prop, whose Update event fires every frame.
+        const armBreakpoint = new URLSearchParams(window.location.search).get('bp') === '1';
+        if (objectId) {
+          useEditorStore.getState().attachBehaviorPreset(objectId, armBreakpoint ? 'rotating-prop' : 'health-and-death');
+        }
+        // `?demo=script&bp=1` also arms a breakpoint on the graph's first exec node. The breakpoint
+        // dot itself can't be clicked by the headless harness (it can't drive ReactFlow nodes at
+        // all — clicking a node doesn't even select it), so this is the only way to exercise
+        // pause-on-breakpoint and the auto-reveal end to end.
+        if (armBreakpoint) {
+          const editor = useEditorStore.getState();
+          const graph = editor.activeGraph();
+          const target = graph?.nodes.find((node) => node.data.nodeKind?.startsWith('event.'));
+          if (target) editor.toggleGraphBreakpoint(target.id);
+        }
         return;
       }
       await createMeadowTemplate();
@@ -102,6 +118,26 @@ function AppearanceSync() {
   }, [themeMode, accent, density, fontScale]);
 
   return null;
+}
+
+/**
+ * When a breakpoint pauses Play, take the user to where it stopped — reveal the Scripting panel and
+ * switch to the blueprint that owns the node. Lives here rather than in VisualScriptingPanel because
+ * the panel may not be open (or even docked) at the moment the breakpoint fires, which is exactly
+ * when you most need it revealed.
+ */
+function useBreakpointFocus() {
+  const brokeAt = useEditorStore((state) => state.runtimeBreakNodeId);
+  useEffect(() => {
+    if (!brokeAt) return;
+    const state = useEditorStore.getState();
+    const graph = state.graphs.find((item) => item.nodes.some((node) => node.id === brokeAt));
+    const blueprint = graph ? state.blueprints.find((item) => item.graphId === graph.id) : undefined;
+    // setActiveBlueprint clears the node selection, so switch blueprints BEFORE selecting the node.
+    if (blueprint && state.activeBlueprintId !== blueprint.id) state.setActiveBlueprint(blueprint.id);
+    state.selectGraphNode(brokeAt);
+    focusWorkspacePanel('scripting');
+  }, [brokeAt]);
 }
 
 function RuntimePreviewLoop() {
@@ -196,6 +232,7 @@ export default function App() {
     initFeatherExternalSync();
   }, []);
   useDemoAutoload();
+  useBreakpointFocus();
   useTemplateExport();
 
   if (!hasProject) {

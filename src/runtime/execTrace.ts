@@ -22,12 +22,18 @@ export const execTrace = {
 };
 
 export function markExec(nodeId: string) {
+  // Breakpoints are checked BEFORE the `enabled` gate. `enabled` only turns on while the graph
+  // editor is open, but a breakpoint must still fire when it isn't — the editor auto-reveals on a
+  // hit, which is useless if the hit can only happen once the editor is already showing. The cost
+  // is a size check that short-circuits to nothing for every project with no breakpoints set.
+  // First breakpoint of the frame wins, so the editor highlights where it actually stopped rather
+  // than the last node that happened to run.
+  if (execTrace.hit === null && execTrace.breakpoints.size > 0 && execTrace.breakpoints.has(nodeId)) {
+    execTrace.hit = nodeId;
+  }
   if (!execTrace.enabled) return;
   execTrace.nodes.set(nodeId, performance.now());
   execTrace.counts.set(nodeId, (execTrace.counts.get(nodeId) ?? 0) + 1);
-  // First breakpoint of the frame wins — keep it so the editor can highlight exactly where it
-  // stopped instead of the last node that happened to run.
-  if (execTrace.hit === null && execTrace.breakpoints.has(nodeId)) execTrace.hit = nodeId;
 }
 
 /** Toggle a breakpoint. Returns the new state so callers can render without re-reading. */
