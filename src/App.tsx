@@ -8,6 +8,7 @@ import { Workspace } from './components/Workspace';
 import { StatusBar } from './components/StatusBar';
 import { ToastHost } from './components/ToastHost';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { PackageDetailsDialog } from './components/PackageDetailsDialog';
 import { RuntimeConsole } from './components/RuntimeConsole';
 import { VariableWatch } from './components/VariableWatch';
 import { PrefabThumbnailHost } from './components/PrefabThumbnailer';
@@ -214,6 +215,7 @@ export default function App() {
       <PerfOverlay />
       <ToastHost />
       <ConfirmDialog />
+      <PackageDetailsDialog />
       <ShortcutsOverlay />
       <CommandPalette />
     </div>

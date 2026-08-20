@@ -10,7 +10,7 @@ import { undo, redo } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
 import { recordRender, recordRenderTime } from '../runtime/perfStats';
 import { readTransform } from '../runtime/transformBuffer';
-import { captureViewportScreenshot, setViewportCaptureHandler } from '../runtime/viewportCaptureBridge';
+import { captureViewportScreenshot, setViewportCaptureHandler, setViewportImageHandler } from '../runtime/viewportCaptureBridge';
 import { saveViewportScreenshot } from '../runtime/viewportScreenshot';
 import { ModelAsset, useAssetTexture, useModelUrl } from '../three/ModelAsset';
 import { FragmentMesh } from '../three/FragmentMesh';
@@ -1454,9 +1454,12 @@ function DropController({ contextRef }: { contextRef: MutableRefObject<DropConte
   useEffect(() => {
     contextRef.current = { camera, canvas: gl.domElement };
     setViewportCaptureHandler(async () => saveViewportScreenshot(gl.domElement));
+    // Same pixels, returned rather than saved — used for package cover art.
+    setViewportImageHandler(() => gl.domElement.toDataURL('image/png'));
     return () => {
       contextRef.current = null;
       setViewportCaptureHandler(null);
+      setViewportImageHandler(null);
     };
   }, [camera, gl, contextRef]);
   return null;

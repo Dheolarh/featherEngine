@@ -745,7 +745,9 @@ button {
 }
 
 /* Promise-based confirm dialog (see ConfirmDialog/confirmStore). */
-.confirm-backdrop {
+/* Shared modal overlay — used by the confirm dialog and the package-details dialog. */
+.confirm-backdrop,
+.dialog-backdrop {
   position: fixed;
   inset: 0;
   z-index: 1300;
@@ -10433,4 +10435,148 @@ body.is-scrubbing * {
 .template-card-icon img {
   border-radius: 6px;
   object-fit: cover;
+}
+
+/* --- Package details dialog ---------------------------------------------------------------------
+   Collects the metadata a package carries into the store (name/description/author/tags) plus cover
+   art, shown before any .nfpack export. */
+.dialog.package-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(620px, 100%);
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--panel-light);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+.dialog-head h2 {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.dialog-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--text-3xs);
+}
+
+.package-details-body {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.package-details-cover {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.package-details-cover img,
+.package-details-cover-empty {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  object-fit: cover;
+  background: var(--surface-sunken, rgba(0, 0, 0, 0.25));
+}
+
+.package-details-cover-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--text-3xs);
+}
+
+.package-details-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.package-details-cover-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-secondary, #c9ccd4);
+  font-size: var(--text-3xs);
+  cursor: pointer;
+}
+
+.package-details-cover-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.package-details-cover-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.package-details-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.package-details-fields textarea {
+  resize: vertical;
+  font: inherit;
+}
+
+.package-details-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 8px;
+}
+
+.package-details-error {
+  margin: 0;
+  color: var(--danger, #ff6b6b);
+  font-size: var(--text-3xs);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.dialog-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast, #0b0d12);
+  font-weight: 600;
+}
+
+.dialog-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.package-details .spin {
+  animation: store-spin 0.9s linear infinite;
 }

@@ -40,6 +40,7 @@ import { PreferencesModal } from './PreferencesModal';
 import { BuildReportDialog } from './BuildReportDialog';
 import type { SceneObjectKind, TreeArchetype } from '../types';
 import { focusWorkspacePanel, openWorkspacePanel } from './workspacePanels';
+import { askPackageDetails } from '../store/packageDetailsStore';
 import { useExtensionSnapshot } from '../extensions/react';
 
 /** Parametric trees aren't a SceneObjectKind (they're a component), so they get their own Add entries. */
@@ -167,6 +168,7 @@ function ExportMenu() {
   const exportGame = useProjectStore((state) => state.exportGame);
   const exportProduction = useProjectStore((state) => state.exportProduction);
   const exportProjectPackage = useProjectStore((state) => state.exportProjectPackage);
+  const projectName = useProjectStore((state) => state.projectName);
   const busy = useProjectStore((state) => state.busy);
 
   useEffect(() => {
@@ -200,7 +202,16 @@ function ExportMenu() {
             <span>Production — web + native app</span>
           </button>
           <hr />
-          <button onClick={run(() => void exportProjectPackage())}>
+          <button
+            onClick={run(async () => {
+              const meta = await askPackageDetails({
+                title: 'Share as template',
+                summary: 'Bundles every scene plus everything it references into one .nfpack file.',
+                defaults: { name: projectName, version: '1.0.0' },
+              });
+              if (meta) await exportProjectPackage(meta);
+            })}
+          >
             <Store size={14} aria-hidden />
             <span>Share as template (.nfpack)</span>
           </button>

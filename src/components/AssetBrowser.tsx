@@ -28,6 +28,7 @@ import clsx from 'clsx';
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import { confirmAction } from '../store/confirmStore';
+import { askPackageDetails } from '../store/packageDetailsStore';
 import { useModelThumbnails } from '../store/modelThumbnailStore';
 import { getPlatform } from '../platform';
 import { fbxToGlb } from '../three/convertModel';
@@ -667,7 +668,18 @@ export function AssetBrowser() {
           { label: 'Add to Scene', onClick: () => instantiatePrefab(prefab.id) },
           { label: 'Open in Prefab Editor', onClick: () => openPrefabEditor(prefab.id) },
           { label: 'Rename', onClick: () => startRename('prefab', prefab.id, prefab.name) },
-          { label: 'Export as Package…', onClick: () => void exportPrefabPackage(prefab.id) },
+          {
+            label: 'Export as Package…',
+            onClick: () =>
+              void (async () => {
+                const meta = await askPackageDetails({
+                  title: 'Export package',
+                  summary: `"${prefab.name}" plus every blueprint, material and asset it references.`,
+                  defaults: { name: prefab.name, version: '1.0.0', thumbnail: prefab.thumbnail },
+                });
+                if (meta) await exportPrefabPackage(prefab.id, meta);
+              })(),
+          },
           ...moveEntries('prefab', prefab.id, prefab.folderId),
           'separator',
           { label: 'Delete prefab', danger: true, onClick: () => deletePrefab(prefab.id) },
@@ -893,7 +905,18 @@ export function AssetBrowser() {
     { label: 'Create UI', onClick: () => newUIDocument(folder.id) },
     { label: 'Import Asset…', onClick: () => triggerImport(folder.id) },
     'separator',
-    { label: 'Export Folder as Package…', onClick: () => void exportFolderPackage(folder.id) },
+    {
+      label: 'Export Folder as Package…',
+      onClick: () =>
+        void (async () => {
+          const meta = await askPackageDetails({
+            title: 'Export folder as package',
+            summary: `Everything in "${folder.name}" and its subfolders, plus dependencies.`,
+            defaults: { name: folder.name, version: '1.0.0' },
+          });
+          if (meta) await exportFolderPackage(folder.id, meta);
+        })(),
+    },
     { label: 'Rename', onClick: () => startRename('folder', folder.id, folder.name) },
     { label: 'Delete', danger: true, onClick: () => deleteFolder(folder.id) },
   ];
