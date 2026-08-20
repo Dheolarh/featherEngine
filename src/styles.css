@@ -3946,7 +3946,10 @@ body.is-scrubbing * {
   position: absolute;
   top: 10px;
   left: 10px;
-  z-index: 5;
+  /* Above ReactFlow's edge layer. At z-index 5 the invisible `react-flow__edge-interaction` paths
+     (the widened hit areas that make wires easy to grab) sat ON TOP of this bar, so the Add-node
+     button silently stopped responding wherever a wire happened to pass beneath it. */
+  z-index: 20;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -7521,6 +7524,9 @@ body.is-scrubbing * {
 /* Visible entry to the node search, floating over the graph canvas. */
 .flow-add-node {
   flex: none;
+  /* .flow-hud is pointer-events:none so the info strip never blocks the canvas beneath it. That
+     inherits, so an interactive child has to opt back in or it silently cannot be clicked. */
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;

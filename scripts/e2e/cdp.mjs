@@ -1,0 +1,146 @@
+/**
+ * Minimal Chrome DevTools Protocol driver for end-to-end tests.
+ *
+ * Why CDP over a framework: the repo already drives Chrome this way in
+ * scripts/player-browser-smoke.mjs, `ws` is already a dependency, and it needs no browser download.
+ * More importantly it gives REAL pointer input via Input.dispatchMouseEvent — the MCP screenshot
+ * harness dispatches synthetic DOM clicks, which ReactFlow ignores entirely (clicking a graph node
+ * there does not even select it). Anything touching the node editor has to drive real mouse events.
+ */
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import WebSocket from 'ws';
+
+export const delay = (ms) => new Promise((done) => setTimeout(done, ms));
+
+export function chromeExecutable() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    process.env.GOOGLE_CHROME_BIN,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`,
+    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+  ].filter(Boolean);
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+export class CdpSession {
+  constructor(socket) {
+    this.socket = socket;
+    this.nextId = 1;
+    this.pending = new Map();
+    socket.on('message', (raw) => this.onMessage(raw));
+    socket.on('close', () => {
+      for (const { reject, timer } of this.pending.values()) {
+        clearTimeout(timer);
+        reject(new Error('Chrome DevTools connection closed'));
+      }
+      this.pending.clear();
+    });
+  }
+
+  static async connect(url) {
+    const socket = new WebSocket(url);
+    await new Promise((open, reject) => {
+      socket.once('open', open);
+      socket.once('error', reject);
+    });
+    return new CdpSession(socket);
+  }
+
+  onMessage(raw) {
+    const message = JSON.parse(raw.toString());
+    if (!message.id) return;
+    const pending = this.pending.get(message.id);
+    if (!pending) return;
+    this.pending.delete(message.id);
+    clearTimeout(pending.timer);
+    if (message.error) pending.reject(new Error(`${message.error.message} (${message.error.code})`));
+    else pending.resolve(message.result);
+  }
+
+  call(method, params = {}) {
+    const id = this.nextId++;
+    return new Promise((done, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CDP command timed out: ${method}`));
+      }, 30_000);
+      this.pending.set(id, { resolve: done, reject, timer });
+      this.socket.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  close() {
+    this.socket.close();
+  }
+}
+
+async function waitForDevToolsUrl(profileDir, chrome) {
+  const portFile = resolve(profileDir, 'DevToolsActivePort');
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    if (chrome.exitCode !== null) throw new Error(`Chrome exited early (code ${chrome.exitCode})`);
+    if (existsSync(portFile)) {
+      const [port, path] = readFileSync(portFile, 'utf8').split('\n');
+      if (port && path) return `ws://127.0.0.1:${port.trim()}${path.trim()}`;
+    }
+    await delay(120);
+  }
+  throw new Error('Chrome never reported a DevTools port');
+}
+
+/** Launch headless Chrome and attach to a page target. Returns a Page plus a dispose(). */
+export async function launch({ width = 1600, height = 1000 } = {}) {
+  const executable = chromeExecutable();
+  assert.ok(executable, 'No Chrome/Chromium found. Set CHROME_PATH to run the e2e suite.');
+  const profileDir = mkdtempSync(join(tmpdir(), 'feather-e2e-'));
+  const chrome = spawn(
+    executable,
+    [
+      '--headless=new',
+      '--remote-debugging-port=0',
+      `--user-data-dir=${profileDir}`,
+      `--window-size=${width},${height}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-gpu',
+      // The editor is a WebGL app; software rendering keeps it deterministic in headless CI.
+      '--use-gl=swiftshader',
+      '--enable-unsafe-swiftshader',
+      '--hide-scrollbars',
+      'about:blank',
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+
+  const browserWs = await waitForDevToolsUrl(profileDir, chrome);
+  const browser = await CdpSession.connect(browserWs);
+  const { targetId } = await browser.call('Target.createTarget', { url: 'about:blank' });
+  const { targetInfo } = await browser.call('Target.getTargetInfo', { targetId });
+  assert.equal(targetInfo.type, 'page');
+  const page = await CdpSession.connect(browserWs.replace(/\/devtools\/browser\/.*$/, `/devtools/page/${targetId}`));
+  await page.call('Page.enable');
+  await page.call('Runtime.enable');
+
+  return {
+    page,
+    async dispose() {
+      try {
+        page.close();
+        browser.close();
+      } finally {
+        chrome.kill();
+        rmSync(profileDir, { recursive: true, force: true });
+      }
+    },
+  };
+}

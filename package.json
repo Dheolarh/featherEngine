@@ -28,7 +28,8 @@
     "mcp": "node scripts/mcp-server.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test:e2e": "node scripts/e2e/run.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.81",
