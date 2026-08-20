@@ -1,9 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import { AlertTriangle, Check, Download, Loader2, PackageOpen, RefreshCw, Search, Sparkles, Store } from 'lucide-react';
+import { AlertTriangle, Check, Download, Loader2, PackageOpen, Puzzle, RefreshCw, Search, Sparkles, Store } from 'lucide-react';
 import { useMarketplaceStore } from '../store/marketplaceStore';
 import { useProjectStore } from '../store/projectStore';
 import { confirmAction } from '../store/confirmStore';
 import { collectTags, formatSize, matchesQuery, type StoreListing } from '../marketplace/catalog';
+import { packageKindLabel } from '../project/package';
 
 /**
  * The Asset Store — browse published `.nfpack` packages and install them into the open project.
@@ -35,6 +36,7 @@ function StoreCard({ listing }: { listing: StoreListing }) {
   const installed = useMarketplaceStore((state) => state.installedIds.includes(listing.id));
   const busy = useMarketplaceStore((state) => !!state.installingId);
   const isTemplate = listing.kind === 'project';
+  const isPlugin = listing.kind === 'plugin';
 
   // A template starts a NEW project, so anything unsaved in the current one is left behind. Modules
   // merge additively and need no warning.
@@ -59,7 +61,11 @@ function StoreCard({ listing }: { listing: StoreListing }) {
         ) : (
           <PackageOpen size={28} aria-hidden />
         )}
-        {isTemplate && <span className="store-card-badge">Template</span>}
+        {/* Every card states what it IS, so "installs into my project" vs "creates a new project"
+            vs "not installable" is never a surprise after clicking. */}
+        <span className={`store-card-badge store-card-badge--${listing.kind}`}>
+          {packageKindLabel(listing.kind)}
+        </span>
       </div>
       <div className="store-card-body">
         <header className="store-card-head">
@@ -82,18 +88,26 @@ function StoreCard({ listing }: { listing: StoreListing }) {
           <button
             className="full-button store-install-button"
             onClick={() => void run()}
-            disabled={busy}
+            // Plugins have no runtime loader yet, so the button is disabled rather than failing
+            // after a download.
+            disabled={busy || isPlugin}
             // Re-installing is legitimate (it adds a second, independently editable copy), so the
             // button stays live after a successful install — only the label changes.
             title={
-              isTemplate
-                ? `Create a new project from ${listing.title}`
-                : installed
-                  ? 'Install another copy into this project'
-                  : `Install ${listing.title}`
+              isPlugin
+                ? 'Plugins are compiled into the editor build — not installable yet'
+                : isTemplate
+                  ? `Create a new project from ${listing.title}`
+                  : installed
+                    ? 'Install another copy into this project'
+                    : `Install ${listing.title}`
             }
           >
-            {installing ? (
+            {isPlugin ? (
+              <>
+                <Puzzle size={14} aria-hidden /> Not installable yet
+              </>
+            ) : installing ? (
               <>
                 <Loader2 size={14} className="spin" aria-hidden />
                 {isTemplate ? ' Creating…' : ' Installing…'}

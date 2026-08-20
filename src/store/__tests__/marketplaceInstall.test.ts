@@ -90,7 +90,7 @@ describe('bundled asset store — catalog to installed content', () => {
     await useMarketplaceStore.getState().load();
     // Templates are excluded on purpose: a kind:project package REPLACES the world, so mixing it in
     // here would wipe the very prefabs this test is counting.
-    const listings = useMarketplaceStore.getState().packages.filter((entry) => entry.kind === 'module');
+    const listings = useMarketplaceStore.getState().packages.filter((entry) => entry.kind === 'asset');
     expect(listings.length).toBeGreaterThan(0);
 
     const prefabsBefore = useEditorStore.getState().prefabs.length;
@@ -193,7 +193,37 @@ describe('bundled asset store — catalog to installed content', () => {
   });
 });
 
+/** Every shipped `.nfpack`, as `<kindFolder>/<file>` relative to packages/. */
+async function shippedPackages(): Promise<string[]> {
+  const dir = join(PUBLIC_STORE, 'packages');
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    for (const file of await readdir(join(dir, entry.name))) {
+      if (file.endsWith('.nfpack')) found.push(`${entry.name}/${file}`);
+    }
+  }
+  return found;
+}
+
 describe('shipped package integrity', () => {
+  /**
+   * A package's folder must match what it declares itself to be. The layout is how a human (or a
+   * bucket listing) tells a complete project from an asset pack from a plugin, so a file in the
+   * wrong folder is a lie even though everything still installs.
+   */
+  it('files live in the folder matching their declared kind', async () => {
+    const dir = join(PUBLIC_STORE, 'packages');
+    const expected: Record<string, string> = { project: 'projects', asset: 'assets', plugin: 'plugins' };
+    const files = await shippedPackages();
+    expect(files.length).toBeGreaterThan(0);
+
+    for (const file of files) {
+      const { pkg } = readPackageFile(new Uint8Array(await readFile(join(dir, file))));
+      expect(file.split('/')[0], `${file} declares kind "${pkg.kind}"`).toBe(expected[pkg.kind]);
+    }
+  });
+
   /**
    * Every asset a package's content points at must actually be in the package. A dangling id means
    * an untextured model or a silent missing sound in someone's project — and the starter templates
@@ -201,7 +231,7 @@ describe('shipped package integrity', () => {
    */
   it('has no dangling asset references and no asset without bytes or a source', async () => {
     const dir = join(PUBLIC_STORE, 'packages');
-    const files = (await readdir(dir)).filter((file) => file.endsWith('.nfpack'));
+    const files = await shippedPackages();
     expect(files.length).toBeGreaterThan(0);
 
     for (const file of files) {
@@ -263,7 +293,7 @@ describe('shipped package integrity', () => {
    */
   it('contains no duplicated objects or duplicated asset bytes', async () => {
     const dir = join(PUBLIC_STORE, 'packages');
-    for (const file of (await readdir(dir)).filter((entry) => entry.endsWith('.nfpack'))) {
+    for (const file of await shippedPackages()) {
       const { pkg } = readPackageFile(new Uint8Array(await readFile(join(dir, file))));
 
       for (const scene of pkg.content.scenes ?? []) {

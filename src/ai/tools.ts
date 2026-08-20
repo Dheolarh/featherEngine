@@ -3097,7 +3097,7 @@ const rawEngineTools = {
       }
       const lines = listings.map(
         (listing) =>
-          `- ${listing.id} — "${listing.title}" by ${listing.author} v${listing.version} [${listing.kind === 'project' ? 'TEMPLATE' : 'module'}; ${listing.tags.join(', ')}] — ${listing.contents.scenes} scene(s), ${listing.contents.prefabs} prefab(s), ${listing.contents.materials} material(s). ${listing.description}`,
+          `- ${listing.id} — "${listing.title}" by ${listing.author} v${listing.version} [${listing.kind.toUpperCase()}; ${listing.tags.join(', ')}] — ${listing.contents.scenes} scene(s), ${listing.contents.prefabs} prefab(s), ${listing.contents.materials} material(s). ${listing.description}`,
       );
       return `${listings.length} store package(s):\n${lines.join('\n')}`;
     },

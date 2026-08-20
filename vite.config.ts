@@ -49,11 +49,15 @@ function templateExportSink(): Plugin {
             if (!slug || !/^[a-z0-9-]+$/.test(slug)) throw new Error('bad or missing slug');
             const bytes = Buffer.concat(chunks);
             if (!bytes.length) throw new Error('empty body');
-            const dir = resolve(__dirname, 'public/store/packages');
+            // Templates are kind:project, so they land in the projects folder (see KIND_DIRS in
+            // scripts/build-store-catalog.mts — the catalog generator reads them back from there).
+            const dir = resolve(__dirname, 'public/store/packages/projects');
             mkdirSync(dir, { recursive: true });
             writeFileSync(resolve(dir, `${slug}.nfpack`), bytes);
             const mb = (bytes.length / 1048576).toFixed(1);
-            server.config.logger.info(`[template-export] wrote public/store/packages/${slug}.nfpack (${mb} MB)`);
+            server.config.logger.info(
+              `[template-export] wrote public/store/packages/projects/${slug}.nfpack (${mb} MB)`,
+            );
             res.setHeader('content-type', 'application/json');
             res.end(JSON.stringify({ ok: true, slug }));
           } catch (error) {

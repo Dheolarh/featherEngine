@@ -193,6 +193,13 @@ async function applyPackage(
   platform: Awaited<ReturnType<typeof getPlatform>>,
   merge: (content: PackageContent, assets: AssetItem[]) => void,
 ): Promise<InstallSummary> {
+  // Plugins are compiled into the build — there is no runtime loader, sandbox or permission model
+  // (docs/PLUGIN_SDK.md). Say so, rather than merging its (empty) content and reporting success.
+  if (pkg.kind === 'plugin') {
+    throw new Error(
+      'Plugin packages cannot be installed yet — plugins are compiled into the editor build. This package needs a Feather release that supports plugin loading.',
+    );
+  }
   const editor = useEditorStore.getState();
   const { content, assets } = remapPackageForImport(pkg, editor.skeletons, editor.assets);
   // The archive keys bytes by the package's ORIGINAL asset ids while remap hands back new ones, so
@@ -579,7 +586,7 @@ export const useProjectStore = create<ProjectState>()(
             // Inline only the assets this prefab actually references (from the live, url-carrying assets).
             const live = editor.assets.filter((asset) => collected.assetIds.includes(asset.id));
             const embedded = await embedAssets(live);
-            const pkg = buildPackage('module', collected.content, embedded, {
+            const pkg = buildPackage('asset', collected.content, embedded, {
               id: crypto.randomUUID(),
               name,
               version: '1.0.0',
@@ -612,7 +619,7 @@ export const useProjectStore = create<ProjectState>()(
             const name = meta?.name ?? collected.name;
             const live = editor.assets.filter((asset) => collected.assetIds.includes(asset.id));
             const embedded = await embedAssets(live);
-            const pkg = buildPackage('module', collected.content, embedded, {
+            const pkg = buildPackage('asset', collected.content, embedded, {
               id: crypto.randomUUID(),
               name,
               version: '1.0.0',

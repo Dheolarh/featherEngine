@@ -66,7 +66,7 @@ function publishTestPackage(): Published {
     .assets.filter((asset) => collected.assetIds.includes(asset.id))
     .map((asset) => ({ ...asset, data: PNG_DATA_URL }));
 
-  const pkg = buildPackage('module', collected.content, embedded, {
+  const pkg = buildPackage('asset', collected.content, embedded, {
     id: crypto.randomUUID(),
     name: 'Crate Pack',
     version: '1.0.0',

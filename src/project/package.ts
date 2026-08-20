@@ -35,7 +35,28 @@ export const PACKAGE_VERSION = '1.0.0';
 /** File extension for exported packages. */
 export const PACKAGE_EXT = 'nfpack';
 
-export type PackageKind = 'module' | 'project';
+/**
+ * What a package IS, which decides what installing it does:
+ * - `project` — a complete, playable world. Installing creates a NEW project and opens it.
+ * - `asset`   — reusable content (prefabs, materials, models…). Installing merges it additively
+ *               into whatever project is open.
+ * - `plugin`  — editor behaviour (commands, panels). NOT installable yet: plugins are compiled into
+ *               the build (see src/extensions/bundledPlugins.ts and docs/PLUGIN_SDK.md), so there is
+ *               no runtime loader, sandbox or permission model. The kind exists so the format and
+ *               the store are already shaped for it, and so an installer can refuse one clearly
+ *               instead of appearing to work.
+ */
+export type PackageKind = 'project' | 'asset' | 'plugin';
+
+/** `module` was the original name for an asset pack; packages exported under it still open. */
+export function normalizePackageKind(raw: unknown): PackageKind {
+  if (raw === 'project' || raw === 'asset' || raw === 'plugin') return raw;
+  return 'asset';
+}
+
+/** Human label for a kind, used in the store UI and in messages. */
+export const packageKindLabel = (kind: PackageKind): string =>
+  kind === 'project' ? 'Project' : kind === 'plugin' ? 'Plugin' : 'Asset';
 
 export interface PackageMeta {
   /** Stable id for this package's identity (survives re-exports of the same content). */
@@ -98,7 +119,9 @@ export function parsePackage(raw: unknown): NodeForgePackage {
   if (!pkg.content || !Array.isArray(pkg.content.prefabs)) {
     throw new Error('Package is missing content.');
   }
-  return pkg;
+  // Normalise here so every consumer downstream sees one of the three current kinds, never the
+  // legacy `module` spelling and never an unknown string from a hand-edited file.
+  return { ...pkg, kind: normalizePackageKind(pkg.kind) };
 }
 
 // ---------------------------------------------------------------------------------------------

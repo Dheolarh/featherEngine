@@ -133,7 +133,7 @@ describe('kind: project packages', () => {
 
   it('refuses to build a project from a module package', async () => {
     const modulePkg = buildPackage(
-      'module',
+      'asset',
       { ...useEditorStore.getState().buildProjectPackage().content, scenes: undefined },
       [],
       { id: 'pkg-mod', name: 'Just A Module', version: '1.0.0' },

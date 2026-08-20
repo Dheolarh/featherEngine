@@ -10580,3 +10580,20 @@ body.is-scrubbing * {
 .package-details .spin {
   animation: store-spin 0.9s linear infinite;
 }
+
+/* Kind badge — every card says whether it is a project, an asset or a plugin, colour-coded so the
+   distinction reads at a glance in a mixed grid. */
+.store-card-badge--project {
+  background: var(--accent);
+  color: var(--accent-contrast, #0b0d12);
+}
+
+.store-card-badge--asset {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+
+.store-card-badge--plugin {
+  background: #8c7bff;
+  color: #0b0d12;
+}

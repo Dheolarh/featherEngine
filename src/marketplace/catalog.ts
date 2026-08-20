@@ -1,3 +1,5 @@
+import { normalizePackageKind, type PackageKind } from '../project/package';
+
 /**
  * Asset-store catalog client.
  *
@@ -30,7 +32,8 @@ export interface StoreListing {
   description: string;
   author: string;
   version: string;
-  kind: 'module' | 'project';
+  /** What installing it does — see PackageKind. Drives the card badge and the install action. */
+  kind: PackageKind;
   tags: string[];
   license?: string;
   /** 0 for the free catalog. Reserved so paid listings don't need a schema change. */
@@ -76,7 +79,7 @@ function parseListing(raw: unknown, baseUrl: string): StoreListing | null {
     description: str(raw.description),
     author: str(raw.author, 'Unknown'),
     version: str(raw.version, '1.0.0'),
-    kind: raw.kind === 'project' ? 'project' : 'module',
+    kind: normalizePackageKind(raw.kind),
     tags: Array.isArray(raw.tags) ? raw.tags.filter((tag): tag is string => typeof tag === 'string') : [],
     license: typeof raw.license === 'string' ? raw.license : undefined,
     priceCents: num(raw.priceCents),

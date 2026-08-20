@@ -43,7 +43,7 @@ function packageWithExternalModel(overrides: {
   return {
     format: 'nodeforge-package',
     formatVersion: '1.0.0',
-    kind: 'module',
+    kind: 'asset',
     meta: {
       id: `meta-${overrides.prefabId}`,
       name: `Pack ${overrides.prefabId}`,

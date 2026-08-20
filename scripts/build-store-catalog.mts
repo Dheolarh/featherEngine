@@ -21,6 +21,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'public', 'store');
 const PACKAGES_DIR = join(OUT_DIR, 'packages');
 
+/** Subfolder per package kind — see PackageKind in src/project/package.ts. */
+const KIND_DIRS = { project: 'projects', asset: 'assets', plugin: 'plugins' } as const;
+
 const PACKAGE_FORMAT = 'nodeforge-package';
 const PACKAGE_VERSION = '1.0.0';
 const ENGINE_VERSION = '0.7.0'; // PROJECT_VERSION in src/types/project.ts
@@ -137,7 +140,7 @@ async function externalAsset(id, publicPath, type) {
 }
 
 /** Wrap authored content in the NodeForgePackage envelope (mirrors buildPackage in package.ts). */
-const buildPackage = (meta, content, assets = [], kind = 'module') => ({
+const buildPackage = (meta, content, assets = [], kind = 'asset') => ({
   format: PACKAGE_FORMAT,
   formatVersion: PACKAGE_VERSION,
   kind,
@@ -513,15 +516,18 @@ function catalogEntry({ pkg, slug, file, archiveBytes, thumbnail }) {
 // ------------------------------------------------------------------------------------------------
 
 async function main() {
-  await mkdir(PACKAGES_DIR, { recursive: true });
+  // One folder per kind, so what a package IS is obvious from where it lives — both here and in
+  // whatever bucket this is eventually mirrored into.
+  for (const dir of Object.values(KIND_DIRS)) await mkdir(join(PACKAGES_DIR, dir), { recursive: true });
 
   const packs = [...PACKS, await buildWeaponPack(), SANDBOX_TEMPLATE];
   const entries = [];
   for (const pack of packs) {
-    const pkg = buildPackage(pack.meta, pack.content, pack.assets ?? [], pack.kind ?? 'module');
+    const kind = pack.kind ?? 'asset';
+    const pkg = buildPackage(pack.meta, pack.content, pack.assets ?? [], kind);
     // One file: manifest plus every asset's bytes, compressed.
     const archive = writePackageArchive(pkg, pack.assetBytes ?? new Map());
-    const file = `${pack.slug}.nfpack`;
+    const file = `${KIND_DIRS[kind]}/${pack.slug}.nfpack`;
     await writeFile(join(PACKAGES_DIR, file), archive);
     entries.push(catalogEntry({ pkg, slug: pack.slug, file, archiveBytes: archive.byteLength }));
     console.log(`  ${file} — ${(archive.byteLength / 1024).toFixed(1)} KB`);
@@ -530,21 +536,21 @@ async function main() {
   // Starter templates are produced by the running editor (`?exportTemplate=<key>`, written by the
   // dev-server sink in vite.config.ts) because they're imperative builders, not data. Pick up
   // whatever has been exported so far and list it.
-  const exported = (await readdir(PACKAGES_DIR))
+  const projectsDir = join(PACKAGES_DIR, KIND_DIRS.project);
+  const exported = (await readdir(projectsDir))
     .filter((file) => file.startsWith('template-') && file.endsWith('.nfpack'))
     .sort();
   const doubled = [];
-  for (const file of exported) {
+  for (const name of exported) {
+    const file = `${KIND_DIRS.project}/${name}`;
     const raw = new Uint8Array(await readFile(join(PACKAGES_DIR, file)));
     const { pkg } = readPackageFile(raw);
     const problems = detectDoubling(pkg);
     if (problems.length) doubled.push(`  ${file}: ${problems.join('; ')}`);
-    const slug = file.replace(/\.nfpack$/, '');
+    const slug = name.replace(/\.nfpack$/, '');
     const [from, to, glyph] = TEMPLATE_THUMBNAILS[slug] ?? ['#5B8CFF', '#1B2C63', '\u{1F5FA}'];
     entries.push(catalogEntry({ pkg, slug, file, archiveBytes: raw.byteLength, thumbnail: thumbnail(from, to, glyph) }));
-    console.log(
-      `  ${file} — ${(raw.byteLength / 1048576).toFixed(1)} MB single file (exported from the editor)`,
-    );
+    console.log(`  ${file} — ${(raw.byteLength / 1048576).toFixed(1)} MB single file (exported from the editor)`);
   }
 
   if (doubled.length) {

@@ -26,7 +26,7 @@ const asset = (id: string, name: string, hash: string): AssetItem => ({
 
 function pkgWith(assets: AssetItem[]): NodeForgePackage {
   return buildPackage(
-    'module',
+    'asset',
     {
       prefabs: [],
       blueprints: [],
