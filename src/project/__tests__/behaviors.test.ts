@@ -59,4 +59,18 @@ describe('behavior presets', () => {
       expect(preset.script, preset.id).toMatch(/^blueprint [A-Za-z_][A-Za-z0-9_]*\n/);
     }
   });
+
+  it('door presets use one named Timeline with matching playback controls', () => {
+    for (const presetId of ['door-on-interact', 'timed-door']) {
+      const preset = BEHAVIOR_PRESETS.find((item) => item.id === presetId)!;
+      const compiled = compileFeatherScriptToGraph({ blueprint, graph, variables: [], source: preset.script });
+      const timelines = compiled.graph!.nodes.filter((node) => node.data.nodeKind === 'action.tweenProperty');
+      const controls = compiled.graph!.nodes.filter((node) => node.data.nodeKind === 'action.timelineControl');
+      expect(timelines, presetId).toHaveLength(1);
+      expect(controls.length, presetId).toBeGreaterThanOrEqual(2);
+      const timelineId = timelines[0].data.timelineId;
+      expect(timelineId).toBeTruthy();
+      expect(controls.every((control) => control.data.timelineRefId === timelineId)).toBe(true);
+    }
+  });
 });

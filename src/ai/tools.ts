@@ -43,6 +43,7 @@ import { createFirstPersonTemplate } from '../project/firstPersonTemplate';
 import { createFilmModeTemplate } from '../project/filmModeTemplate';
 import { createDrivingTemplate } from '../project/drivingTemplate';
 import { createPhysicsLabTemplate } from '../project/physicsLabTemplate';
+import { createTimelineShowcaseTemplate } from '../project/timelineShowcaseTemplate';
 import { createSimRacingTemplate } from '../project/simRacingTemplate';
 import { createStoryboardCinematic, STORYBOARD_PRESETS } from '../project/cinematicStoryboard';
 import { addLibraryShot, SHOT_LIBRARY, type ShotLibraryType } from '../project/cinematicShotLibrary';
@@ -553,6 +554,8 @@ const NODE_LABELS = [
   'Set Scale',
   'Look At',
   'Tween',
+  'Timeline',
+  'Timeline Control',
   'Function',
   'Call Function',
   'Comment',
@@ -716,6 +719,8 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   'Set Scale': 'Runtime',
   'Look At': 'Runtime',
   Tween: 'Runtime',
+  Timeline: 'Runtime',
+  'Timeline Control': 'Runtime',
   Function: 'Events',
   'Call Function': 'Logic',
   Comment: 'Logic',
@@ -2584,6 +2589,18 @@ const rawEngineTools = {
       return id
         ? `Created the Physics Lab — pawn objectId ${id}. Press Play and walk right through the five stations: shove the blue Z-locked crates (they stay on the plane) against the grey free ones, push the yellow weight onto the pressure plate (it lights only while held), stand in the red hazard field (it ticks every 0.5s), watch the turntable fling its riders at a fixed 2.5 rad/s, then press 1 / 2 / 3 at the ball pit for Earth / Moon / zero gravity. Open the Pressure Plate, Hazard Field, Turntable, and Gravity Console blueprints to see each pattern wired.`
         : `Couldn't build the physics lab template.`;
+    },
+  }),
+
+  create_timeline_showcase_template: tool({
+    description:
+      'Build the "Timeline Mechanics" playable gallery using only engine primitives. It includes six inspectable Blueprint stations: an Interactive Vault Door prefab with curve-driven local Play/Reverse plus Update/Finished outputs; a world-space elevator; a local-pivot drawbridge; a Restart/Stop security gate; an autoplaying loop/ping-pong crusher; and a Restartable chest whose Finished output lights a reward beacon. Every mover is kinematic, all Timeline Controls reference stable ids, and the placed Vault Door instance is reusable from the Project browser. Returns the gallery pawn objectId.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const id = await createTimelineShowcaseTemplate();
+      return id
+        ? `Created Timeline Mechanics — pawn objectId ${id}. Press Play, walk along the six bays, and press E near each mechanism. Open the Timeline Mechanics folder to inspect the curve graphs; drag another Interactive Vault Door prefab from the Project browser to reuse it.`
+        : `Couldn't build the Timeline Mechanics showcase.`;
     },
   }),
 

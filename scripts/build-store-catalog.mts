@@ -1085,6 +1085,7 @@ const TEMPLATE_THUMBNAILS = {
   'template-meadows': ['#63C46A', '#1E4B2C', '\u{1F33F}'],
   'template-cube-realm': ['#3DD6C0', '#0E4A45', '\u{1F9CA}'],
   'template-physics-lab': ['#7A8CFF', '#232C5C', '\u{1F9EA}'],
+  'template-timeline-mechanics': ['#40DFFF', '#10283A', '\u{23F1}'],
 };
 
 /**

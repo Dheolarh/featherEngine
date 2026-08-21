@@ -459,6 +459,37 @@
         "scenes": 1,
         "uiDocuments": 16
       }
+    },
+    {
+      "id": "pkg-feather-template-timeline-mechanics",
+      "slug": "template-timeline-mechanics",
+      "title": "Timeline Mechanics",
+      "description": "A walkable curve-animation gallery with an interactive Vault Door prefab, elevator, drawbridge, security gate, crusher and chest.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "timeline",
+        "animation",
+        "blueprint",
+        "prefab"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNDBERkZGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMTAyODNBIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPuKPsTwvdGV4dD48L3N2Zz4=",
+      "sizeBytes": 15534,
+      "downloadUrl": "packages/projects/template-timeline-mechanics.nfpack",
+      "engineVersion": "0.7.0",
+      "contents": {
+        "prefabs": 1,
+        "materials": 0,
+        "blueprints": 6,
+        "assets": 0,
+        "scenes": 1,
+        "uiDocuments": 0
+      }
     }
   ]
 }

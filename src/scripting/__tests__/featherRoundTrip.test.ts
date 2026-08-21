@@ -572,6 +572,53 @@ describe('FeatherScript round-trip: text -> graph -> text', () => {
     expect(printed).toContain('on timer(2):');
     expect(printed).toContain('fire_event("Pulse")');
   });
+
+  it('preserves Timeline curves, transform space, relative mode, and looping controls', () => {
+    const { first, second, printed } = roundTrip(
+      [
+        'blueprint Door',
+        '',
+        'on interact(player):',
+        '    timeline(self, id: "door-swing", name: "Door Swing", property: "rotation", to: vec3(0, 90, 0), duration: 0.8, curve: "0,0,cubic,0,0;0.5,1.15,cubic,2,-0.4;1,1,cubic,0,0", space: "world", relative: true, loop: true, ping_pong: true)',
+      ].join('\n'),
+    );
+    const firstTimeline = nodeOf(first.graph!, 'action.tweenProperty');
+    const secondTimeline = nodeOf(second.graph!, 'action.tweenProperty');
+    expect(firstTimeline.data.tweenCurve).toHaveLength(3);
+    expect(secondTimeline.data.tweenCurve?.map((item) => [item.time, item.value, item.interpolation])).toEqual(
+      firstTimeline.data.tweenCurve?.map((item) => [item.time, item.value, item.interpolation]),
+    );
+    expect(secondTimeline.data.tweenSpace).toBe('world');
+    expect(secondTimeline.data.tweenValueMode).toBe('relative');
+    expect(secondTimeline.data.tweenLoop).toBe(true);
+    expect(secondTimeline.data.tweenPingPong).toBe(true);
+    expect(secondTimeline.data.timelineId).toBe('door-swing');
+    expect(secondTimeline.data.timelineName).toBe('Door Swing');
+    expect(printed).toContain('timeline(');
+    expect(printed).toContain('id: "door-swing"');
+  });
+
+  it('preserves detached Timeline definitions and playback controls by stable id', () => {
+    const { first, second, printed } = roundTrip(
+      [
+        'blueprint Door',
+        '',
+        'on interact(player):',
+        '    timeline_control("door-swing", command: "reverse")',
+        '',
+        'detached:',
+        '    timeline(self, id: "door-swing", name: "Door Swing", property: "rotation", to: vec3(0, 90, 0), duration: 0.8, curve: "smooth", space: "local")',
+      ].join('\n'),
+    );
+    const firstControl = nodeOf(first.graph!, 'action.timelineControl');
+    const secondControl = nodeOf(second.graph!, 'action.timelineControl');
+    const secondTimeline = nodeOf(second.graph!, 'action.tweenProperty');
+    expect(firstControl.data.timelineRefId).toBe('door-swing');
+    expect(secondControl.data.timelineRefId).toBe('door-swing');
+    expect(secondControl.data.timelineCommand).toBe('reverse');
+    expect(secondTimeline.data.timelineId).toBe('door-swing');
+    expect(printed).toContain('timeline_control("door-swing", command: "reverse")');
+  });
 });
 
 // ----- graph -> text -> graph: a visual-editor-authored blueprint survives the script view -----

@@ -58,6 +58,8 @@ import { BEHAVIOR_PRESETS } from '../project/behaviors';
 import { confirmAction } from '../store/confirmStore';
 import { useProjectStore } from '../store/projectStore';
 import { useFeatherExternalStore } from '../store/featherExternalStore';
+import { TimelineCurveEditor } from './TimelineCurveEditor';
+import { timelineCurvePreset } from '../runtime/timelineCurve';
 
 const nodeTypes: NodeTypes = {
   nodeforge: NodeForgeGraphNode,
@@ -130,7 +132,7 @@ export const nodeGroups: Array<{
   {
     title: 'Runtime',
     icon: Waypoints,
-    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Tween', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Prefab', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Screen Fade', 'Spawn Decal', 'Explode', 'Set Environment', 'Get Time Of Day', 'Set Time Of Day', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Start Replay', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Has Line Of Sight', 'Face Player', 'Print'],
+    nodes: ['Translate', 'Rotate', 'Get Position', 'Set Position', 'Get Rotation', 'Set Rotation', 'Get Scale', 'Set Scale', 'Timeline', 'Timeline Control', 'Look At', 'Get Move Input', 'Move', 'Move To', 'Jump', 'Get Drive Input', 'Drive', 'Enter Vehicle', 'Exit Vehicle', 'Get Vehicle Speed', 'Is Grounded', 'Raycast', 'Set Camera', 'Set Ragdoll', 'Spawn Projectile', 'Spawn Prefab', 'Spawn Attached', 'Set Visible', 'Set Active', 'Burst Particles', 'Set Particles Emitting', 'Spawn Particle System', 'Camera Shake', 'Screen Flash', 'Screen Fade', 'Spawn Decal', 'Explode', 'Set Environment', 'Get Time Of Day', 'Set Time Of Day', 'Apply Damage', 'Set Quality', 'Set Time Scale', 'Start Replay', 'Fire Event', 'Play Cinematic', 'Spawn Object', 'Load Scene', 'Destroy Object', 'Play Sound', 'Set Material Color', 'Set Material Property', 'Get Material Color', 'Get Material Property', 'Set Anim Float', 'Set Anim Bool', 'Set Anim Trigger', 'Play Animation', 'Set Movement Mode', 'Get Anim Param', 'Get Anim State', 'Find Actor By Blueprint', 'Find Actor By Tag', 'Distance To Player', 'Direction To Player', 'Player Location', 'Has Line Of Sight', 'Face Player', 'Print'],
   },
   {
     title: 'Physics',
@@ -567,6 +569,8 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
   const particleSystems = useEditorStore((state) => state.particleSystems);
   const blueprints = useEditorStore((state) => state.blueprints);
   const activeGraph = useEditorStore((state) => state.activeGraph());
+  const timelineDefinitions =
+    activeGraph?.nodes.filter((candidate) => candidate.data.nodeKind === 'action.tweenProperty' && candidate.data.tweenCurve?.length) ?? [];
   // Stable subscriptions: the raw scene/scenes/objects references are replaced EVERY Play tick, which
   // re-rendered this whole xyflow graph 60×/s — the single biggest panel cost in the perf profiler.
   const activeScene = useStableActiveScene();
@@ -694,6 +698,7 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
   const updatesPhysics = node.data.nodeKind === 'action.setPhysics';
   const updatesMoveTo = node.data.nodeKind === 'action.moveTo';
   const updatesTween = node.data.nodeKind === 'action.tweenProperty';
+  const updatesTimelineControl = node.data.nodeKind === 'action.timelineControl';
   const appliesDamage = node.data.nodeKind === 'action.applyDamage';
   const updatesCast = node.data.nodeKind === 'logic.cast';
   const findsActorByBlueprint = node.data.nodeKind === 'query.findActorByBlueprint';
@@ -1323,13 +1328,38 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
 
         {updatesTween && (
           <>
+            <div className="node-field-group-title">Timeline transform</div>
+            {node.data.tweenCurve?.length ? (
+              <label className="node-field">
+                <span>Timeline name</span>
+                <input
+                  aria-label="Timeline name"
+                  value={node.data.timelineName ?? 'Timeline'}
+                  onChange={(event) => updateGraphNodeData(node.id, { timelineName: event.target.value || 'Timeline' })}
+                />
+                <small className="node-hint">
+                  Rename freely; controls keep using the stable id <code>{node.data.timelineId || node.id}</code>.
+                </small>
+              </label>
+            ) : null}
             <label className="node-field">
               <span>Property</span>
               <select
                 value={node.data.tweenProperty ?? 'position'}
-                onChange={(event) =>
-                  updateGraphNodeData(node.id, { tweenProperty: event.target.value as 'position' | 'rotation' | 'scale' })
-                }
+                onChange={(event) => {
+                  const tweenProperty = event.target.value as 'position' | 'rotation' | 'scale';
+                  updateGraphNodeData(node.id, {
+                    tweenProperty,
+                    vectorValue:
+                      tweenProperty === 'rotation'
+                        ? [0, 90, 0]
+                        : tweenProperty === 'scale'
+                          ? node.data.tweenValueMode === 'relative'
+                            ? [1.2, 1.2, 1.2]
+                            : [1, 1, 1]
+                          : [0, 1, 0],
+                  });
+                }}
               >
                 <option value="position">Position</option>
                 <option value="rotation">Rotation (degrees)</option>
@@ -1353,7 +1383,13 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
                   />
                 ))}
               </div>
-              <small className="node-hint">World-space end value (rotation in degrees). A Vector3 wired into To overrides this.</small>
+              <small className="node-hint">
+                {node.data.tweenValueMode === 'relative'
+                  ? node.data.tweenProperty === 'scale'
+                    ? 'Scale multiplier from the captured start. A wired Vector3 overrides this.'
+                    : `Offset from the captured start in ${node.data.tweenSpace ?? 'local'} space. Rotation uses degrees.`
+                  : `Absolute end value in ${node.data.tweenSpace ?? 'local'} space. Rotation uses degrees.`}
+              </small>
             </label>
             <label className="node-field">
               <span>Duration (s)</span>
@@ -1366,19 +1402,39 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
               />
             </label>
             <label className="node-field">
-              <span>Easing</span>
+              <span>Space</span>
               <select
-                value={node.data.easing ?? 'easeInOut'}
+                value={node.data.tweenSpace ?? 'local'}
                 onChange={(event) =>
-                  updateGraphNodeData(node.id, { easing: event.target.value as 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' })
+                  updateGraphNodeData(node.id, { tweenSpace: event.target.value as 'local' | 'world' })
                 }
               >
-                <option value="easeInOut">Ease In-Out (smooth)</option>
-                <option value="easeIn">Ease In (accelerate)</option>
-                <option value="easeOut">Ease Out (decelerate)</option>
-                <option value="linear">Linear (constant)</option>
+                <option value="local">Local / parent space</option>
+                <option value="world">World space</option>
               </select>
             </label>
+            <label className="node-field">
+              <span>Values</span>
+              <select
+                value={node.data.tweenValueMode ?? 'absolute'}
+                onChange={(event) =>
+                  updateGraphNodeData(node.id, { tweenValueMode: event.target.value as 'absolute' | 'relative' })
+                }
+              >
+                <option value="relative">Relative to start</option>
+                <option value="absolute">Absolute</option>
+              </select>
+            </label>
+            <label className="node-field row">
+              <span>Loop</span>
+              <input type="checkbox" checked={node.data.tweenLoop ?? false} onChange={(event) => updateGraphNodeData(node.id, { tweenLoop: event.target.checked })} />
+            </label>
+            {node.data.tweenLoop && (
+              <label className="node-field row">
+                <span>Ping-pong</span>
+                <input type="checkbox" checked={node.data.tweenPingPong ?? false} onChange={(event) => updateGraphNodeData(node.id, { tweenPingPong: event.target.checked })} />
+              </label>
+            )}
             <label className="node-field">
               <span>Target</span>
               <select
@@ -1395,7 +1451,80 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
                   </option>
                 ))}
               </select>
-              <small className="node-hint">Whose transform animates. Exec-out continues immediately; the Done pin fires when the tween finishes.</small>
+              <small className="node-hint">Whose transform animates. Then continues immediately; Update fires every frame and Finished fires once for non-looping playback.</small>
+            </label>
+            <div className="node-field-group-title">Value curve</div>
+            {node.data.tweenCurve ? (
+              <TimelineCurveEditor
+                value={node.data.tweenCurve}
+                onChange={(tweenCurve) => updateGraphNodeData(node.id, { tweenCurve })}
+              />
+            ) : (
+              <>
+                <label className="node-field">
+                  <span>Legacy easing</span>
+                  <select
+                    value={node.data.easing ?? 'easeInOut'}
+                    onChange={(event) =>
+                      updateGraphNodeData(node.id, { easing: event.target.value as 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' })
+                    }
+                  >
+                    <option value="easeInOut">Ease In-Out (smooth)</option>
+                    <option value="easeIn">Ease In (accelerate)</option>
+                    <option value="easeOut">Ease Out (decelerate)</option>
+                    <option value="linear">Linear (constant)</option>
+                  </select>
+                </label>
+                <button className="full-button primary" type="button" onClick={() => updateGraphNodeData(node.id, { tweenCurve: timelineCurvePreset('smooth') })}>
+                  Edit as curve Timeline
+                </button>
+              </>
+            )}
+          </>
+        )}
+
+        {updatesTimelineControl && (
+          <>
+            <div className="node-field-group-title">Timeline playback</div>
+            <label className="node-field">
+              <span>Timeline</span>
+              <select
+                aria-label="Timeline to control"
+                value={node.data.timelineRefId ?? ''}
+                onChange={(event) => updateGraphNodeData(node.id, { timelineRefId: event.target.value || undefined })}
+              >
+                <option value="">Choose a Timeline…</option>
+                {node.data.timelineRefId &&
+                !timelineDefinitions.some((timeline) => (timeline.data.timelineId || timeline.id) === node.data.timelineRefId) ? (
+                  <option value={node.data.timelineRefId}>Missing Timeline ({node.data.timelineRefId})</option>
+                ) : null}
+                {timelineDefinitions.map((timeline) => {
+                  const timelineId = timeline.data.timelineId || timeline.id;
+                  return (
+                    <option key={timeline.id} value={timelineId}>
+                      {timeline.data.timelineName || 'Timeline'}
+                    </option>
+                  );
+                })}
+              </select>
+              <small className="node-hint">Only Timelines in this Blueprint appear here. Each placed Blueprint instance plays independently.</small>
+            </label>
+            <label className="node-field">
+              <span>Command</span>
+              <select
+                aria-label="Timeline command"
+                value={node.data.timelineCommand ?? 'play'}
+                onChange={(event) =>
+                  updateGraphNodeData(node.id, {
+                    timelineCommand: event.target.value as 'play' | 'restart' | 'reverse' | 'stop',
+                  })
+                }
+              >
+                <option value="play">Play / resume forward</option>
+                <option value="restart">Restart from beginning</option>
+                <option value="reverse">Reverse from current time</option>
+                <option value="stop">Stop and hold</option>
+              </select>
             </label>
           </>
         )}

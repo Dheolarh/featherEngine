@@ -87,7 +87,7 @@ exported player share the same React, Three.js, and Rapier foundation.
 
 ## What you can build
 
-Start with a blank project or launch one of seven playable templates:
+Start with a blank project or launch one of nine playable templates:
 
 | Template | Focus |
 | --- | --- |
@@ -98,6 +98,8 @@ Start with a blank project or launch one of seven playable templates:
 | **Driving** | An arcade-style neon cruise with vehicle controls, chase cameras, and a garage. |
 | **Sim racing** | Tuned vehicle physics, laps, rivals, traffic, and race presentation. |
 | **Cinematic** | “The Summit,” a timeline-driven flythrough with cameras, wind, cloth, music, and VFX. |
+| **Physics Lab** | Axis locks, stay events, angular velocity, and runtime gravity controls. |
+| **Timeline Mechanics** | Curve-driven Vault Door, elevator, drawbridge, gate, crusher, and chest examples. |
 
 Templates are editable projects, not videos or hard-coded demos. Open their scenes, inspect their
 Blueprints, replace assets, and reuse the systems in your own game.

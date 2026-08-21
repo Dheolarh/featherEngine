@@ -15,6 +15,7 @@ import type {
 
 import { makeId } from './ids';
 import { keyLabelByCode } from '../../utils/keyboardCodes';
+import { normalizeTimelineCurve, timelineCurvePreset } from '../../runtime/timelineCurve';
 
 export const defaultValueForType = (type: GraphValueType): GraphValue => {
   if (type === 'number') return 0;
@@ -116,6 +117,8 @@ export const nodeDescriptions: Record<string, string> = {
   'Play Cinematic': 'Starts a Film Mode cinematic sequence.',
   'Set Material Color': 'Changes the attached object\'s material color at runtime (per-object).',
   'Set Material Property': 'Sets a numeric material property (metalness/roughness/glow) at runtime (per-object).',
+  Timeline: 'Animates a transform with an editable runtime curve, in local or world space.',
+  'Timeline Control': 'Plays, restarts, reverses, or stops a named Timeline on this Blueprint instance.',
   'Set Anim Float': 'Writes a float into the object\'s animator parameter (e.g. Speed) to drive its state machine.',
   'Set Anim Bool': 'Writes a true/false into the object\'s animator parameter.',
   'Set Anim Trigger': 'Fires a one-shot animator trigger (e.g. Jump, Attack) consumed by a transition.',
@@ -283,6 +286,8 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   'Set Scale': 'action.setScale',
   'Look At': 'action.lookAt',
   Tween: 'action.tweenProperty',
+  Timeline: 'action.tweenProperty',
+  'Timeline Control': 'action.timelineControl',
   'Save Game': 'save.write',
   'Load Game': 'save.load',
   'Clear Save': 'save.clear',
@@ -893,10 +898,21 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
       return { label: 'Look At', description: 'Turns this object to face a world position on the ground plane (wire a Vector3 — e.g. Player Location — into Target).' };
     case 'action.tweenProperty': {
       const prop = data.tweenProperty ?? 'position';
+      const isTimeline = Boolean(data.tweenCurve?.length);
       return {
-        label: `Tween ${prop} ${Number(data.numberValue ?? 1)}s`,
+        label: isTimeline
+          ? `${data.timelineName || 'Timeline'} · ${prop} ${Number(data.numberValue ?? 1)}s`
+          : `Tween ${prop} ${Number(data.numberValue ?? 1)}s`,
         description:
-          'Animates an actor\'s position/rotation/scale to a target value over Duration seconds with easing (Unreal Timeline-lite) — sliding doors, lifts, pickups, UI pops. "To" is a world-space Vector3 (rotation in degrees); wire one in or set it on the node. Exec-out continues IMMEDIATELY (the tween runs in the background); the "Done" pin fires when it finishes. Re-triggers are ignored while it is running. Target defaults to self. Moving kinematic/fixed bodies follow the tween; avoid tweening dynamic bodies (physics fights it).',
+          'Animates an actor\'s position/rotation/scale over an editable value curve — doors, lifts, pickups, mechanisms, and UI-like world motion. Choose local or world coordinates and absolute or relative values. Then continues immediately; Update fires every playback frame and Finished fires once at the end. Moving kinematic/fixed bodies follow the Timeline; dynamic bodies fight authored animation.',
+      };
+    }
+    case 'action.timelineControl': {
+      const command = data.timelineCommand ?? 'play';
+      return {
+        label: `Timeline ${command[0].toUpperCase()}${command.slice(1)}`,
+        description:
+          'Controls a named Timeline on this Blueprint instance. Play resumes forward, Restart begins at the captured start, Reverse continues backward from the current point, and Stop holds the current pose.',
       };
     }
     case 'action.playAnimation':
@@ -1070,10 +1086,23 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
   }
 
   if (nodeKind === 'action.tweenProperty') {
-    if (!normalized.tweenProperty) normalized.tweenProperty = 'position';
+    const freshTimeline = data.label === 'Timeline';
+    if (!normalized.tweenProperty) normalized.tweenProperty = freshTimeline ? 'rotation' : 'position';
     if (typeof normalized.numberValue !== 'number') normalized.numberValue = 1; // duration (seconds)
     if (!normalized.easing) normalized.easing = 'easeInOut';
-    if (!Array.isArray(normalized.vectorValue)) normalized.vectorValue = [0, 0, 0]; // "To" fallback
+    if (!Array.isArray(normalized.vectorValue)) normalized.vectorValue = freshTimeline ? [0, 90, 0] : [0, 0, 0]; // "To" fallback
+    if (freshTimeline && !normalized.tweenCurve) normalized.tweenCurve = timelineCurvePreset('smooth');
+    if (normalized.tweenCurve) normalized.tweenCurve = normalizeTimelineCurve(normalized.tweenCurve);
+    if (!normalized.tweenSpace) normalized.tweenSpace = 'local';
+    if (!normalized.tweenValueMode) normalized.tweenValueMode = freshTimeline ? 'relative' : 'absolute';
+    if (typeof normalized.tweenLoop !== 'boolean') normalized.tweenLoop = false;
+    if (typeof normalized.tweenPingPong !== 'boolean') normalized.tweenPingPong = false;
+  }
+
+  if (nodeKind === 'action.timelineControl') {
+    if (!['play', 'restart', 'reverse', 'stop'].includes(String(normalized.timelineCommand))) {
+      normalized.timelineCommand = 'play';
+    }
   }
 
   if (nodeKind === 'event.timer' && typeof normalized.numberValue !== 'number') {
@@ -1279,7 +1308,15 @@ export const makeNodeData = (
   label: string,
   category: GraphNodeCategory,
   options: Partial<NodeForgeNodeData> = {},
-): NodeForgeNodeData => normalizeNodeData({ label, category, nodeKind: options.nodeKind ?? nodeKindByLabel[label], ...options });
+): NodeForgeNodeData => {
+  const normalized = normalizeNodeData({ label, category, nodeKind: options.nodeKind ?? nodeKindByLabel[label], ...options });
+  // Logical Timeline ids are minted only at creation time. normalizeNodeData also runs on every inspector
+  // edit, so generating one there would silently break every Timeline Control reference.
+  if (normalized.nodeKind === 'action.tweenProperty' && normalized.tweenCurve?.length && !normalized.timelineId) {
+    return { ...normalized, timelineId: makeId('timeline'), timelineName: normalized.timelineName || 'Timeline' };
+  }
+  return normalized;
+};
 
 /** Replace a single graph (by id) via a mapper — used by the material-graph editor actions. */
 export const mapGraphById = (graphs: ProjectGraph[], graphId: string, fn: (graph: ProjectGraph) => ProjectGraph) =>

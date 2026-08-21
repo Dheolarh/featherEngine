@@ -565,6 +565,7 @@ export function remapPackageForImport(
     o.id = remap(maps.object, o.id)!;
     if (o.parentId) o.parentId = remap(maps.object, o.parentId);
     if (o.prefabSourceId) o.prefabSourceId = remap(maps.prefab, o.prefabSourceId);
+    if (o.prefabObjectId) o.prefabObjectId = remap(maps.object, o.prefabObjectId);
     if (o.renderer) {
       o.renderer.modelAssetId = remap(maps.asset, o.renderer.modelAssetId);
       o.renderer.textureAssetId = remap(maps.asset, o.renderer.textureAssetId);

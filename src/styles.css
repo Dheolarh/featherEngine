@@ -10868,3 +10868,135 @@ body.is-scrubbing * {
   background: #8c7bff;
   color: #0b0d12;
 }
+
+/* Gameplay Timeline curve editor --------------------------------------------------------------- */
+.timeline-curve-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(7, 10, 16, 0.34);
+}
+
+.timeline-curve-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.timeline-curve-presets button,
+.timeline-delete-key {
+  min-width: 0;
+  height: 27px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  font: inherit;
+  font-size: var(--text-3xs);
+  cursor: pointer;
+}
+
+.timeline-curve-presets button:hover,
+.timeline-delete-key:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.timeline-curve-graph {
+  display: block;
+  width: 100%;
+  min-height: 154px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #090d14;
+  touch-action: none;
+  user-select: none;
+}
+
+.timeline-curve-bg {
+  fill: rgba(15, 22, 34, 0.94);
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.timeline-curve-grid {
+  stroke: rgba(255, 255, 255, 0.075);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.timeline-curve-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.25;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 45%, transparent));
+  vector-effect: non-scaling-stroke;
+}
+
+.timeline-curve-key {
+  fill: #121a27;
+  stroke: #c9d5e7;
+  stroke-width: 2;
+  cursor: grab;
+  vector-effect: non-scaling-stroke;
+}
+
+.timeline-curve-key:hover,
+.timeline-curve-key.selected {
+  fill: var(--accent);
+  stroke: #ffffff;
+}
+
+.timeline-curve-key:active {
+  cursor: grabbing;
+}
+
+.timeline-curve-axis {
+  fill: #718096;
+  font-size: 8px;
+  pointer-events: none;
+}
+
+.timeline-curve-axis.end {
+  text-anchor: end;
+}
+
+.timeline-key-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.timeline-key-fields label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--text-3xs);
+}
+
+.timeline-key-fields input,
+.timeline-key-fields select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: rgba(8, 10, 15, 0.55);
+}
+
+.timeline-delete-key {
+  align-self: end;
+}
+
+.timeline-delete-key:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

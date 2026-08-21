@@ -83,6 +83,7 @@ import {
   type TerrainBrushSettings,
   type TerrainMaterialLayer,
   type TerrainSculptOperation,
+  type TimelineCurveKey,
   type RuntimeSoundEvent,
   type TransformComponent,
   type Vector3Tuple,
@@ -290,6 +291,7 @@ import {
   waterSurfaceHeight,
 } from './editor/runtimeHelpers';
 import { recordRuntimeSection } from '../runtime/perfStats';
+import { advanceTimelineTime, sampleTimelineCurve } from '../runtime/timelineCurve';
 
 const EMPTY_EXEC_TARGETS: string[] = [];
 
@@ -465,11 +467,14 @@ interface EditorState {
   runtimeCooldowns: Record<string, number>;
   /** Per (object:node) remaining seconds for latent Delay nodes — when one hits 0 the node's output fires. */
   runtimeDelays: Record<string, number>;
-  /** Per (owner:node) running Tween Property animations — advanced each tick (eased transform writes onto
-   *  the target via the cross-object transform pass); the node's "Done" pin fires when one completes. */
+  /** Per (owner:logical Timeline id) Timeline sessions. Completed/stopped entries are retained so a later
+   *  Control node can resume or reverse from the held time without recapturing the authored endpoints. */
   runtimeTweens: Record<
     string,
     {
+      ownerId: string;
+      nodeId: string;
+      timelineId: string;
       targetId: string;
       property: 'position' | 'rotation' | 'scale';
       from: Vector3Tuple;
@@ -477,6 +482,12 @@ interface EditorState {
       time: number;
       duration: number;
       easing: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+      curve?: TimelineCurveKey[];
+      space: 'local' | 'world';
+      loop: boolean;
+      pingPong: boolean;
+      direction: 1 | -1;
+      playing: boolean;
     }
   >;
   /** Targeted custom events queued for delivery NEXT tick: objectId → event names to fire on that actor
@@ -5655,7 +5666,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         graphs: state.graphs.map((graph) => {
           if (graph.id !== blueprint.graphId) return graph;
           const offset = graph.nodes.length * 38;
-          const nodeData = makeNodeData(label, category, seedNodeDataFromProject(label, data, state.variables, state.dataAssets));
+          let nodeData = makeNodeData(label, category, seedNodeDataFromProject(label, data, state.variables, state.dataAssets));
+          if (nodeData.nodeKind === 'action.timelineControl' && !nodeData.timelineRefId) {
+            const timeline = graph.nodes.find(
+              (candidate) => candidate.data.nodeKind === 'action.tweenProperty' && candidate.data.tweenCurve?.length,
+            );
+            if (timeline) nodeData = { ...nodeData, timelineRefId: timeline.data.timelineId || timeline.id };
+          }
           const node: NodeForgeNode = {
             id: nodeId,
             type: 'nodeforge',
@@ -5759,6 +5776,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }),
   pasteGraphNodes: (blueprintId, nodes, edges, offset = { x: 36, y: 36 }) => {
     const idMap = new Map(nodes.map((node) => [node.id, makeId('node')]));
+    const timelineIdMap = new Map<string, string>();
+    for (const node of nodes) {
+      if (node.data.nodeKind === 'action.tweenProperty') {
+        timelineIdMap.set(node.data.timelineId || node.id, makeId('timeline'));
+      }
+    }
     set((state) => {
       const blueprint = state.blueprints.find((item) => item.id === blueprintId);
       if (!blueprint) return state;
@@ -5766,13 +5789,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         blueprints: invalidateFeatherSourceForGraph(state.blueprints, blueprint.graphId),
         graphs: state.graphs.map((graph) => {
           if (graph.id !== blueprint.graphId) return graph;
-          const pasted: NodeForgeNode[] = nodes.map((node) => ({
-            ...node,
-            id: idMap.get(node.id)!,
-            position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
-            data: structuredClone(node.data),
-            selected: true,
-          }));
+          const pasted: NodeForgeNode[] = nodes.map((node) => {
+            const data = structuredClone(node.data);
+            if (data.nodeKind === 'action.tweenProperty') {
+              data.timelineId = timelineIdMap.get(node.data.timelineId || node.id);
+            } else if (data.nodeKind === 'action.timelineControl' && data.timelineRefId) {
+              data.timelineRefId = timelineIdMap.get(data.timelineRefId) ?? data.timelineRefId;
+            }
+            return {
+              ...node,
+              id: idMap.get(node.id)!,
+              position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
+              data,
+              selected: true,
+            };
+          });
           // Only wires fully inside the copied set come along; new ids keep them isolated from the originals.
           const pastedEdges: Edge[] = edges
             .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
@@ -6770,12 +6801,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           else elapsedDelaysByObject.set(objId, [nodeId]);
         }
       }
-      // Tween Property animations (key = `${ownerId}:${nodeId}`): advance each frame and write the eased
+      // Timeline sessions (key = `${ownerId}:${timelineId}`): advance playing entries and write the eased
       // value onto the target via nextTransforms (applied before the character/physics passes, so moving
       // kinematic/fixed bodies follow). A tween that finishes this frame fires its node's "Done" pin via
       // the resume pass below (on the OWNER object, like Delay).
       const nextTweens: EditorState['runtimeTweens'] = {};
       const elapsedTweensByObject = new Map<string, string[]>();
+      const updatedTweensByObject = new Map<string, string[]>();
+      const timelineTransformWrites: Array<{
+        targetId: string;
+        property: 'position' | 'rotation' | 'scale';
+        value: Vector3Tuple;
+        space: 'local' | 'world';
+      }> = [];
       const elapsedScreenFadesByObject = new Map<string, string[]>();
       // Advance gameplay Screen Fade in real time (undo timeScale so it still works in slow-mo / pause).
       {
@@ -6807,34 +6845,41 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       }
       for (const [key, tween] of Object.entries(state.runtimeTweens)) {
-        const time = tween.time + (delta || 1 / 60);
-        const t = Math.min(1, time / Math.max(0.01, tween.duration));
-        const eased =
-          tween.easing === 'linear'
-            ? t
-            : tween.easing === 'easeIn'
-              ? t * t
-              : tween.easing === 'easeOut'
-                ? 1 - (1 - t) * (1 - t)
-                : t * t * (3 - 2 * t);
+        if (!tween.playing) {
+          // Reuse held entries by reference: they retain playback state without waking the owning script
+          // or forcing Zustand churn until a Timeline Control command changes them.
+          nextTweens[key] = tween;
+          continue;
+        }
+        // Unlike the legacy implementation, a paused/timeScale=0 frame has delta=0 and does NOT advance.
+        const step = advanceTimelineTime(
+          tween.time,
+          delta,
+          tween.duration,
+          tween.loop,
+          tween.pingPong,
+          tween.direction,
+        );
+        const t = step.time / Math.max(0.01, tween.duration);
+        const eased = sampleTimelineCurve(tween.curve, t, tween.easing);
         const value: Vector3Tuple = [
           tween.from[0] + (tween.to[0] - tween.from[0]) * eased,
           tween.from[1] + (tween.to[1] - tween.from[1]) * eased,
           tween.from[2] + (tween.to[2] - tween.from[2]) * eased,
         ];
-        const slot = (nextTransforms[tween.targetId] ??= {});
-        if (tween.property === 'position') slot.position = value;
-        else if (tween.property === 'rotation') slot.rotation = value;
-        else slot.scale = value;
-        if (t >= 1) {
-          const sep = key.indexOf(':');
-          const objId = key.slice(0, sep);
-          const nodeId = key.slice(sep + 1);
-          const list = elapsedTweensByObject.get(objId);
-          if (list) list.push(nodeId);
-          else elapsedTweensByObject.set(objId, [nodeId]);
+        timelineTransformWrites.push({ targetId: tween.targetId, property: tween.property, value, space: tween.space });
+        if (delta > 0) {
+          const updated = updatedTweensByObject.get(tween.ownerId);
+          if (updated) updated.push(tween.nodeId);
+          else updatedTweensByObject.set(tween.ownerId, [tween.nodeId]);
+        }
+        if (step.finished) {
+          nextTweens[key] = { ...tween, time: step.time, direction: step.direction, playing: false };
+          const list = elapsedTweensByObject.get(tween.ownerId);
+          if (list) list.push(tween.nodeId);
+          else elapsedTweensByObject.set(tween.ownerId, [tween.nodeId]);
         } else {
-          nextTweens[key] = { ...tween, time };
+          nextTweens[key] = { ...tween, time: step.time, direction: step.direction };
         }
       }
       // "The player" for AI nodes (Distance/Direction/Face To Player) = the active follow-camera character.
@@ -7051,6 +7096,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           if (
             !elapsedDelaysByObject.has(object.id) &&
             !elapsedTweensByObject.has(object.id) &&
+            !updatedTweensByObject.has(object.id) &&
             !graphRuntime.dispatchEventRoots.some((node) => eventRootFires(node, object.id))
           )
             return object;
@@ -7954,6 +8000,102 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             return (typeof wired === 'string' && wired ? wired : resolveTarget(node.data.targetObjectId)) || object.id;
           };
 
+          type RuntimeTimelineSession = (typeof nextTweens)[string];
+          const timelineSessionKey = (definition: NodeForgeNode) =>
+            `${object.id}:${definition.data.timelineId || definition.id}`;
+          const timelinePose = (session: RuntimeTimelineSession): Vector3Tuple => {
+            const t = session.time / Math.max(0.01, session.duration);
+            const eased = sampleTimelineCurve(session.curve, t, session.easing);
+            return [
+              session.from[0] + (session.to[0] - session.from[0]) * eased,
+              session.from[1] + (session.to[1] - session.from[1]) * eased,
+              session.from[2] + (session.to[2] - session.from[2]) * eased,
+            ];
+          };
+          const queueTimelinePose = (session: RuntimeTimelineSession) => {
+            timelineTransformWrites.push({
+              targetId: session.targetId,
+              property: session.property,
+              value: timelinePose(session),
+              space: session.space,
+            });
+          };
+          const stopConflictingTimelines = (key: string, session: RuntimeTimelineSession) => {
+            for (const [runningKey, running] of Object.entries(nextTweens)) {
+              if (
+                runningKey !== key &&
+                running.playing &&
+                running.targetId === session.targetId &&
+                running.property === session.property
+              ) {
+                nextTweens[runningKey] = { ...running, playing: false };
+              }
+            }
+          };
+          const armTimeline = (definition: NodeForgeNode): RuntimeTimelineSession | undefined => {
+            const property = definition.data.tweenProperty ?? 'position';
+            const targetId = objectVarTarget(definition);
+            const targetObject = activeObjectById.get(targetId);
+            if (targetId !== object.id && !targetObject) return undefined;
+            const space = definition.data.tweenSpace ?? 'local';
+            const rawTo = valueInput(definition, 'to', definition.data.vectorValue ?? ([0, 0, 0] as Vector3Tuple));
+            const toVector: Vector3Tuple = Array.isArray(rawTo)
+              ? [Number(rawTo[0]) || 0, Number(rawTo[1]) || 0, Number(rawTo[2]) || 0]
+              : [0, 0, 0];
+            // Rotation values are authored in degrees (matching Set Rotation) and stored in radians.
+            const degreesToRadians = Math.PI / 180;
+            const authoredTo: Vector3Tuple =
+              property === 'rotation'
+                ? [toVector[0] * degreesToRadians, toVector[1] * degreesToRadians, toVector[2] * degreesToRadians]
+                : toVector;
+            const targetLocal =
+              targetId === object.id
+                ? { position, rotation, scale }
+                : targetObject!.transform;
+            // Include self mutations made earlier in this exec chain when capturing a world-space start.
+            const sourceTransform =
+              space === 'world'
+                ? worldTransformOf(
+                    targetId === object.id
+                      ? activeObjects.map((candidate) =>
+                          candidate.id === targetId ? { ...candidate, transform: targetLocal } : candidate,
+                        )
+                      : activeObjects,
+                    targetId,
+                  )
+                : targetLocal;
+            const fromSource = sourceTransform[property];
+            const relative = definition.data.tweenValueMode === 'relative';
+            const to: Vector3Tuple = relative
+              ? property === 'scale'
+                ? [fromSource[0] * authoredTo[0], fromSource[1] * authoredTo[1], fromSource[2] * authoredTo[2]]
+                : [fromSource[0] + authoredTo[0], fromSource[1] + authoredTo[1], fromSource[2] + authoredTo[2]]
+              : authoredTo;
+            const timelineId = definition.data.timelineId || definition.id;
+            const session: RuntimeTimelineSession = {
+              ownerId: object.id,
+              nodeId: definition.id,
+              timelineId,
+              targetId,
+              property,
+              from: [fromSource[0], fromSource[1], fromSource[2]],
+              to,
+              time: 0,
+              duration: Math.max(0.01, toNumber(valueInput(definition, 'duration', Number(definition.data.numberValue ?? 1)))),
+              easing: definition.data.easing ?? 'easeInOut',
+              curve: definition.data.tweenCurve,
+              space,
+              loop: definition.data.tweenLoop ?? false,
+              pingPong: definition.data.tweenPingPong ?? false,
+              direction: 1,
+              playing: true,
+            };
+            const key = timelineSessionKey(definition);
+            stopConflictingTimelines(key, session);
+            nextTweens[key] = session;
+            return session;
+          };
+
           const applyAction = (node: NodeForgeNode, visited: Set<string>): boolean => {
             // Cast (Unreal-style): gate the chain on the target running a specific blueprint. The object to test
             // comes from the wired "object" reference input (e.g. another Cast's "As" pin) or the targetObjectId
@@ -7996,42 +8138,64 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               return false;
             }
 
-            // Tween Property (latent, non-blocking): arm a tween animating the target's transform property
-            // to "To" over Duration seconds, then continue the chain IMMEDIATELY (the tween advances in the
-            // per-tick pass; its "Done" pin fires from the resume pass on completion). Re-triggers while one
-            // is running are ignored, like Delay — so an Update-driven arm doesn't restart it every frame.
+            // Direct Timeline/Tween execution remains fire-and-forget: arm and continue immediately. Reaching
+            // it again while playing is ignored; reaching it after a stop/completion captures a fresh session.
             if (node.data.nodeKind === 'action.tweenProperty') {
-              const key = `${object.id}:${node.id}`;
-              if (nextTweens[key] === undefined) {
-                const property = node.data.tweenProperty ?? 'position';
-                const tid = objectVarTarget(node);
-                const targetObj = activeObjectById.get(tid);
-                if (tid !== object.id && !targetObj) return true; // unknown target — skip arming
-                const rawTo = valueInput(node, 'to', node.data.vectorValue ?? ([0, 0, 0] as Vector3Tuple));
-                const toVec: Vector3Tuple = Array.isArray(rawTo)
-                  ? [Number(rawTo[0]) || 0, Number(rawTo[1]) || 0, Number(rawTo[2]) || 0]
-                  : [0, 0, 0];
-                // Rotation tweens are authored in degrees (matching Set Rotation) but run in radians.
-                const d = Math.PI / 180;
-                const to: Vector3Tuple = property === 'rotation' ? [toVec[0] * d, toVec[1] * d, toVec[2] * d] : toVec;
-                const fromSource =
-                  tid === object.id
-                    ? property === 'position'
-                      ? position
-                      : property === 'rotation'
-                        ? rotation
-                        : scale
-                    : targetObj!.transform[property];
-                nextTweens[key] = {
-                  targetId: tid,
-                  property,
-                  from: [fromSource[0], fromSource[1], fromSource[2]],
-                  to,
-                  time: 0,
-                  duration: Math.max(0.01, toNumber(valueInput(node, 'duration', Number(node.data.numberValue ?? 1)))),
-                  easing: node.data.easing ?? 'easeInOut',
-                };
+              const existing = nextTweens[timelineSessionKey(node)];
+              if (!existing?.playing) armTimeline(node);
+              return true;
+            }
+
+            // Timeline Control commands a definition in THIS graph while the runtime key includes THIS owner,
+            // so many objects can share one Blueprint without controlling each other's playback.
+            if (node.data.nodeKind === 'action.timelineControl') {
+              const timelineId = node.data.timelineRefId;
+              const definition = timelineId ? runtime.timelineNodesById.get(timelineId) : undefined;
+              if (!definition) return true; // dangling references are diagnosed in the editor and safe at runtime
+              const key = timelineSessionKey(definition);
+              const command = node.data.timelineCommand ?? 'play';
+              let session: RuntimeTimelineSession | undefined = nextTweens[key];
+
+              if (!session) {
+                // Reverse and Stop need a captured current time. Play/Restart can lazily arm a detached definition.
+                if (command === 'reverse' || command === 'stop') return true;
+                session = armTimeline(definition);
+                if (!session) return true;
+                queueTimelinePose(session);
+                return true;
               }
+
+              if (command === 'stop') {
+                if (session.playing) nextTweens[key] = { ...session, playing: false };
+                return true;
+              }
+
+              let commanded: RuntimeTimelineSession;
+              if (command === 'restart') {
+                commanded = { ...session, time: 0, direction: 1, playing: true };
+              } else if (command === 'reverse') {
+                if (!session.loop && session.time <= 0) {
+                  nextTweens[key] = session.direction === -1 && !session.playing
+                    ? session
+                    : { ...session, direction: -1, playing: false };
+                  return true;
+                }
+                commanded = { ...session, direction: -1, playing: true };
+              } else {
+                if (!session.loop && session.time >= session.duration) {
+                  nextTweens[key] = session.direction === 1 && !session.playing
+                    ? session
+                    : { ...session, direction: 1, playing: false };
+                  return true;
+                }
+                commanded = { ...session, direction: 1, playing: true };
+              }
+
+              stopConflictingTimelines(key, commanded);
+              nextTweens[key] = commanded;
+              // Restart snaps to the captured start; resume/reverse reassert the curve pose if another writer
+              // changed this channel while the Timeline was held.
+              queueTimelinePose(commanded);
               return true;
             }
 
@@ -9096,7 +9260,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               }
             }
 
-            // Resume Tween Property "Done" pins for tweens that finished this frame (exec-done handle).
+            // Timeline Update pulses once per advancing playback frame, matching Unreal's Update output.
+            const tweensUpdatedHere = updatedTweensByObject.get(object.id);
+            if (tweensUpdatedHere) {
+              for (const tweenNodeId of tweensUpdatedHere) {
+                for (const targetId of execTargetsFromHandle(tweenNodeId, 'exec-update')) executeFrom(targetId, new Set());
+              }
+            }
+
+            // Resume Timeline "Finished" pins for non-looping animations that reached an endpoint.
             const tweensDoneHere = elapsedTweensByObject.get(object.id);
             if (tweensDoneHere) {
               for (const tweenNodeId of tweensDoneHere) {
@@ -9170,6 +9342,35 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             },
           };
         });
+      }
+      if (timelineTransformWrites.length) {
+        // Parents first: a child's world->local conversion must see its parent's Timeline pose from this frame.
+        const parentById = new Map(mappedObjects.map((object) => [object.id, object.parentId]));
+        const depthOf = (id: string) => {
+          let depth = 0;
+          let cursor = parentById.get(id);
+          while (cursor && depth < 256) {
+            depth += 1;
+            cursor = parentById.get(cursor);
+          }
+          return depth;
+        };
+        timelineTransformWrites.sort((a, b) => depthOf(a.targetId) - depthOf(b.targetId));
+        for (const write of timelineTransformWrites) {
+          const target = mappedObjects.find((object) => object.id === write.targetId);
+          if (!target || destroyedIds.has(target.id)) continue;
+          let transform: TransformComponent;
+          if (write.space === 'local') {
+            transform = { ...target.transform, [write.property]: write.value };
+          } else {
+            const currentWorld = worldTransformOf(mappedObjects, target.id);
+            const desiredWorld: TransformComponent = { ...currentWorld, [write.property]: write.value };
+            transform = worldToLocalUnderParent(mappedObjects, desiredWorld, target.parentId);
+          }
+          mappedObjects = mappedObjects.map((object) =>
+            object.id === target.id ? { ...object, transform } : object,
+          );
+        }
       }
       const mappedObjectById = fillObjectIdMap(tickMappedById, mappedObjects);
       // One terrain sampler for the whole tick: filters terrain objects once and memoizes

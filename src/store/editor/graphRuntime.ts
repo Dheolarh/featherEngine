@@ -59,6 +59,8 @@ export const layoutGraphNodes = (nodes: NodeForgeNode[], edges: Edge[]): NodeFor
 export interface GraphRuntime {
   graph: ProjectGraph;
   nodesById: Map<string, NodeForgeNode>;
+  /** Timeline definitions keyed by their persisted logical id (legacy graphs fall back to node.id). */
+  timelineNodesById: Map<string, NodeForgeNode>;
   /** Compiled node records: one lookup gives the node plus its exec/value wiring. */
   compiledNodesById: Map<string, CompiledGraphNode>;
   /** Default execution continuation: targets reached via the standard "exec-out" pin. */
@@ -104,6 +106,12 @@ const graphRuntimeMapCache = new WeakMap<ProjectGraph[], Map<string, GraphRuntim
 
 export const buildGraphRuntime = (graph: ProjectGraph): GraphRuntime => {
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const timelineNodesById = new Map<string, NodeForgeNode>();
+  for (const node of graph.nodes) {
+    if (node.data.nodeKind === 'action.tweenProperty') {
+      timelineNodesById.set(node.data.timelineId || node.id, node);
+    }
+  }
   const compiledNodesById = new Map<string, CompiledGraphNode>(
     graph.nodes.map((node) => [
       node.id,
@@ -197,6 +205,7 @@ export const buildGraphRuntime = (graph: ProjectGraph): GraphRuntime => {
   return {
     graph,
     nodesById,
+    timelineNodesById,
     compiledNodesById,
     outgoing,
     outgoingByHandle,

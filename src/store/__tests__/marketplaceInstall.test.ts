@@ -137,6 +137,39 @@ describe('bundled asset store — catalog to installed content', () => {
     for (const id of referenced) expect(materialIds.has(id)).toBe(true);
   });
 
+  it('installs the shipped Timeline Mechanics world with a resolvable Vault Door prefab', async () => {
+    await useMarketplaceStore.getState().load();
+    const template = useMarketplaceStore
+      .getState()
+      .packages.find((entry) => entry.slug === 'template-timeline-mechanics');
+    expect(template).toBeDefined();
+    expect(template!.kind).toBe('project');
+    expect(template!.contents).toMatchObject({ scenes: 1, prefabs: 1, blueprints: 6 });
+
+    await useMarketplaceStore.getState().install(template!);
+
+    const editor = useEditorStore.getState();
+    expect(editor.activeScene()?.name).toBe('Timeline Mechanics');
+    const prefab = editor.prefabs.find((item) => item.name === 'Interactive Vault Door');
+    expect(prefab).toBeDefined();
+    const root = prefab!.objects.find((object) => object.id === prefab!.rootId)!;
+    const placed = editor.activeScene()!.objects.find(
+      (object) => object.prefabSourceId === prefab!.id && object.prefabObjectId === prefab!.rootId,
+    );
+    expect(placed).toBeDefined();
+    expect(placed!.script?.blueprintId).toBe(root.script?.blueprintId);
+
+    const blueprint = editor.blueprints.find((item) => item.id === root.script?.blueprintId)!;
+    const graph = editor.graphs.find((item) => item.id === blueprint.graphId)!;
+    const definition = graph.nodes.find((node) => node.data.timelineId === 'vault-door-swing');
+    expect(definition).toBeDefined();
+    expect(
+      graph.nodes
+        .filter((node) => node.data.nodeKind === 'action.timelineControl')
+        .every((node) => node.data.timelineRefId === definition!.data.timelineId),
+    ).toBe(true);
+  });
+
   it('keeps every material reference inside an installed prefab resolvable', async () => {
     await useMarketplaceStore.getState().load();
     const listing = useMarketplaceStore.getState().packages.find((entry) => entry.contents.prefabs > 0);

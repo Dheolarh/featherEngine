@@ -157,6 +157,7 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'action.setRotation': RotateCw,
   'action.setScale': Scaling,
   'action.tweenProperty': Spline,
+  'action.timelineControl': Rewind,
   'event.functionEntry': SquareFunction,
   'logic.callFunction': SquareFunction,
   'action.lookAt': Eye,
@@ -745,6 +746,7 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
   if (data.nodeKind === 'logic.flipFlop') pinBottom = Math.max(pinBottom, pinTop + 1 * pinStep + 30);
   if (data.nodeKind === 'event.functionEntry') pinBottom = Math.max(pinBottom, pinTop + 2 * pinStep + 30);
   if (data.nodeKind === 'logic.callFunction' || data.nodeKind === 'action.spawnPrefab') pinBottom = Math.max(pinBottom, pinTop + valueInputs.length * pinStep + 30);
+  if (data.nodeKind === 'action.tweenProperty') pinBottom = Math.max(pinBottom, pinTop + pinStep + 30);
 
   const inputPinCount = (data.hasInput !== false && !isValueProducer ? 1 : 0) + valueInputs.length;
   const outputPinCount =
@@ -758,7 +760,7 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
     (data.nodeKind === 'event.collisionEnter' ? 4 : 0) +
     (data.nodeKind === 'event.collisionExit' || data.nodeKind === 'event.triggerEnter' || data.nodeKind === 'event.triggerExit' ? 2 : 0) +
     (data.nodeKind === 'event.collisionStay' || data.nodeKind === 'event.triggerStay' ? 1 : 0) +
-    (data.nodeKind === 'action.tweenProperty' || data.nodeKind === 'action.screenFade' ? 1 : 0) +
+    (data.nodeKind === 'action.tweenProperty' ? 2 : data.nodeKind === 'action.screenFade' ? 1 : 0) +
     (data.nodeKind === 'logic.forLoop' || data.nodeKind === 'logic.forEachActor' ? 2 : 0) +
     switchCases.length +
     (data.nodeKind === 'logic.sequence' ? 3 : 0) +
@@ -1166,13 +1168,17 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
         </>
       )}
 
-      {/* Tween: the standard exec-out (above) continues immediately; "Done" fires when the animation completes. */}
+      {/* Timeline: Then continues immediately; Update pulses during playback and Finished fires once. */}
       {data.nodeKind === 'action.tweenProperty' && (
         <>
           <span className="nfn-pin-label" style={{ top: pinTop - 4 }}>
-            Done
+            Update
           </span>
-          <Handle id="exec-done" className="node-port exec-port source" type="source" position={Position.Right} style={{ top: pinTop + 2 }} />
+          <Handle id="exec-update" className="node-port exec-port source" type="source" position={Position.Right} style={{ top: pinTop + 2 }} />
+          <span className="nfn-pin-label" style={{ top: pinTop + pinStep - 4 }}>
+            Finished
+          </span>
+          <Handle id="exec-done" className="node-port exec-port source" type="source" position={Position.Right} style={{ top: pinTop + pinStep + 2 }} />
         </>
       )}
 

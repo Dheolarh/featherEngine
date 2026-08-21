@@ -61,12 +61,17 @@ function assertAssembledPlayer(output, expectedBundle) {
     assert.ok(existsSync(resolve(output, required)), `portable export is missing ${required}`);
   }
   assert.ok(!existsSync(resolve(output, 'templates')), 'portable export copied editor-only templates');
+  assert.ok(!existsSync(resolve(output, 'store')), 'portable export copied the editor-only marketplace');
 
   const files = walkFiles(output);
   const relativeFiles = files.map((file) => relative(output, file).replaceAll('\\', '/'));
   assert.ok(
     relativeFiles.every((file) => !file.startsWith('templates/')),
     'portable export contains files under templates/',
+  );
+  assert.ok(
+    relativeFiles.every((file) => !file.startsWith('store/')),
+    'portable export contains files under store/',
   );
 
   const index = readFileSync(resolve(output, 'index.html'), 'utf8');
@@ -97,6 +102,10 @@ try {
   assert.ok(
     !existsSync(resolve(distPlayer, 'templates')),
     'dist-player must not contain editor-only starter templates',
+  );
+  assert.ok(
+    !existsSync(resolve(distPlayer, 'store')),
+    'dist-player must not contain the editor-only marketplace',
   );
 
   // Keep this fixture canonical and player-loadable. If the persisted schema grows, this list forces

@@ -201,6 +201,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Built FPS template';
     case 'create_film_mode_template':
       return 'Built "The Summit" cinematic template';
+    case 'create_timeline_showcase_template':
+      return 'Built Timeline Mechanics showcase';
     case 'create_cinematic':
       return `Created cinematic${input.name ? ` "${String(input.name)}"` : ''}`;
     case 'add_cinematic_action':

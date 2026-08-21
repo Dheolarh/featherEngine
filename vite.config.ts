@@ -15,10 +15,11 @@ function finalizePlayerBuild(): Plugin {
       const to = resolve(__dirname, 'dist-player/index.html');
       if (existsSync(from)) renameSync(from, to);
 
-      // Vite copies all of public/ by default. Starter projects need public/templates while using
-      // the editor, but exported games embed their own referenced assets in game-bundle.js. Keeping
-      // every starter asset here made even an empty player roughly 150 MB.
+      // Vite copies all of public/ by default. Starter projects and the marketplace need these
+      // directories in the editor, but exported games embed their own referenced assets in
+      // game-bundle.js. Keeping the editor catalogs makes every player needlessly huge.
       rmSync(resolve(__dirname, 'dist-player/templates'), { recursive: true, force: true });
+      rmSync(resolve(__dirname, 'dist-player/store'), { recursive: true, force: true });
     },
   };
 }

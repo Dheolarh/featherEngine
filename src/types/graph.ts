@@ -125,6 +125,7 @@ export type GraphNodeKind =
   | 'action.setRotation'
   | 'action.setScale'
   | 'action.tweenProperty'
+  | 'action.timelineControl'
   | 'action.lookAt'
   | 'animator.setFloat'
   | 'animator.setBool'
@@ -201,6 +202,22 @@ export type GraphNodeKind =
   | 'action.startReplay'
   | 'action.screenFade';
 
+/** Interpolation used by one segment of a gameplay Timeline curve. */
+export type TimelineCurveInterpolation = 'hold' | 'linear' | 'cubic';
+
+/**
+ * One editable key on a Timeline's normalized 0..1 value curve.
+ * Tangents are slopes in value-per-normalized-time and are used by cubic Hermite segments.
+ */
+export interface TimelineCurveKey {
+  id: string;
+  time: number;
+  value: number;
+  interpolation: TimelineCurveInterpolation;
+  inTangent?: number;
+  outTangent?: number;
+}
+
 export interface NodeForgeNodeData extends Record<string, unknown> {
   label: string;
   nodeKind: GraphNodeKind;
@@ -248,6 +265,24 @@ export interface NodeForgeNodeData extends Record<string, unknown> {
   tweenProperty?: 'position' | 'rotation' | 'scale';
   /** action.tweenProperty: easing curve shaping the animation (defaults to easeInOut). */
   easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+  /** action.tweenProperty / Timeline: editable normalized value curve. Missing = legacy easing. */
+  tweenCurve?: TimelineCurveKey[];
+  /** Timeline transform coordinates. Local is the authored parent space; world is converted through parents. */
+  tweenSpace?: 'local' | 'world';
+  /** Absolute targets a transform value; relative offsets the transform captured when playback starts. */
+  tweenValueMode?: 'absolute' | 'relative';
+  /** Repeat instead of firing Finished at the end. */
+  tweenLoop?: boolean;
+  /** When looping, reverse at each end rather than wrapping back to the start. */
+  tweenPingPong?: boolean;
+  /** Timeline: stable graph-scoped identity used by Timeline Control nodes and FeatherScript. */
+  timelineId?: string;
+  /** Timeline: editable display name; identity remains timelineId when this changes. */
+  timelineName?: string;
+  /** action.timelineControl: stable identity of the Timeline definition to command. */
+  timelineRefId?: string;
+  /** action.timelineControl: playback operation applied to the referenced Timeline instance. */
+  timelineCommand?: 'play' | 'restart' | 'reverse' | 'stop';
   /** action.playSound: id of the audio asset to play. */
   assetId?: string;
   /** action.playSound: loudness 0..1 (overridable via Volume value input). */
@@ -413,4 +448,3 @@ export interface NodeForgeNodeData extends Record<string, unknown> {
 }
 
 export type NodeForgeNode = Node<NodeForgeNodeData, 'nodeforge'>;
-

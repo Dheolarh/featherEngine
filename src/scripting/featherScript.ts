@@ -9,6 +9,7 @@ import type {
   ScriptBlueprint,
   Vector3Tuple,
 } from '../types';
+import { encodeTimelineCurve } from '../runtime/timelineCurve';
 
 export interface FeatherScriptPrintOptions {
   blueprint: ScriptBlueprint;
@@ -490,8 +491,20 @@ class FeatherScriptPrinter {
         ];
         const easing = node.data.easing ?? 'easeInOut';
         if (easing !== 'easeInOut') args.push(`easing: ${quote(easing)}`);
-        return `tween(${args.join(', ')})`;
+        const isTimeline = Boolean(node.data.tweenCurve?.length);
+        if (isTimeline) {
+          args.push(`id: ${quote(node.data.timelineId || node.id)}`);
+          if (node.data.timelineName && node.data.timelineName !== 'Timeline') args.push(`name: ${quote(node.data.timelineName)}`);
+          args.push(`curve: ${quote(encodeTimelineCurve(node.data.tweenCurve))}`);
+        }
+        if ((node.data.tweenSpace ?? 'local') !== 'local') args.push(`space: ${quote(node.data.tweenSpace!)}`);
+        if (node.data.tweenValueMode === 'relative') args.push('relative: true');
+        if (node.data.tweenLoop) args.push('loop: true');
+        if (node.data.tweenPingPong) args.push('ping_pong: true');
+        return `${isTimeline ? 'timeline' : 'tween'}(${args.join(', ')})`;
       }
+      case 'action.timelineControl':
+        return `timeline_control(${quote(node.data.timelineRefId ?? '')}, command: ${quote(node.data.timelineCommand ?? 'play')})`;
       case 'action.fractureObject':
         return `fracture(${this.targetArgument(node)})`;
       case 'action.burstParticles':

@@ -26,7 +26,8 @@ type TemplateKey =
   | 'cinematic'
   | 'meadows'
   | 'cube-realm'
-  | 'physics-lab';
+  | 'physics-lab'
+  | 'timeline-mechanics';
 
 interface TemplateDef {
   slug: string;
@@ -86,6 +87,14 @@ const TEMPLATES: Record<TemplateKey, TemplateDef> = {
     description: 'A rig for exploring axis locks, stay events, spin and gravity overrides.',
     tags: ['template', 'world', 'physics', 'prototyping'],
     build: async () => (await import('../project/physicsLabTemplate')).createPhysicsLabTemplate(),
+  },
+  'timeline-mechanics': {
+    slug: 'template-timeline-mechanics',
+    title: 'Timeline Mechanics',
+    description:
+      'A walkable curve-animation gallery with an interactive Vault Door prefab, elevator, drawbridge, security gate, crusher and chest.',
+    tags: ['template', 'world', 'timeline', 'animation', 'blueprint', 'prefab'],
+    build: async () => (await import('../project/timelineShowcaseTemplate')).createTimelineShowcaseTemplate(),
   },
   'cube-realm': {
     slug: 'template-cube-realm',

@@ -57,6 +57,22 @@ describe('script reliability', () => {
     expect(problems.some((problem) => problem.message.includes('Call Function'))).toBe(true);
   });
 
+  it('warns about missing and duplicate logical Timeline references', () => {
+    const graph: ProjectGraph = {
+      id: 'g-1',
+      name: 'Guard Graph',
+      nodes: [
+        makeNode('timeline-a', 'action.tweenProperty', { timelineId: 'door-swing' }),
+        makeNode('timeline-b', 'action.tweenProperty', { timelineId: 'door-swing' }),
+        makeNode('control', 'action.timelineControl', { timelineRefId: 'missing-track', timelineCommand: 'play' }),
+      ],
+      edges: [],
+    };
+    const problems = scanBlueprintGraphProblems(blueprint, graph, []);
+    expect(problems.some((problem) => problem.message.includes('share the id "door-swing"'))).toBe(true);
+    expect(problems.some((problem) => problem.message.includes('missing Timeline'))).toBe(true);
+  });
+
   it('surfaces those graph issues in the Problems scan', () => {
     const graph: ProjectGraph = {
       id: 'g-1',

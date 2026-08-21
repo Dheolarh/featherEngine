@@ -108,6 +108,137 @@ spec('node search offers to build from a plain-English description', async () =>
   }
 });
 
+spec('Timeline nodes expose an editable curve and controllable playback', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script' });
+  try {
+    await openScripting(app);
+    const nodeId = await app.evaluate(`(() => {
+      const store = window.__featherStore;
+      const id = store.addGraphNodeToBlueprint(store.activeBlueprintId, 'Timeline', 'Runtime', {}, { x: 420, y: 360 });
+      store.selectGraphNode(id);
+      return id;
+    })()`);
+    assert.ok(nodeId, 'Timeline node was created');
+    await app.waitFor(`document.querySelector('.timeline-curve-editor')`, { label: 'Timeline curve editor' });
+    assert.equal(await app.count('.timeline-curve-key'), 2, 'fresh Timelines start with a two-key curve');
+    assert.equal(await app.count('.node-port.source[data-handleid="exec-update"]'), 1, 'Timeline exposes Update');
+    assert.equal(await app.count('.node-port.source[data-handleid="exec-done"]'), 1, 'Timeline exposes Finished');
+
+    await app.evaluate(`document.querySelector('.timeline-curve-presets button:nth-child(2)')?.scrollIntoView({ block: 'center' })`);
+    await delay(150);
+    await app.realClick('.timeline-curve-presets button:nth-child(2)');
+    await app.waitFor(
+      `window.__featherStore.selectedGraphNode().data.tweenCurve.every((key) => key.interpolation === 'linear')`,
+      { label: 'Linear preset persisted to graph data' },
+    );
+
+    // Use real browser input for the editor's double-click-to-add interaction.
+    await app.evaluate(`document.querySelector('.timeline-curve-graph')?.scrollIntoView({ block: 'center' })`);
+    await delay(150);
+    const point = await app.boxOf('.timeline-curve-graph');
+    assert.ok(point, 'curve graph is visible');
+    const mouse = { x: point.x, y: point.y, button: 'left', buttons: 1 };
+    await app.page.call('Input.dispatchMouseEvent', { ...mouse, type: 'mouseMoved', buttons: 0 });
+    await app.page.call('Input.dispatchMouseEvent', { ...mouse, type: 'mousePressed', clickCount: 1 });
+    await app.page.call('Input.dispatchMouseEvent', { ...mouse, type: 'mouseReleased', buttons: 0, clickCount: 1 });
+    await delay(40);
+    await app.page.call('Input.dispatchMouseEvent', { ...mouse, type: 'mousePressed', clickCount: 2 });
+    await app.page.call('Input.dispatchMouseEvent', { ...mouse, type: 'mouseReleased', buttons: 0, clickCount: 2 });
+    await app.waitFor(`window.__featherStore.selectedGraphNode().data.tweenCurve.length === 3`, {
+      label: 'double-click added a Timeline key',
+    });
+    assert.equal(await app.count('.timeline-curve-key'), 3, 'the added key renders in the editor');
+
+    const controlId = await app.evaluate(`(() => {
+      const store = window.__featherStore;
+      const id = store.addGraphNodeToBlueprint(store.activeBlueprintId, 'Timeline Control', 'Runtime', {}, { x: 700, y: 360 });
+      store.selectGraphNode(id);
+      return id;
+    })()`);
+    assert.ok(controlId, 'Timeline Control node was created');
+    await app.waitFor(`document.querySelector('select[aria-label="Timeline to control"]')`, {
+      label: 'Timeline selector visible',
+    });
+    assert.equal(
+      await app.evaluate(`(() => {
+        const store = window.__featherStore;
+        const graph = store.activeGraph();
+        const timeline = graph.nodes.find((node) => node.id === ${JSON.stringify(nodeId)});
+        return store.selectedGraphNode().data.timelineRefId === (timeline.data.timelineId || timeline.id);
+      })()`),
+      true,
+      'a fresh Control targets the existing Timeline',
+    );
+    await app.evaluate(`(() => {
+      const select = document.querySelector('select[aria-label="Timeline command"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      setter.call(select, 'reverse');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await app.waitFor(`window.__featherStore.selectedGraphNode().data.timelineCommand === 'reverse'`, {
+      label: 'Reverse command persisted to graph data',
+    });
+  } finally {
+    await app.dispose();
+  }
+});
+
+spec('Timeline Mechanics ships a reusable door that opens and reverses through interaction', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=timeline' });
+  try {
+    await app.waitFor(
+      `window.__featherStore.prefabs.some((prefab) => prefab.name === 'Interactive Vault Door')`,
+      { label: 'Timeline Mechanics gallery and prefab built' },
+    );
+    const setup = await app.evaluate(`(() => {
+      const store = window.__featherStore;
+      const prefab = store.prefabs.find((item) => item.name === 'Interactive Vault Door');
+      const root = store.activeScene().objects.find(
+        (object) => object.prefabSourceId === prefab.id && object.prefabObjectId === prefab.rootId,
+      );
+      return {
+        prefabId: prefab.id,
+        rootId: root.id,
+        blueprints: store.blueprints.filter((item) => item.folderId === prefab.folderId).length,
+      };
+    })()`);
+    assert.ok(setup.prefabId, 'the reusable prefab exists');
+    assert.ok(setup.rootId, 'the scene contains a placed prefab root');
+    assert.equal(setup.blueprints, 6, 'all six inspectable mechanism Blueprints exist');
+
+    await app.realClick('.run-button');
+    await app.waitFor(`window.__featherStore.runtimeInteractFocusId === ${JSON.stringify(setup.rootId)}`, {
+      label: 'player focused the Vault Door',
+    });
+    const pressInteract = async () => {
+      await app.page.call('Input.dispatchKeyEvent', {
+        type: 'keyDown', code: 'KeyE', key: 'e', windowsVirtualKeyCode: 69, nativeVirtualKeyCode: 69,
+      });
+      await delay(45);
+      await app.page.call('Input.dispatchKeyEvent', {
+        type: 'keyUp', code: 'KeyE', key: 'e', windowsVirtualKeyCode: 69, nativeVirtualKeyCode: 69,
+      });
+    };
+
+    await pressInteract();
+    await app.waitFor(
+      `Math.abs(window.__featherStore.activeScene().objects.find((object) => object.id === ${JSON.stringify(setup.rootId)}).transform.rotation[1]) > 0.25`,
+      { label: 'Vault Door opened along its Timeline curve' },
+    );
+    const openAngle = await app.evaluate(
+      `Math.abs(window.__featherStore.activeScene().objects.find((object) => object.id === ${JSON.stringify(setup.rootId)}).transform.rotation[1])`,
+    );
+
+    await pressInteract();
+    await app.waitFor(
+      `Math.abs(window.__featherStore.activeScene().objects.find((object) => object.id === ${JSON.stringify(setup.rootId)}).transform.rotation[1]) < ${openAngle - 0.05}`,
+      { label: 'Vault Door reversed without snapping' },
+    );
+  } finally {
+    await app.dispose();
+  }
+});
+
 spec('the graph canvas has no large near-white slab on a dark theme', async () => {
   // Regression guard for the minimap rendering as a white rectangle over the canvas: xyflow's
   // MiniMap defaults to a light bgColor/maskColor, and those are SVG paint attributes that the
@@ -442,6 +573,9 @@ async function serverUp() {
 }
 
 async function main() {
+  const requested = process.env.E2E_GREP?.trim().toLowerCase();
+  const selectedSpecs = requested ? specs.filter(({ name }) => name.toLowerCase().includes(requested)) : specs;
+  if (!selectedSpecs.length) throw new Error(`No e2e spec matched E2E_GREP=${JSON.stringify(process.env.E2E_GREP)}`);
   let devServer;
   if (!(await serverUp())) {
     process.stdout.write(`Starting dev server for e2e…\n`);
@@ -456,7 +590,7 @@ async function main() {
 
   let failed = 0;
   try {
-    for (const { name, fn } of specs) {
+    for (const { name, fn } of selectedSpecs) {
       const started = Date.now();
       try {
         await fn();
@@ -470,7 +604,7 @@ async function main() {
     if (devServer) devServer.kill();
   }
 
-  process.stdout.write(`\n${specs.length - failed}/${specs.length} e2e specs passed\n`);
+  process.stdout.write(`\n${selectedSpecs.length - failed}/${selectedSpecs.length} e2e specs passed\n`);
   process.exit(failed ? 1 : 0);
 }
 

@@ -24,6 +24,7 @@ import {
   type FeatherEventHandler,
 } from './featherParser';
 import { isBlockingFeatherWarning, suggestIdentifier } from './featherDiagnostics';
+import { decodeTimelineCurve, timelineCurvePreset } from '../runtime/timelineCurve';
 
 export interface FeatherCompileResult {
   ok: boolean;
@@ -75,7 +76,7 @@ interface ValueRef {
 const RESERVED_CALLEES = new Set([
   'print', 'wait', 'destroy', 'fire_event', 'apply_damage', 'apply_force', 'apply_impulse', 'apply_torque',
   'set_var', 'get_var', 'set_position', 'set_rotation', 'set_scale', 'look_at', 'set_velocity', 'set_physics',
-  'set_visible', 'set_active', 'set_joint_motor', 'set_ragdoll', 'tween', 'fracture',
+  'set_visible', 'set_active', 'set_joint_motor', 'set_ragdoll', 'tween', 'timeline', 'timeline_control', 'fracture',
   'burst_particles', 'set_particles', 'spawn_particles', 'play_animation', 'set_movement_mode',
   'enter_vehicle', 'exit_vehicle', 'spawn_projectile', 'spawn_attached', 'cut_cable', 'set_cable_length',
   'spawn_object', 'spawn_prefab', 'explode', 'spawn_decal', 'cooldown', 'do_once', 'cast',
@@ -375,6 +376,7 @@ const PHYSICS_BODIES = new Set(['dynamic', 'fixed', 'kinematic']);
 const PHYSICS_COLLIDERS = new Set(['box', 'sphere', 'capsule', 'mesh', 'convex']);
 const TWEEN_PROPERTIES = new Set(['position', 'rotation', 'scale']);
 const TWEEN_EASINGS = new Set(['linear', 'easeIn', 'easeOut', 'easeInOut']);
+const TIMELINE_COMMANDS = new Set(['play', 'restart', 'reverse', 'stop']);
 const MOVEMENT_MODES = new Set(['walking', 'swimming', 'climbing', 'flying']);
 
 const dataForLiteral = (value: GraphValue | undefined, fallbackType: GraphValueType): Partial<NodeForgeNodeData> => {
@@ -890,14 +892,31 @@ class FeatherGraphBuilder {
         this.attachValueOrLiteral(node, 'on', rawArg('on', 1), 'boolean', 'booleanValue');
         return node;
       }
-      case 'tween': {
+      case 'tween':
+      case 'timeline': {
         const property = unquote(call.named.get('property') ?? '') ?? 'position';
         const easing = unquote(call.named.get('easing') ?? '') ?? 'easeInOut';
+        const space = unquote(call.named.get('space') ?? '') ?? 'local';
+        const relative = parseLiteral(call.named.get('relative') ?? 'false');
+        const loop = parseLiteral(call.named.get('loop') ?? 'false');
+        const pingPong = parseLiteral(call.named.get('ping_pong') ?? 'false');
+        const encodedCurve = unquote(call.named.get('curve') ?? '');
+        const timelineId = unquote(call.named.get('id') ?? '') || (call.callee === 'timeline' ? makeId('timeline') : undefined);
+        const timelineName = unquote(call.named.get('name') ?? '');
         const node = this.addNode(
           'action.tweenProperty',
           {
             tweenProperty: (TWEEN_PROPERTIES.has(property) ? property : 'position') as NodeForgeNodeData['tweenProperty'],
             easing: (TWEEN_EASINGS.has(easing) ? easing : 'easeInOut') as NodeForgeNodeData['easing'],
+            tweenCurve:
+              call.callee === 'timeline'
+                ? decodeTimelineCurve(encodedCurve) ?? timelineCurvePreset('smooth')
+                : decodeTimelineCurve(encodedCurve),
+            tweenSpace: space === 'world' ? 'world' : 'local',
+            tweenValueMode: relative === true ? 'relative' : 'absolute',
+            tweenLoop: loop === true,
+            tweenPingPong: pingPong === true,
+            ...(call.callee === 'timeline' ? { timelineId, timelineName: timelineName || 'Timeline' } : {}),
           },
           1,
         );
@@ -905,6 +924,18 @@ class FeatherGraphBuilder {
         this.attachValueOrLiteral(node, 'to', call.named.get('to') ?? call.positional[1], 'vector3', 'vectorValue');
         this.attachValueOrLiteral(node, 'duration', call.named.get('duration'), 'number', 'numberValue');
         return node;
+      }
+      case 'timeline_control': {
+        const timelineRefId = unquote(call.positional[0] ?? call.named.get('id') ?? '') || undefined;
+        const requested = unquote(call.named.get('command') ?? '') ?? 'play';
+        return this.addNode(
+          'action.timelineControl',
+          {
+            timelineRefId,
+            timelineCommand: (TIMELINE_COMMANDS.has(requested) ? requested : 'play') as NodeForgeNodeData['timelineCommand'],
+          },
+          1,
+        );
       }
       case 'fracture': {
         const node = this.addNode('action.fractureObject', {}, 1);

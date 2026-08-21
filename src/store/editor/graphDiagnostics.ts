@@ -42,6 +42,33 @@ export function scanBlueprintGraphProblems(
       .filter((node) => node.data.nodeKind === 'event.functionEntry')
       .map((node) => (node.data.functionName || 'MyFunction').toLowerCase()),
   );
+  const timelineIdCounts = new Map<string, number>();
+  for (const node of graph.nodes) {
+    if (node.data.nodeKind !== 'action.tweenProperty') continue;
+    const timelineId = node.data.timelineId || node.id;
+    timelineIdCounts.set(timelineId, (timelineIdCounts.get(timelineId) ?? 0) + 1);
+  }
+
+  for (const [timelineId, count] of timelineIdCounts) {
+    if (count < 2) continue;
+    problems.push({
+      severity: 'warning',
+      message: `Blueprint "${blueprint.name}": ${count} Timelines share the id "${timelineId}" — Timeline Control would be ambiguous.`,
+      blueprintId: blueprint.id,
+    });
+  }
+
+  for (const node of graph.nodes) {
+    if (node.data.nodeKind !== 'action.timelineControl') continue;
+    if (!node.data.timelineRefId || !timelineIdCounts.has(node.data.timelineRefId)) {
+      problems.push({
+        severity: 'warning',
+        message: `Blueprint "${blueprint.name}": Timeline Control points at a missing Timeline${node.data.timelineRefId ? ` ("${node.data.timelineRefId}")` : ''}.`,
+        blueprintId: blueprint.id,
+        nodeId: node.id,
+      });
+    }
+  }
 
   let dangling = 0;
   let typeMismatch = 0;
