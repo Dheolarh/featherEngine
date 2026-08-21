@@ -111,9 +111,22 @@ function captureInPage(selector) {
       .join(' ')
       .trim();
 
+  /**
+   * Subtrees dropped for being hidden at capture time. A game sitting on its main menu hides the
+   * screen you actually meant to capture, and the kit then ships without the HUD it promises —
+   * silently. Reported so the operator sees it and re-runs with --setup on the right screen.
+   */
+  const skipped = [];
+
   const walk = (el, depth) => {
     if (depth > 12) return null;
-    if (getComputedStyle(el).display === 'none') return null;
+    if (getComputedStyle(el).display === 'none') {
+      skipped.push({
+        name: el.id || String(el.className || '').split(' ')[0] || el.tagName.toLowerCase(),
+        descendants: el.querySelectorAll('*').length,
+      });
+      return null;
+    }
     const node = {
       id: nextId('uiel'),
       kind: kindOf(el),
@@ -123,6 +136,11 @@ function captureInPage(selector) {
       bindings: [],
       children: [],
     };
+    // The inline style attribute is how a running game expresses its CURRENT state — a menu the
+    // script revealed with `el.style.display = 'flex'` reads as `display: none` from the sheet
+    // alone. Dropping it is how a capture ends up rendering nothing. Element CSS preserves it.
+    const inline = el.getAttribute('style');
+    if (inline && inline.trim()) node.css = inline.trim();
     const text = ownText(el);
     if (text) node.text = text.slice(0, 400);
     if (el.tagName === 'IMG' && el.getAttribute('src')) node.srcHint = el.getAttribute('src');
@@ -186,7 +204,12 @@ function captureInPage(selector) {
     n.children.forEach((c) => countKinds(c, acc));
     return acc;
   };
-  return { tree, css: css.join('\n'), stats: { kinds: countKinds(tree, {}), cssRules: css.length, cssRulesSeen: seen } };
+  return {
+    tree,
+    css: css.join('\n'),
+    skipped: skipped.sort((a, b) => b.descendants - a.descendants).slice(0, 10),
+    stats: { kinds: countKinds(tree, {}), cssRules: css.length, cssRulesSeen: seen },
+  };
 }
 
 async function main() {
@@ -227,6 +250,13 @@ async function main() {
       visibleOnStart: false,
       createdAt: Date.now(),
     };
+
+    // Loud, because a kit that quietly ships without the screen it advertises looks like an engine
+    // bug to whoever installs it. If the big skips are the HUD you wanted, re-run with --setup.
+    if (payload.skipped.length) {
+      const summary = payload.skipped.map((s) => `${s.name} (${s.descendants} nodes)`).join(', ');
+      process.stderr.write(`  ! hidden at capture time, so NOT included: ${summary}\n`);
+    }
 
     const json = JSON.stringify(doc, null, 2);
     if (outFile) {

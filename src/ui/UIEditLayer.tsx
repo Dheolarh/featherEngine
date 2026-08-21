@@ -14,7 +14,9 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import type { UIDocument, UIElement, UIStyle } from '../types';
 import { buildUIContext } from './runtimeContext';
+import { UI_ANIMATION_CSS } from './uiAnimations';
 import { UIElementView } from './UIElementView';
+import { UIStyleSheet, uiDocScopeProps } from './UIStyleSheet';
 
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -48,6 +50,7 @@ function findEl(root: UIElement, id: string): UIElement | undefined {
 export function UIEditLayer({ doc, fillParent }: { doc: UIDocument; fillParent?: boolean }) {
   const variables = useEditorStore((state) => state.variables);
   const assets = useEditorStore((state) => state.assets);
+  const uiDocuments = useEditorStore((state) => state.uiDocuments);
   const updateUIElement = useEditorStore((state) => state.updateUIElement);
   const selectedId = useEditorStore((state) => state.selectedUIElementId);
   const selectUIElement = useEditorStore((state) => state.selectUIElement);
@@ -61,6 +64,7 @@ export function UIEditLayer({ doc, fillParent }: { doc: UIDocument; fillParent?:
 
   const ctx = buildUIContext({ variables, runtimeVariableValues: {}, runtimeObjectVariables: {}, isPlaying: false });
   const resolveAssetUrl = (assetId: string) => assets.find((asset) => asset.id === assetId)?.url;
+  const resolveComponent = (documentId: string) => uiDocuments.find((d) => d.id === documentId);
   const selected = selectedId ? findEl(doc.root, selectedId) : undefined;
   const canEdit = selected && selected.id !== doc.root.id;
 
@@ -161,6 +165,7 @@ export function UIEditLayer({ doc, fillParent }: { doc: UIDocument; fillParent?:
     <div
       className="ui-edit-layer"
       ref={frameRef}
+      {...uiDocScopeProps(doc.id)}
       onPointerDown={(event) => {
         // Bubble-phase: handles/box already stopped propagation, so this only fires for content.
         const target = (event.target as HTMLElement).closest('[data-uiel-id]') as HTMLElement | null;
@@ -172,11 +177,15 @@ export function UIEditLayer({ doc, fillParent }: { doc: UIDocument; fillParent?:
         event.stopPropagation();
       }}
     >
+      {/* The design canvas runs the same stylesheet as Play — otherwise a CSS-driven kit previews
+          as a stack of empty boxes and looks broken before it has even been used. */}
+      <style>{UI_ANIMATION_CSS}</style>
+      <UIStyleSheet doc={doc} />
       <UIElementView
         element={fillParent ? rootFill(doc) : doc.root}
         ctx={ctx}
         resolveAssetUrl={resolveAssetUrl}
-        editable
+        resolveComponent={resolveComponent}
       />
 
       {overlay && canEdit && (

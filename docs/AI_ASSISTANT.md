@@ -15,7 +15,7 @@ use a new feature it needs three things — **a way to do it** (a tool), **a way
 |------|------|
 | [`src/store/editorStore.ts`](../src/store/editorStore.ts) | The source of truth. AI-friendly actions take explicit params and **return ids**. |
 | [`src/ai/tools.ts`](../src/ai/tools.ts) | `engineTools` — the toolset the model can call. Each tool = a `zod` schema + an `execute` that calls the store. |
-| [`src/ai/systemPrompt.ts`](../src/ai/systemPrompt.ts) | `ENGINE_GUIDE` (what the engine is + how to use it) and `buildSceneSnapshot()` (the live project state injected every turn). |
+| [`src/ai/systemPrompt.ts`](../src/ai/systemPrompt.ts) | `COMPACT_ENGINE_GUIDE` — **the guide actually sent** to the model (in-app chat and MCP) — plus the long-form `ENGINE_GUIDE` reference, and `buildSceneSnapshot()` (the live project state injected every turn). |
 | [`src/ai/useAIChat.ts`](../src/ai/useAIChat.ts) | `describeToolCall()` — the human-readable chip shown when a tool runs. |
 
 ## Checklist — adding a new capability to the AI
@@ -49,8 +49,15 @@ Work top to bottom; skip a step only if it genuinely doesn't apply.
    the user sees in the chat as the action runs.
 
 4. **Teach the model** (`systemPrompt.ts`)
-   - Add a line to `ENGINE_GUIDE` explaining the capability and *when* to use it. If it's a
-     multi-step recipe (like "walk with WASD"), spell out the steps.
+   - Add a line to **`COMPACT_ENGINE_GUIDE`** explaining the capability and *when* to use it. This
+     is the load-bearing edit: it is the only guide wired to the model (`useAIChat.ts` for the
+     in-app chat, `mcpBridge.ts` for MCP). `ENGINE_GUIDE` above it is the long-form reference —
+     keep it in sync for humans, but a capability documented *only* there is invisible to the
+     assistant.
+   - Backticks inside either guide must be escaped (`` \` ``) or the template literal terminates
+     early and the build breaks. `COMPACT_ENGINE_GUIDE` sidesteps this by using `**bold**` and
+     plain quotes instead — prefer that. If it's a multi-step recipe (like "walk with WASD"),
+     spell out the steps.
    - If the feature introduces **new state the model should be aware of**, add it to
      `buildSceneSnapshot()` so the assistant sees it every turn (keep it compact — it's sent on
      every message).

@@ -106,6 +106,46 @@ export const cloneUIElementFresh = (element: UIElement): UIElement => ({
   children: element.children.map(cloneUIElementFresh),
 });
 
+/** Drop references to a deleted component document, so instances show as unset rather than dead. */
+export const clearUIComponentRefs = (root: UIElement, componentId: string): UIElement => ({
+  ...root,
+  componentId: root.componentId === componentId ? undefined : root.componentId,
+  children: root.children.map((child) => clearUIComponentRefs(child, componentId)),
+});
+
+/** Replace `targetId` in the tree with `replacement` (used when extracting a subtree into a component). */
+export const replaceUIElementInTree = (root: UIElement, targetId: string, replacement: UIElement): UIElement => ({
+  ...root,
+  children: root.children.map((child) =>
+    child.id === targetId ? replacement : replaceUIElementInTree(child, targetId, replacement),
+  ),
+});
+
+/**
+ * Would instancing `componentId` inside `hostId` create a cycle? True when the component (or
+ * anything it instances, transitively) already leads back to the host — which would recurse
+ * forever at render time.
+ */
+export const wouldCreateUICycle = (hostId: string, componentId: string, documents: UIDocument[]): boolean => {
+  const seen = new Set<string>();
+  const reaches = (docId: string): boolean => {
+    if (docId === hostId) return true;
+    if (seen.has(docId)) return false;
+    seen.add(docId);
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc) return false;
+    let hit = false;
+    const walk = (el: UIElement) => {
+      if (hit) return;
+      if (el.kind === 'component' && el.componentId && reaches(el.componentId)) hit = true;
+      else el.children.forEach(walk);
+    };
+    walk(doc.root);
+    return hit;
+  };
+  return reaches(componentId);
+};
+
 /** Find the parent element of `childId` (or undefined if it's the root / not found). */
 export const findUIParent = (root: UIElement, childId: string): UIElement | undefined => {
   for (const child of root.children) {

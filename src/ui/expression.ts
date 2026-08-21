@@ -16,6 +16,8 @@
 export interface UIExprContext {
   vars: Record<string, unknown>;
   self?: Record<string, unknown>;
+  /** Inside a component instance: the values that instance was given, read as `param.<key>`. */
+  params?: Record<string, unknown>;
 }
 
 export type UIExprValue = number | string | boolean | undefined;
@@ -259,6 +261,9 @@ class Parser {
     }
     if (root === 'self' && path.length > 1) {
       return coerce(this.ctx.self?.[path.slice(1).join('.')]);
+    }
+    if (root === 'param' && path.length > 1) {
+      return coerce(this.ctx.params?.[path.slice(1).join('.')]);
     }
     return coerce(this.ctx.vars[path.join('.')]);
   }

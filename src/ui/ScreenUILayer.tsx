@@ -15,6 +15,7 @@ import type { UIDocument } from '../types';
 import { buildUIContext } from './runtimeContext';
 import { UIElementView } from './UIElementView';
 import { UI_ANIMATION_CSS } from './uiAnimations';
+import { UIStyleSheet, uiDocScopeProps } from './UIStyleSheet';
 import { useUIFocusNavigation } from './useUIFocusNavigation';
 
 export function ScreenUILayer() {
@@ -48,6 +49,7 @@ export function ScreenUILayer() {
 
   if (!isPlaying || docs.length === 0) return null;
   const resolveAssetUrl = (assetId: string) => assets.find((asset) => asset.id === assetId)?.url;
+  const resolveComponent = (documentId: string) => uiDocuments.find((d) => d.id === documentId);
 
   const overridesFor = (doc: UIDocument) => scopeOverrides(textOverrides, doc.id);
 
@@ -57,14 +59,15 @@ export function ScreenUILayer() {
       {docs.map((doc) => (
         // Each screen doc's root fills the viewport (position: relative) so its children can flow
         // OR be absolutely placed by left/top — matching what the design canvas shows.
-        <div key={doc.id} style={{ position: 'absolute', inset: 0 }}>
-          {doc.css ? <style>{doc.css}</style> : null}
+        <div key={doc.id} {...uiDocScopeProps(doc.id)} style={{ position: 'absolute', inset: 0 }}>
+          <UIStyleSheet doc={doc} />
           <UIElementView
             // The root fills the screen; its legacy `anchor` is stripped — anchors place elements WITHIN the doc.
             element={{ ...doc.root, anchor: undefined, style: { width: '100%', height: '100%', position: 'relative', ...doc.root.style } }}
             ctx={ctx}
             textOverrides={overridesFor(doc)}
             resolveAssetUrl={resolveAssetUrl}
+            resolveComponent={resolveComponent}
             onButtonClick={(el) => el.onClickEvent && fireCustomEvent(el.onClickEvent)}
             onValueChange={(el, value) => el.valueVariable && setRuntimeVariableByName(el.valueVariable, value)}
           />

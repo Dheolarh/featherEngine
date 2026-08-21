@@ -9,12 +9,27 @@
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import WebSocket from 'ws';
 
 export const delay = (ms) => new Promise((done) => setTimeout(done, ms));
+
+/** Chrome binaries under Puppeteer's download cache, newest version first. */
+function puppeteerCacheChromes() {
+  const root = join(homedir(), '.cache', 'puppeteer', 'chrome');
+  if (!existsSync(root)) return [];
+  const inner = process.platform === 'darwin' ? ['Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'] : ['chrome'];
+  return readdirSync(root)
+    .sort()
+    .reverse()
+    .flatMap((version) => {
+      const dir = join(root, version);
+      const builds = existsSync(dir) ? readdirSync(dir) : [];
+      return builds.map((build) => join(dir, build, ...inner));
+    });
+}
 
 export function chromeExecutable() {
   const candidates = [
@@ -22,6 +37,9 @@ export function chromeExecutable() {
     process.env.GOOGLE_CHROME_BIN,
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    // Puppeteer's managed download, which is present on plenty of dev machines that have no
+    // system Chrome at all. Newest version first.
+    ...puppeteerCacheChromes(),
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
@@ -86,7 +104,10 @@ export class CdpSession {
 
 async function waitForDevToolsUrl(profileDir, chrome) {
   const portFile = resolve(profileDir, 'DevToolsActivePort');
-  const deadline = Date.now() + 20_000;
+  // Generous, because every spec launches its own browser on a fresh profile: a cold start behind
+  // Gatekeeper (or several specs contending) regularly took >20s here and surfaced as a random
+  // spec "failing" with no assertion — the most misleading kind of flake.
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (chrome.exitCode !== null) throw new Error(`Chrome exited early (code ${chrome.exitCode})`);
     if (existsSync(portFile)) {

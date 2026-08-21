@@ -16,6 +16,7 @@ import { PrefabThumbnailHost } from './components/PrefabThumbnailer';
 import { ModelThumbnailHost } from './components/ModelThumbnailHost';
 import { CinematicOverlay } from './components/CinematicOverlay';
 import { useEditorStore } from './store/editorStore';
+import { useMarketplaceStore } from './store/marketplaceStore';
 import { useEditorPrefs } from './store/editorPrefsStore';
 import { useRuntimeAudio } from './runtime/useRuntimeAudio';
 import { recordFrame, resetHitches } from './runtime/perfStats';
@@ -31,21 +32,46 @@ import { createMeadowTemplate } from './project/meadowTemplate';
 
 /** DEV-only headless screenshot QA hooks. No-op in production builds and for any other query.
  *  - `?demo=meadows` auto-builds the Meadows template and enters Play (vegetation look).
- *  - `?demo=store` just opens a blank project, so the Asset Store has somewhere to install into. */
+ *  - `?demo=store` just opens a blank project, so the Asset Store has somewhere to install into.
+ *  - `?demo=uikit` installs a UI Kit from the store and opens it in the UI panel — the exact
+ *    journey where a CSS-driven kit used to preview as unstyled boxes while its page-level rules
+ *    repainted the editor. */
+let demoStarted = false;
+
 function useDemoAutoload() {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const demo = new URLSearchParams(window.location.search).get('demo');
-    if (demo !== 'meadows' && demo !== 'store' && demo !== 'script') return;
-    let cancelled = false;
+    if (demo !== 'meadows' && demo !== 'store' && demo !== 'script' && demo !== 'uikit') return;
+    // StrictMode double-invokes effects; for the multi-await demos that means two racing setups
+    // (the second sees installingId already set and no-ops, then reads a project the first is
+    // still building). Once is once.
+    if (demoStarted) return;
+    demoStarted = true;
     void (async () => {
       const project = useProjectStore.getState();
       if (project.hasProject) return;
       await project.newProject(
-        demo === 'store' ? 'Store Preview' : demo === 'script' ? 'Script Preview' : 'Meadows Preview',
+        demo === 'store' ? 'Store Preview' : demo === 'script' ? 'Script Preview' : demo === 'uikit' ? 'UI Kit Preview' : 'Meadows Preview',
       );
-      if (cancelled || !useProjectStore.getState().hasProject) return;
+      if (!useProjectStore.getState().hasProject) return;
       if (demo === 'store') return;
+      if (demo === 'uikit') {
+        const market = useMarketplaceStore.getState();
+        await market.load();
+        const kit = useMarketplaceStore.getState().packages.find((p) => p.id === (new URLSearchParams(window.location.search).get('kit') ?? 'pkg-feather-ui-arcade-hud'));
+        if (!kit) return;
+        await useMarketplaceStore.getState().install(kit);
+        // A kit installs as a screen document PLUS its components — open the screen, not the last
+        // building block to land in the list.
+        const docs = useEditorStore.getState().uiDocuments;
+        const installed = docs.filter((d) => !d.isComponent).at(-1) ?? docs.at(-1);
+        if (installed) {
+          useEditorStore.getState().setActiveUIDocument(installed.id);
+          focusWorkspacePanel('ui');
+        }
+        return;
+      }
       // `?demo=script` gives the Scripting panel a real graph to render, so the node editor can be
       // screenshot-reviewed. Without it every fresh load shows only the empty-graph welcome screen.
       if (demo === 'script') {
@@ -72,13 +98,8 @@ function useDemoAutoload() {
       }
       await createMeadowTemplate();
       // Auto-enter Play so a screenshot shows the eye-level third-person game camera (reference framing).
-      setTimeout(() => {
-        if (!cancelled) useEditorStore.getState().setPlaying(true);
-      }, 2000);
+      setTimeout(() => useEditorStore.getState().setPlaying(true), 2000);
     })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 }
 

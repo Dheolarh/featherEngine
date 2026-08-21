@@ -185,8 +185,11 @@ import {
   makeUIPreset,
   makeUITemplate,
   applyUIThemeToElement,
+  clearUIComponentRefs,
   mapUIElement,
   removeUIElementFromTree,
+  replaceUIElementInTree,
+  wouldCreateUICycle,
   uiVariableRef,
   type UITemplateKind,
   type UIThemeKind,
@@ -963,6 +966,28 @@ interface EditorState {
   addUIElement: (docId: string, parentId: string | undefined, kind: UIElementKind) => string;
   updateUIElement: (docId: string, elementId: string, patch: Partial<Omit<UIElement, 'id' | 'children'>>) => void;
   removeUIElement: (docId: string, elementId: string) => void;
+  /**
+   * Set a document's raw stylesheet (DOM renderer). `mode: 'append'` adds to what's there, which is
+   * how you extend an installed UI kit without re-sending its whole sheet. Empty css clears it.
+   */
+  setUIDocumentCss: (docId: string, css: string, mode?: 'replace' | 'append') => void;
+  /** Set one element's own CSS snippet, scoped to it on injection. Empty css clears it. */
+  setUIElementCss: (docId: string, elementId: string, css: string, mode?: 'replace' | 'append') => void;
+
+  // --- Reusable UI components (UMG-style user widgets). A component IS a UI document; a
+  //     `component` element instances it BY REFERENCE, so editing it updates every instance. ---
+  /** Create an empty reusable component document. Returns its id. */
+  createUIComponent: (name?: string, folderId?: string) => string;
+  /**
+   * Turn an existing subtree into a reusable component: the subtree moves into a new component
+   * document and is replaced in place by an instance of it. The single most useful action here —
+   * it is how a hand-built or imported tree stops being hardcoded. Returns the component's id.
+   */
+  extractUIComponent: (docId: string, elementId: string, name?: string) => string | null;
+  /** Insert an instance of `componentId` under `parentId` (or root). Returns the element id, or null on a cycle. */
+  insertUIComponent: (docId: string, parentId: string | undefined, componentId: string) => string | null;
+  /** Set one instance's parameter (read inside the component as `param.<key>`). Empty value clears it. */
+  setUIComponentParam: (docId: string, elementId: string, key: string, value: string) => void;
   /** Upsert a data binding (by target) on an element. Pass an empty expression to remove it. */
   setUIBinding: (docId: string, elementId: string, target: UIBinding['target'], expression: string) => void;
   /** Insert a prebuilt widget (pre-styled, pre-bound) under parentId (or root). Returns its element id. */
@@ -1071,6 +1096,12 @@ interface EditorState {
    */
   mergeProjectPackage: (content: PackageContent, assets: AssetItem[]) => void;
 }
+
+/** Replace or extend a raw-CSS field. Blank input clears it so a stray empty string never persists. */
+const mergeCss = (existing: string | undefined, css: string, mode: 'replace' | 'append'): string | undefined => {
+  if (mode === 'append' && existing?.trim()) return css.trim() ? `${existing.trimEnd()}\n${css.trim()}` : existing;
+  return css.trim() ? css : undefined;
+};
 
 const deleteWithChildren = (objects: SceneObject[], id: string) => {
   const ids = new Set<string>([id]);
@@ -5192,7 +5223,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })),
   deleteUIDocument: (id) =>
     set((state) => ({
-      uiDocuments: state.uiDocuments.filter((doc) => doc.id !== id),
+      // Instances of a deleted component lose their reference rather than keeping a dead id: the
+      // element then renders a visible "No component set" placeholder the author can act on.
+      uiDocuments: state.uiDocuments
+        .filter((doc) => doc.id !== id)
+        .map((doc) => ({ ...doc, root: clearUIComponentRefs(doc.root, id) })),
       activeUIDocumentId:
         state.activeUIDocumentId === id ? state.uiDocuments.find((doc) => doc.id !== id)?.id ?? '' : state.activeUIDocumentId,
       // Clear dangling world-UI references so no object points at a removed document.
@@ -5250,6 +5285,101 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       uiDocuments: state.uiDocuments.map((doc) =>
         // Never remove the root element.
         doc.id === docId && doc.root.id !== elementId ? { ...doc, root: removeUIElementFromTree(doc.root, elementId) } : doc,
+      ),
+      isDirty: true,
+    })),
+  setUIDocumentCss: (docId, css, mode = 'replace') =>
+    set((state) => ({
+      uiDocuments: state.uiDocuments.map((doc) => (doc.id === docId ? { ...doc, css: mergeCss(doc.css, css, mode) } : doc)),
+      isDirty: true,
+    })),
+  setUIElementCss: (docId, elementId, css, mode = 'replace') =>
+    set((state) => ({
+      uiDocuments: state.uiDocuments.map((doc) =>
+        doc.id === docId ? { ...doc, root: mapUIElement(doc.root, elementId, (el) => ({ ...el, css: mergeCss(el.css, css, mode) })) } : doc,
+      ),
+      isDirty: true,
+    })),
+
+  createUIComponent: (name, folderId) => {
+    const doc = makeUIDocument(name ?? 'Component', 'screen', folderId);
+    // A component is composed into other documents, never shown on its own.
+    const component: UIDocument = { ...doc, isComponent: true, visibleOnStart: false };
+    set((state) => ({ uiDocuments: [...state.uiDocuments, component], isDirty: true }));
+    return component.id;
+  },
+
+  extractUIComponent: (docId, elementId, name) => {
+    const state = get();
+    const doc = state.uiDocuments.find((d) => d.id === docId);
+    if (!doc) return null;
+    const subtree = findUIElement(doc.root, elementId);
+    // The root IS the document — extracting it would just alias the whole thing.
+    if (!subtree || subtree.id === doc.root.id) return null;
+
+    // The component's own root wraps the subtree, so the component can grow siblings later
+    // without every instance having to change shape.
+    const componentRoot: UIElement = {
+      ...makeUIElement('panel', name ?? subtree.name),
+      style: { display: 'flex', flexDirection: 'column' },
+      children: [cloneUIElementFresh(subtree)],
+    };
+    const component: UIDocument = {
+      ...makeUIDocument(name ?? subtree.name, doc.surface, doc.folderId),
+      isComponent: true,
+      visibleOnStart: false,
+      root: componentRoot,
+    };
+    // The instance keeps the original's placement (anchor/position) so nothing moves on screen.
+    const instance: UIElement = {
+      ...makeUIElement('component', name ?? subtree.name),
+      componentId: component.id,
+      className: subtree.className,
+      style: subtree.anchor ? {} : { ...subtree.style },
+      anchor: subtree.anchor,
+    };
+    set((s) => ({
+      uiDocuments: [
+        ...s.uiDocuments.map((d) => (d.id === docId ? { ...d, root: replaceUIElementInTree(d.root, elementId, instance) } : d)),
+        component,
+      ],
+      selectedUIElementId: instance.id,
+      isDirty: true,
+    }));
+    return component.id;
+  },
+
+  insertUIComponent: (docId, parentId, componentId) => {
+    const state = get();
+    if (docId === componentId || wouldCreateUICycle(docId, componentId, state.uiDocuments)) return null;
+    const source = state.uiDocuments.find((d) => d.id === componentId);
+    if (!source) return null;
+    const instance: UIElement = { ...makeUIElement('component', source.name), componentId };
+    set((s) => ({
+      uiDocuments: s.uiDocuments.map((doc) => {
+        if (doc.id !== docId) return doc;
+        const targetId = parentId ?? doc.root.id;
+        return { ...doc, root: mapUIElement(doc.root, targetId, (el) => ({ ...el, children: [...el.children, instance] })) };
+      }),
+      isDirty: true,
+    }));
+    return instance.id;
+  },
+
+  setUIComponentParam: (docId, elementId, key, value) =>
+    set((state) => ({
+      uiDocuments: state.uiDocuments.map((doc) =>
+        doc.id === docId
+          ? {
+              ...doc,
+              root: mapUIElement(doc.root, elementId, (el) => {
+                const params = { ...(el.componentParams ?? {}) };
+                if (value.trim()) params[key] = value;
+                else delete params[key];
+                return { ...el, componentParams: Object.keys(params).length ? params : undefined };
+              }),
+            }
+          : doc,
       ),
       isDirty: true,
     })),

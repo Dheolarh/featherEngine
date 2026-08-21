@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Blocks,
   Box as PanelIcon,
   Car,
   ChevronDown,
   ChevronUp,
+  Code2,
   Copy,
   Crosshair,
   Gauge,
@@ -29,7 +31,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useEditorStore } from '../store/editorStore';
-import { UI_TEMPLATES, UI_THEMES, type UITemplateKind } from '../store/editor/ui';
+import { UI_TEMPLATES, UI_THEMES, wouldCreateUICycle, type UITemplateKind } from '../store/editor/ui';
 import { UI_ANIMATION_TYPES } from '../ui/uiAnimations';
 import { UIEditLayer } from '../ui/UIEditLayer';
 import { UILogicGraph } from './UILogicGraph';
@@ -57,6 +59,7 @@ const ELEMENT_KINDS: Array<{ kind: UIElementKind; label: string; icon: typeof Pa
   { kind: 'toggle', label: 'Toggle', icon: ToggleLeft },
   { kind: 'slider', label: 'Slider', icon: SlidersHorizontal },
   { kind: 'dropdown', label: 'Dropdown', icon: ChevronDown },
+  { kind: 'component', label: 'Component', icon: Blocks },
 ];
 
 /** 9-slice anchor presets for the inspector (screen docs) — `${h}:${v}` value ↔ UIAnchor fields. */
@@ -87,6 +90,7 @@ const KIND_ICON: Record<UIElementKind, typeof PanelIcon> = {
   toggle: ToggleLeft,
   slider: SlidersHorizontal,
   dropdown: ChevronDown,
+  component: Blocks,
 };
 
 const PRESETS: Array<{ preset: UIPresetKind; label: string; icon: typeof PanelIcon }> = [
@@ -201,8 +205,12 @@ function TreeRow({ element, doc, depth, addingUnder, setAddingUnder }: { element
   const removeUIElement = useEditorStore((state) => state.removeUIElement);
   const selectedId = useEditorStore((state) => state.selectedUIElementId);
   const selectUIElement = useEditorStore((state) => state.selectUIElement);
+  const componentName = useEditorStore((state) =>
+    element.kind === 'component' ? state.uiDocuments.find((d) => d.id === element.componentId)?.name : undefined,
+  );
   const isRoot = element.id === doc.root.id;
   const Icon = KIND_ICON[element.kind];
+  const componentLabel = componentName ?? (element.componentId ? 'missing' : 'unset');
 
   return (
     <>
@@ -210,7 +218,9 @@ function TreeRow({ element, doc, depth, addingUnder, setAddingUnder }: { element
         <button className="ui-node-main" style={{ paddingLeft: 6 + depth * 14 }} onClick={() => selectUIElement(element.id)}>
           <Icon size={14} aria-hidden />
           <span className="ui-node-name">{element.name}</span>
-          <span className="ui-node-kind">{element.kind}</span>
+          {/* An instance names the widget it points at — the tree should read as composition,
+              not as a mystery leaf node. */}
+          <span className="ui-node-kind">{element.kind === 'component' ? componentLabel : element.kind}</span>
         </button>
         <div className="ui-node-tools">
           {(element.kind === 'panel' || element.kind === 'scroll') && (
@@ -264,6 +274,8 @@ function TreeRow({ element, doc, depth, addingUnder, setAddingUnder }: { element
 /** The single Properties inspector: Content → Style → Live values → Logic. No tabs, no jargon. */
 function Properties({ doc, element }: { doc: UIDocument; element: UIElement }) {
   const updateUIElement = useEditorStore((state) => state.updateUIElement);
+  const setUIElementCss = useEditorStore((state) => state.setUIElementCss);
+  const extractUIComponent = useEditorStore((state) => state.extractUIComponent);
   const setUIBinding = useEditorStore((state) => state.setUIBinding);
   const variables = useEditorStore((state) => state.variables);
   const createVariable = useEditorStore((state) => state.createVariable);
@@ -278,6 +290,7 @@ function Properties({ doc, element }: { doc: UIDocument; element: UIElement }) {
   const valueControl = element.kind === 'input' || element.kind === 'toggle' || element.kind === 'slider' || element.kind === 'dropdown';
   const patchState = (key: 'hover' | 'active' | 'disabled', stylePatch: Record<string, string | undefined>) =>
     patchEl({ states: { ...element.states, [key]: { ...(element.states?.[key] ?? {}), ...stylePatch } } });
+  const styleConflicts = useMemo(() => inlineStyleConflicts(element), [element]);
 
   return (
     <div className="node-inspector-body">
@@ -520,6 +533,50 @@ function Properties({ doc, element }: { doc: UIDocument; element: UIElement }) {
         </>
       )}
 
+      {/* Component instance: which widget, and the per-instance values it reads as param.* */}
+      {element.kind === 'component' && <ComponentInstanceFields doc={doc} element={element} />}
+
+      {/* Turn any subtree into a reusable widget — the move that stops a HUD being hardcoded. */}
+      {element.id !== doc.root.id && element.kind !== 'component' && (
+        <button
+          className="full-button"
+          title="Move this element and its children into a reusable component, and replace it here with an instance."
+          onClick={() => extractUIComponent(doc.id, element.id)}
+        >
+          <Blocks size={12} aria-hidden /> Extract to component
+        </button>
+      )}
+
+      {/* Raw CSS on this element — the escape hatch for anything the flat style model can't say
+          (gradients, pseudo-elements, :hover, media queries). Scoped to the element on injection. */}
+      <h4 className="ui-inspector-sub"><Code2 size={12} aria-hidden /> Custom CSS</h4>
+      <p className="nfn-desc">
+        <code>&amp;</code> is this element; any other selector matches inside it. Bare declarations style the element directly.
+        {doc.renderMode === 'webgl' && <> <strong>This document uses the WebGL renderer, which ignores CSS</strong> — switch it to DOM in Document settings.</>}
+      </p>
+      <label className="node-field">
+        <span>Class</span>
+        <input
+          value={element.className ?? ''}
+          placeholder="e.g. hud-card"
+          title="Class name for targeting this element from the document stylesheet."
+          onChange={(event) => patchEl({ className: event.target.value || undefined })}
+        />
+      </label>
+      <textarea
+        className="ui-css"
+        rows={4}
+        spellCheck={false}
+        value={element.css ?? ''}
+        placeholder={'background: linear-gradient(180deg, #2f96a6, #11414c);\nborder-radius: 12px;\n\n&:hover { filter: brightness(1.15); }'}
+        onChange={(event) => setUIElementCss(doc.id, element.id, event.target.value)}
+      />
+      {styleConflicts.length > 0 && (
+        <p className="nfn-desc nfn-warn">
+          Inline style wins over CSS for {styleConflicts.join(', ')} — clear {styleConflicts.length > 1 ? 'those fields' : 'that field'} above, or add <code>!important</code>.
+        </p>
+      )}
+
       {/* Pointer states (interactive kinds): hover / press / disabled colour overlays. */}
       {interactive && (
         <>
@@ -675,6 +732,7 @@ export function UIEditorPanel() {
   const setActiveUIDocument = useEditorStore((state) => state.setActiveUIDocument);
   const createUIDocument = useEditorStore((state) => state.createUIDocument);
   const updateUIDocument = useEditorStore((state) => state.updateUIDocument);
+  const setUIDocumentCss = useEditorStore((state) => state.setUIDocumentCss);
   const addUIPreset = useEditorStore((state) => state.addUIPreset);
   const selectedId = useEditorStore((state) => state.selectedUIElementId);
   const selectUIElement = useEditorStore((state) => state.selectUIElement);
@@ -689,10 +747,21 @@ export function UIEditorPanel() {
     <section className="panel ui-panel">
       <div className="panel-header panel-header-actions-only">
         {uiDocuments.length > 0 && (
+          // Components are grouped apart from screens/world UIs: they are building blocks you
+          // compose, not HUDs you show.
           <select className="blueprint-select" value={doc?.id ?? ''} onChange={(event) => setActiveUIDocument(event.target.value)} title="Select UI document">
-            {uiDocuments.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
+            <optgroup label="Screens">
+              {uiDocuments.filter((item) => !item.isComponent).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </optgroup>
+            {uiDocuments.some((item) => item.isComponent) && (
+              <optgroup label="Components">
+                {uiDocuments.filter((item) => item.isComponent).map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         )}
         <UINewMenu />
@@ -810,10 +879,23 @@ export function UIEditorPanel() {
                   </button>
                 </div>
               </div>
-              <label className="node-field">
-                <span>Raw CSS</span>
-                <textarea className="ui-css" rows={4} value={doc.css ?? ''} placeholder={'.my-class {\n  color: gold;\n}'} onChange={(event) => updateUIDocument(doc.id, { css: event.target.value })} />
-              </label>
+              <div className="ui-doc-css">
+                <span className="ui-surface-label"><Code2 size={12} aria-hidden /> Stylesheet</span>
+                <p className="nfn-desc">
+                  Scoped to this document — <code>:root</code>, <code>html</code> and <code>body</code> rules style the widget frame, never the editor.
+                  Ids are matched as classes (<code>#hud</code> → <code>.id-hud</code>).
+                  {doc.renderMode === 'webgl' && <> <strong>The WebGL renderer ignores CSS</strong> — switch to DOM above to use it.</>}
+                </p>
+                <textarea
+                  className="ui-css"
+                  rows={8}
+                  spellCheck={false}
+                  aria-label="Document stylesheet"
+                  value={doc.css ?? ''}
+                  placeholder={'.hud-card {\n  background: linear-gradient(180deg, #2f96a6, #11414c);\n  border-radius: 12px;\n}'}
+                  onChange={(event) => setUIDocumentCss(doc.id, event.target.value)}
+                />
+              </div>
             </details>
           </div>
 
@@ -824,6 +906,115 @@ export function UIEditorPanel() {
       )}
     </section>
   );
+}
+
+/**
+ * The instance half of a reusable widget: which component it points at, a jump to edit that
+ * component, and the parameters this instance feeds it. Params are the reason one component can
+ * serve many uses — the component's bindings read them as `param.<key>`.
+ */
+function ComponentInstanceFields({ doc, element }: { doc: UIDocument; element: UIElement }) {
+  const uiDocuments = useEditorStore((state) => state.uiDocuments);
+  const updateUIElement = useEditorStore((state) => state.updateUIElement);
+  const setUIComponentParam = useEditorStore((state) => state.setUIComponentParam);
+  const setActiveUIDocument = useEditorStore((state) => state.setActiveUIDocument);
+  const [newKey, setNewKey] = useState('');
+
+  // Anything that would loop back to this document is not offered — you cannot pick a cycle.
+  const choices = useMemo(
+    () => uiDocuments.filter((item) => item.id !== doc.id && !wouldCreateUICycle(doc.id, item.id, uiDocuments)),
+    [uiDocuments, doc.id],
+  );
+  const source = uiDocuments.find((item) => item.id === element.componentId);
+  const params = element.componentParams ?? {};
+
+  return (
+    <>
+      <h4 className="ui-inspector-sub"><Blocks size={12} aria-hidden /> Component</h4>
+      <label className="node-field">
+        <span>Widget</span>
+        <select
+          value={element.componentId ?? ''}
+          onChange={(event) => updateUIElement(doc.id, element.id, { componentId: event.target.value || undefined })}
+        >
+          <option value="">Pick a component…</option>
+          {choices.map((item) => (
+            <option key={item.id} value={item.id}>{item.name}{item.isComponent ? '' : ' (screen)'}</option>
+          ))}
+        </select>
+      </label>
+      {source ? (
+        <>
+          <button className="full-button" onClick={() => setActiveUIDocument(source.id)}>
+            Edit “{source.name}” →
+          </button>
+          <p className="nfn-desc">
+            Edits to that component appear in <strong>every</strong> instance. Give this one its own data below —
+            the component reads them as <code>param.name</code>.
+          </p>
+          {Object.entries(params).map(([key, value]) => (
+            <label className="node-field" key={key}>
+              <span>{key}</span>
+              <input
+                value={value}
+                placeholder="value or expression"
+                onChange={(event) => setUIComponentParam(doc.id, element.id, key, event.target.value)}
+              />
+            </label>
+          ))}
+          <div className="ui-bind-fields">
+            <input
+              value={newKey}
+              placeholder="new parameter, e.g. label"
+              onChange={(event) => setNewKey(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || !newKey.trim()) return;
+                setUIComponentParam(doc.id, element.id, newKey.trim(), ' ');
+                setNewKey('');
+              }}
+            />
+            <button
+              className="ui-bind-newvar"
+              title="Add parameter"
+              disabled={!newKey.trim()}
+              onClick={() => {
+                setUIComponentParam(doc.id, element.id, newKey.trim(), ' ');
+                setNewKey('');
+              }}
+            >
+              <Plus size={12} aria-hidden />
+            </button>
+          </div>
+        </>
+      ) : (
+        <p className="nfn-desc">Pick a component to instance here, or build one with “Extract to component” on any element.</p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Properties an element declares in BOTH its inline style and its CSS. React writes inline styles
+ * onto the node, so those always win — silently, which reads as "my CSS does nothing". Declarations
+ * marked `!important` are excluded because they do win.
+ */
+function inlineStyleConflicts(element: UIElement): string[] {
+  if (!element.css?.trim()) return [];
+  const kebab = (key: string) => key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+  const inline = new Set<string>();
+  for (const [key, value] of Object.entries(element.style)) {
+    if (value == null || key === 'custom' || key === 'gridColumns') continue;
+    inline.add(kebab(key));
+  }
+  for (const key of Object.keys(element.style.custom ?? {})) inline.add(kebab(key));
+
+  const hits = new Set<string>();
+  for (const match of element.css.matchAll(/(?:^|[;{])\s*(-{0,2}[a-zA-Z][\w-]*)\s*:([^;}]*)/g)) {
+    const prop = match[1].toLowerCase();
+    if (prop.startsWith('--') || /!\s*important/i.test(match[2])) continue;
+    if (inline.has(prop)) hits.add(prop);
+  }
+  return [...hits].slice(0, 4);
 }
 
 function findInTree(root: UIElement, id: string): UIElement | undefined {

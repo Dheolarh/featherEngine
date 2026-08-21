@@ -19,11 +19,13 @@ import type { SceneObject } from '../types';
 import { buildUIContext } from './runtimeContext';
 import { UIElementMesh } from './UIElementMesh';
 import { UIElementView } from './UIElementView';
+import { UIStyleSheet, uiDocScopeProps } from './UIStyleSheet';
 
 export function WorldUIAnchor({ object }: { object: SceneObject }) {
   const ui = object.ui;
   const isPlaying = useEditorStore((state) => state.isPlaying);
-  const doc = useEditorStore((state) => state.uiDocuments.find((d) => d.id === ui?.documentId));
+  const uiDocuments = useEditorStore((state) => state.uiDocuments);
+  const doc = uiDocuments.find((d) => d.id === ui?.documentId);
   const variables = useEditorStore((state) => state.variables);
   const runtimeVariableValues = useEditorStore((state) => state.runtimeVariableValues);
   const runtimeObjectVariables = useEditorStore((state) => state.runtimeObjectVariables);
@@ -34,6 +36,7 @@ export function WorldUIAnchor({ object }: { object: SceneObject }) {
 
   const ctx = buildUIContext({ variables, runtimeVariableValues, runtimeObjectVariables, isPlaying, host: object });
   const resolveAssetUrl = (assetId: string) => assets.find((asset) => asset.id === assetId)?.url;
+  const resolveComponent = (documentId: string) => uiDocuments.find((d) => d.id === documentId);
   const [px, py, pz] = object.transform.position;
   const [ox, oy, oz] = ui.offset;
 
@@ -53,7 +56,7 @@ export function WorldUIAnchor({ object }: { object: SceneObject }) {
             <meshBasicMaterial toneMapped={false}>
               <RenderTexture attach="map" width={texW} height={texH} anisotropy={16}>
                 <Fullscreen flexDirection="column" backgroundColor="#000000">
-                  <UIElementMesh element={doc.root} ctx={ctx} resolveAssetUrl={resolveAssetUrl} />
+                  <UIElementMesh element={doc.root} ctx={ctx} resolveAssetUrl={resolveAssetUrl} resolveComponent={resolveComponent} />
                 </Fullscreen>
               </RenderTexture>
             </meshBasicMaterial>
@@ -65,7 +68,7 @@ export function WorldUIAnchor({ object }: { object: SceneObject }) {
     // pixelSize maps UI pixels → world units; `scale` lets authors tune size per object.
     const root = (
       <Root pixelSize={0.0045 * ui.scale} anchorX="center" anchorY="center" flexDirection="column" depthTest={!ui.billboard}>
-        <UIElementMesh element={doc.root} ctx={ctx} resolveAssetUrl={resolveAssetUrl} />
+        <UIElementMesh element={doc.root} ctx={ctx} resolveAssetUrl={resolveAssetUrl} resolveComponent={resolveComponent} />
       </Root>
     );
     return (
@@ -78,12 +81,13 @@ export function WorldUIAnchor({ object }: { object: SceneObject }) {
   return (
     <group position={[px + ox, py + oy, pz + oz]}>
       <Html center transform={!ui.billboard} distanceFactor={ui.billboard ? undefined : 8} pointerEvents="none" zIndexRange={[10, 0]}>
-        <div style={{ transform: `scale(${ui.scale})`, transformOrigin: 'center', pointerEvents: 'none' }}>
-          {doc.css ? <style>{doc.css}</style> : null}
+        <div {...uiDocScopeProps(doc.id)} style={{ transform: `scale(${ui.scale})`, transformOrigin: 'center', pointerEvents: 'none' }}>
+          <UIStyleSheet doc={doc} />
           <UIElementView
             element={doc.root}
             ctx={ctx}
             resolveAssetUrl={resolveAssetUrl}
+            resolveComponent={resolveComponent}
             onValueChange={(el, value) => el.valueVariable && setRuntimeVariableByName(el.valueVariable, value)}
           />
         </div>

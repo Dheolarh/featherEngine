@@ -359,6 +359,18 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return input.renderMode === 'webgl' ? 'UI → WebGL renderer' : 'UI → DOM renderer';
     case 'apply_ui_theme':
       return `Applied ${String(input.theme ?? 'UI')} theme`;
+    case 'extract_ui_component':
+      return `Extracted ${String(input.name ?? 'component')}`;
+    case 'create_ui_component':
+      return `Created ${String(input.name ?? 'component')} widget`;
+    case 'insert_ui_component':
+      return 'Placed component';
+    case 'set_ui_component_param':
+      return `Set param.${String(input.key ?? 'value')}`;
+    case 'set_ui_css':
+      return String(input.css ?? '').trim() ? (input.mode === 'append' ? 'Extended UI stylesheet' : 'Styled UI with CSS') : 'Cleared UI stylesheet';
+    case 'set_ui_element_css':
+      return String(input.css ?? '').trim() ? 'Styled element with CSS' : 'Cleared element CSS';
     case 'add_ui_element':
       return `Added ${String(input.kind ?? 'UI')} element`;
     case 'add_ui_preset':

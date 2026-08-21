@@ -17,6 +17,9 @@ import { useProjectStore } from './projectStore';
 
 export type CatalogStatus = 'idle' | 'loading' | 'ready' | 'error';
 
+/** The catalog fetch currently running, so concurrent load() callers all await the same one. */
+let inFlight: Promise<void> | null = null;
+
 interface MarketplaceState {
   status: CatalogStatus;
   error: string | null;
@@ -54,24 +57,31 @@ export const useMarketplaceStore = create<MarketplaceState>()((set, get) => ({
 
   load: async (force = false) => {
     const { status } = get();
-    if (status === 'loading') return;
+    // Join the fetch already in flight rather than returning early: callers await load() to mean
+    // "the catalog is now readable", and two mounts racing must not leave the second with none.
+    if (status === 'loading' && inFlight) return inFlight;
     if (status === 'ready' && !force) return;
     set({ status: 'loading', error: null });
-    try {
-      const catalog = await fetchCatalog(STORE_BASE_URL);
-      set({
-        status: 'ready',
-        packages: catalog.packages,
-        updatedAt: catalog.updatedAt ?? null,
-        error: null,
-      });
-    } catch (error) {
-      set({
-        status: 'error',
-        error: error instanceof Error ? error.message : String(error),
-        packages: [],
-      });
-    }
+    inFlight = (async () => {
+      try {
+        const catalog = await fetchCatalog(STORE_BASE_URL);
+        set({
+          status: 'ready',
+          packages: catalog.packages,
+          updatedAt: catalog.updatedAt ?? null,
+          error: null,
+        });
+      } catch (error) {
+        set({
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+          packages: [],
+        });
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
   },
 
   setQuery: (query) => set({ query }),

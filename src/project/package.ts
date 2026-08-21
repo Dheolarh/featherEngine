@@ -171,6 +171,12 @@ function scanUIElement(element: UIElement, addAsset: (id?: string) => void) {
   for (const child of element.children ?? []) scanUIElement(child, addAsset);
 }
 
+/** Scan a UI element subtree for the documents its `component` instances depend on. */
+function scanUIComponents(element: UIElement, addDoc: (id?: string) => void) {
+  if (element.kind === 'component') addDoc(element.componentId);
+  for (const child of element.children ?? []) scanUIComponents(child, addDoc);
+}
+
 /** Which entity buckets a package collection can be seeded from. */
 export type PackageSeeds = Partial<{
   prefabs: string[];
@@ -364,6 +370,9 @@ export function collectPackage(
     for (const doc of src.uiDocuments.filter((d) => ids.uiDocument.has(d.id))) {
       scanUIElement(doc.root, add.asset);
       add.blueprint(doc.logicBlueprintId);
+      // A `component` element instances another document — pull it in, or the shared package
+      // arrives with instances pointing at nothing. The fixed-point loop handles nesting.
+      scanUIComponents(doc.root, add.uiDocument);
     }
 
     const after = Object.values(ids).reduce((sum, set) => sum + set.size, 0);
@@ -662,6 +671,9 @@ export function remapPackageForImport(
   const rewriteUIElement = (element: UIElement) => {
     element.id = remap(maps.uiElement, element.id) ?? newId('uiel');
     element.assetId = remap(maps.asset, element.assetId);
+    // Component instances must follow their document to its new id, or the import renders a
+    // "Missing component" placeholder where the widget should be.
+    element.componentId = remap(maps.uiDocument, element.componentId);
     for (const child of element.children ?? []) rewriteUIElement(child);
   };
 

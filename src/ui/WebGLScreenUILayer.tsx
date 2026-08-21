@@ -59,6 +59,7 @@ export function WebGLScreenUILayer() {
             ctx={ctx}
             textOverrides={scopeOverrides(textOverrides, doc.id)}
             resolveAssetUrl={resolveAssetUrl}
+            resolveComponent={(documentId) => uiDocuments.find((d) => d.id === documentId)}
             onButtonClick={(el) => el.onClickEvent && fireCustomEvent(el.onClickEvent)}
           />
         </Container>

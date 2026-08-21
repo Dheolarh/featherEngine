@@ -6,8 +6,18 @@ import { PanelHost } from './components/PanelHost';
 import { initStoreSync } from './sync/storeSync';
 import { startMcpBridge } from './ai/mcpBridge';
 import { startExtensionHost } from './extensions/host';
+import { useEditorStore } from './store/editorStore';
 import './styles.css';
 import '@xyflow/react/dist/style.css';
+
+// DEV-only handle for the end-to-end suite (scripts/e2e), which drives real Chrome over CDP and
+// needs to set up scenarios the UI can't reach in a few clicks. Never present in a production build.
+if (import.meta.env.DEV) {
+  (window as unknown as { __featherStore: unknown }).__featherStore = new Proxy(
+    {},
+    { get: (_, key: string) => useEditorStore.getState()[key as keyof ReturnType<typeof useEditorStore.getState>] },
+  );
+}
 
 // A `?panel=<kind>` URL means this window is a popped-out panel — render just that
 // panel and pull state from the main window. Otherwise render the full editor.

@@ -11,9 +11,10 @@
  * value to a project variable (`valueVariable`) via the host.
  */
 import { useState, type CSSProperties } from 'react';
-import type { UIAnchor, UIElement, UIStyle } from '../types';
+import type { UIAnchor, UIDocument, UIElement, UIStyle } from '../types';
 import { evalExpression, type UIExprContext } from './expression';
 import { animationStyle } from './uiAnimations';
+import { UI_DOC_SCOPE_ATTR, UI_ELEMENT_ATTR, UI_ELEMENT_SRC_ATTR } from './uiCss';
 
 export interface UIElementViewProps {
   element: UIElement;
@@ -26,8 +27,26 @@ export interface UIElementViewProps {
   onButtonClick?: (element: UIElement) => void;
   /** Fired when an interactive control edits its value (live HUD only). Host writes it to the variable. */
   onValueChange?: (element: UIElement, value: string | number | boolean) => void;
-  /** When true, tag every node with data-uiel-id for the design canvas's hit-testing. */
-  editable?: boolean;
+  /** Resolve a `component` element's `componentId` to the document it instances. */
+  resolveComponent?: (documentId: string) => UIDocument | undefined;
+  /**
+   * Set when this element IS a component's root being drawn in place of an instance. The instance
+   * contributes its identity and its own style/class ON TOP of the component root, and NO wrapper
+   * element is emitted — an instance must not add a DOM level, or it changes the layout and the
+   * CSS structure around it (flex/grid item promotion, `>` and `:nth-child` rules).
+   */
+  instanceOf?: { id: string; docScopeId: string; className?: string; style?: UIStyle; anchor?: UIAnchor };
+  /**
+   * Fallback click event supplied by an enclosing component INSTANCE. A reusable button widget
+   * cannot hard-code what clicking it does — every instance means something different — so the
+   * instance's own `onClickEvent` is used by any button inside it that does not define one.
+   */
+  inheritedClickEvent?: string;
+  /**
+   * Documents currently being rendered up the stack. A component that (transitively) instances
+   * itself would recurse forever, so the chain is carried down and checked before descending.
+   */
+  componentStack?: readonly string[];
 }
 
 /** Translate our flat `UIStyle` (plus `custom`) into a React style object. */
@@ -74,7 +93,28 @@ function fillToPercent(value: unknown): string {
 
 const INTERACTIVE = new Set(['button', 'input', 'toggle', 'slider', 'dropdown']);
 
-export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, onButtonClick, onValueChange, editable }: UIElementViewProps) {
+/** A component instance that cannot render. Deliberately visible — a blank box reads as "engine bug". */
+const MISSING_COMPONENT_STYLE: CSSProperties = {
+  padding: '6px 10px',
+  border: '1px dashed #e0714f',
+  borderRadius: 6,
+  color: '#e0714f',
+  fontSize: 11,
+  fontFamily: 'ui-monospace, monospace',
+};
+
+export function UIElementView({
+  element,
+  ctx,
+  textOverrides,
+  resolveAssetUrl,
+  onButtonClick,
+  onValueChange,
+  resolveComponent,
+  componentStack,
+  instanceOf,
+  inheritedClickEvent,
+}: UIElementViewProps) {
   // Pointer states for interactive elements (always declared so hook order is stable).
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -92,7 +132,9 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
   const disabled = 'disabled' in resolved && truthyBind(resolved.disabled);
 
   // Base style + pointer-state overlays (hover/active/disabled), then binding overrides.
-  let merged: UIStyle = element.style;
+  // An instance layers its own style over the component root's, so placement set on the instance
+  // (the anchor/position extraction preserved) wins over the component's defaults.
+  let merged: UIStyle = instanceOf?.style ? { ...element.style, ...instanceOf.style } : element.style;
   if (interactive && element.states) {
     if (disabled && element.states.disabled) merged = { ...merged, ...element.states.disabled };
     else {
@@ -123,12 +165,23 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
       resolveAssetUrl={resolveAssetUrl}
       onButtonClick={onButtonClick}
       onValueChange={onValueChange}
-      editable={editable}
+      resolveComponent={resolveComponent}
+      componentStack={componentStack}
+      inheritedClickEvent={inheritedClickEvent}
     />
   ));
 
-  // In the design canvas, tag every node so pointer hit-testing can resolve which element was clicked.
-  const idAttr = editable ? { 'data-uiel-id': element.id } : {};
+  // Tag every node with its element id. The design canvas hit-tests on it, and per-element raw CSS
+  // is scoped to it — so it has to be present in Play too, not just while editing.
+  // Identity comes from the INSTANCE when there is one: selection, element CSS and hit-testing all
+  // address the instance, while the rendered node is the component's root.
+  // Both classes apply: the component's own, plus whatever the instance adds at this site.
+  const nodeClassName = [element.className, instanceOf?.className].filter(Boolean).join(' ') || undefined;
+  // `data-uiel-id` is the INSTANCE (that is the element the host document owns and selects), while
+  // `data-uiel-src` keeps the component root's own id so CSS attached to it still matches.
+  const idAttr = instanceOf
+    ? { [UI_ELEMENT_ATTR]: instanceOf.id, [UI_DOC_SCOPE_ATTR]: instanceOf.docScopeId, [UI_ELEMENT_SRC_ATTR]: element.id }
+    : { [UI_ELEMENT_ATTR]: element.id };
   // Hover/press handlers for interactive elements with state styling.
   const stateHandlers =
     interactive && element.states
@@ -147,7 +200,7 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
     switch (element.kind) {
       case 'text':
         return (
-          <div className={element.className} style={style} {...idAttr}>
+          <div className={nodeClassName} style={style} {...idAttr}>
             {text}
             {children}
           </div>
@@ -157,10 +210,14 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
         return (
           <button
             type="button"
-            className={element.className}
+            className={nodeClassName}
             style={{ border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', pointerEvents: 'auto', ...style }}
             disabled={disabled}
-            onClick={!disabled && onButtonClick ? () => onButtonClick(element) : undefined}
+            onClick={
+              !disabled && onButtonClick
+                ? () => onButtonClick(element.onClickEvent ? element : { ...element, onClickEvent: inheritedClickEvent })
+                : undefined
+            }
             {...stateHandlers}
             {...idAttr}
           >
@@ -172,7 +229,7 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
       case 'input':
         return (
           <input
-            className={element.className}
+            className={nodeClassName}
             style={{ pointerEvents: 'auto', ...style }}
             placeholder={element.placeholder}
             value={liveValue != null ? String(liveValue) : ''}
@@ -188,7 +245,7 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
         const on = truthyBind(liveValue);
         return (
           <label
-            className={element.className}
+            className={nodeClassName}
             style={{ cursor: canEdit ? 'pointer' : 'default', pointerEvents: 'auto', ...style }}
             tabIndex={canEdit ? 0 : undefined}
             data-ui-focusable={canEdit ? '' : undefined}
@@ -229,7 +286,7 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
         return (
           <input
             type="range"
-            className={element.className}
+            className={nodeClassName}
             style={{ pointerEvents: 'auto', accentColor: 'currentColor', ...style }}
             min={min}
             max={max}
@@ -246,7 +303,7 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
       case 'dropdown':
         return (
           <select
-            className={element.className}
+            className={nodeClassName}
             style={{ pointerEvents: 'auto', ...style }}
             value={liveValue != null ? String(liveValue) : ''}
             disabled={disabled || !canEdit}
@@ -270,23 +327,35 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
           const inset = element.sliceInset ?? 12;
           return (
             <div
-              className={element.className}
+              className={nodeClassName}
               style={{ ...style, borderStyle: 'solid', borderWidth: inset, borderImageSource: `url(${src})`, borderImageSlice: inset, borderImageRepeat: 'stretch' } as CSSProperties}
               {...idAttr}
             />
           );
         }
         const objectFit = fit === 'contain' ? 'contain' : fit === 'cover' ? 'cover' : 'fill';
-        return <img className={element.className} style={{ objectFit, ...style }} src={src} alt={element.name} {...idAttr} />;
+        return <img className={nodeClassName} style={{ objectFit, ...style }} src={src} alt={element.name} {...idAttr} />;
       }
 
       case 'bar': {
         // The element's own style is the track; a nested fill div is driven by the `fill` binding.
         const fillWidth = 'fill' in resolved ? fillToPercent(resolved.fill) : '100%';
         const fillColor = 'color' in resolved && resolved.color != null ? String(resolved.color) : '#5B8CFF';
+        // The nested fill is a placeholder when nothing drives it: without a `fill` binding it is a
+        // static full-width blue rectangle. On a bar whose look comes from a stylesheet (a captured
+        // UI kit, or any element with a class/CSS of its own) that placeholder buries the real
+        // artwork, so leave those to their CSS.
+        const ownFill = !('fill' in resolved) && (!!element.className || !!element.css);
         return (
-          <div className={element.className} style={{ overflow: 'hidden', ...style }} {...idAttr}>
-            <div style={{ width: fillWidth, height: '100%', background: fillColor, borderRadius: 'inherit', transition: 'width 0.1s linear' }} />
+          <div className={nodeClassName} style={{ overflow: 'hidden', ...style }} {...idAttr}>
+            {/* The fill is ours, not the author's, so it carries a stable class: raw CSS has no
+                other way to restyle a bar's fill (e.g. a gradient instead of a flat colour). */}
+            {!ownFill && (
+              <div
+                className="ui-bar-fill"
+                style={{ width: fillWidth, height: '100%', background: fillColor, borderRadius: 'inherit', transition: 'width 0.1s linear' }}
+              />
+            )}
             {children}
           </div>
         );
@@ -295,15 +364,69 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
       case 'scroll':
         // A scrollable list/panel — wheel + touch scrolling, so it opts back into pointer events.
         return (
-          <div className={element.className} style={{ overflowY: 'auto', pointerEvents: 'auto', ...style }} {...idAttr}>
+          <div className={nodeClassName} style={{ overflowY: 'auto', pointerEvents: 'auto', ...style }} {...idAttr}>
+            {text}
             {children}
           </div>
         );
 
+      case 'component': {
+        // An instance of another document, rendered BY REFERENCE — so editing the component
+        // updates every place it is used, which is the whole point of the kind.
+        const source = element.componentId ? resolveComponent?.(element.componentId) : undefined;
+        if (!source) {
+          // Loud, not blank: a missing component is a broken reference the author must see.
+          return (
+            <div className={nodeClassName} style={{ ...MISSING_COMPONENT_STYLE, ...style }} {...idAttr}>
+              {element.componentId ? 'Missing component' : 'No component set'}
+            </div>
+          );
+        }
+        if (componentStack?.includes(source.id)) {
+          return (
+            <div className={nodeClassName} style={{ ...MISSING_COMPONENT_STYLE, ...style }} {...idAttr}>
+              Circular component: {source.name}
+            </div>
+          );
+        }
+        // Params are expressions evaluated in THIS document's context, then handed to the
+        // component's own bindings as `param.<key>`.
+        const params: Record<string, unknown> = {};
+        for (const [key, expression] of Object.entries(element.componentParams ?? {})) {
+          params[key] = evalExpression(expression, ctx);
+        }
+        // No wrapper: the component's ROOT is rendered directly in this slot, carrying the
+        // instance's identity, class, style and anchor. An extra div here would change flex/grid
+        // item promotion and break `>` / `:nth-child` rules written against the original markup.
+        return (
+          <UIElementView
+            element={source.root}
+            ctx={{ ...ctx, params }}
+            textOverrides={textOverrides}
+            resolveAssetUrl={resolveAssetUrl}
+            onButtonClick={onButtonClick}
+            onValueChange={onValueChange}
+            resolveComponent={resolveComponent}
+            componentStack={[...(componentStack ?? []), source.id]}
+            inheritedClickEvent={element.onClickEvent ?? inheritedClickEvent}
+            instanceOf={{
+              id: element.id,
+              docScopeId: source.id,
+              className: element.className,
+              style: element.style,
+              anchor: element.anchor,
+            }}
+          />
+        );
+      }
+
       case 'panel':
       default:
+        // Containers carry text too — captured UI kits routinely put a label on a styled div, and
+        // dropping it silently is how a kit ends up rendering as empty boxes.
         return (
-          <div className={element.className} style={style} {...idAttr}>
+          <div className={nodeClassName} style={style} {...idAttr}>
+            {text}
             {children}
           </div>
         );
@@ -312,7 +435,8 @@ export function UIElementView({ element, ctx, textOverrides, resolveAssetUrl, on
 
   // A screen anchor floats the element to its corner/edge via a full-frame flex wrapper (the root's
   // own anchor is stripped by the hosts — anchors apply to elements inside the document).
-  if (element.anchor) return <div style={anchorWrapStyle(element.anchor)}>{content}</div>;
+  const anchor = instanceOf ? instanceOf.anchor ?? element.anchor : element.anchor;
+  if (anchor) return <div style={anchorWrapStyle(anchor)}>{content}</div>;
   return content;
 }
 

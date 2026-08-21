@@ -9,7 +9,7 @@
  * depth occlusion in world space, and can be mapped onto in-world geometry.
  */
 import { Container, Image, Text } from '@react-three/uikit';
-import type { UIElement } from '../types';
+import type { UIDocument, UIElement } from '../types';
 import { evalExpression, type UIExprContext } from './expression';
 import { splitColor, styleToUikit, uikitColor } from './styleToUikit';
 
@@ -21,6 +21,10 @@ export interface UIElementMeshProps {
   resolveAssetUrl?: (assetId: string) => string | undefined;
   /** Fired when a button element is clicked (live HUD only). */
   onButtonClick?: (element: UIElement) => void;
+  /** Resolve a `component` element's `componentId` to the document it instances. */
+  resolveComponent?: (documentId: string) => UIDocument | undefined;
+  /** Documents already being rendered up the stack — guards a component that instances itself. */
+  componentStack?: readonly string[];
 }
 
 /** Clamp a fill expression result (0..1, or 0..100 if >1) to a uikit percentage width. */
@@ -35,7 +39,7 @@ function truthy(value: unknown): boolean {
   return typeof value === 'number' ? value !== 0 : Boolean(value);
 }
 
-export function UIElementMesh({ element, ctx, textOverrides, resolveAssetUrl, onButtonClick }: UIElementMeshProps) {
+export function UIElementMesh({ element, ctx, textOverrides, resolveAssetUrl, onButtonClick, resolveComponent, componentStack }: UIElementMeshProps) {
   const resolved: Partial<Record<string, unknown>> = {};
   for (const binding of element.bindings) resolved[binding.target] = evalExpression(binding.expression, ctx);
 
@@ -82,11 +86,38 @@ export function UIElementMesh({ element, ctx, textOverrides, resolveAssetUrl, on
       textOverrides={textOverrides}
       resolveAssetUrl={resolveAssetUrl}
       onButtonClick={onButtonClick}
+      resolveComponent={resolveComponent}
+      componentStack={componentStack}
     />
   ));
 
   const content = (() => {
     switch (element.kind) {
+      case 'component': {
+        // Same by-reference instancing as the DOM path. Raw CSS does not apply here (the WebGL
+        // backend has no stylesheet), but the tree, bindings and params all do.
+        const source = element.componentId ? resolveComponent?.(element.componentId) : undefined;
+        if (!source || componentStack?.includes(source.id)) return <Container {...props}>{childMeshes}</Container>;
+        const params: Record<string, unknown> = {};
+        for (const [key, expression] of Object.entries(element.componentParams ?? {})) {
+          params[key] = evalExpression(expression, ctx);
+        }
+        return (
+          <Container {...props}>
+            <UIElementMesh
+              element={source.root}
+              ctx={{ ...ctx, params }}
+              textOverrides={textOverrides}
+              resolveAssetUrl={resolveAssetUrl}
+              onButtonClick={onButtonClick}
+              resolveComponent={resolveComponent}
+              componentStack={[...(componentStack ?? []), source.id]}
+            />
+            {childMeshes}
+          </Container>
+        );
+      }
+
       case 'text':
         // uikit text styling lives on the <Text> itself; layout props wrap it in a Container.
         return (

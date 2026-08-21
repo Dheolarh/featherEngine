@@ -3441,6 +3441,115 @@ const rawEngineTools = {
     },
   }),
 
+  extract_ui_component: tool({
+    description:
+      'Turn an existing element (and its children) into a REUSABLE COMPONENT — the Unreal "user widget" move. The subtree moves into a new component document and is replaced in place by an instance of it, so nothing changes on screen. Every later instance of that component stays in sync: edit the component once, all instances update. Use this whenever a UI repeats a widget (inventory slot, hotbar tile, enemy nameplate, stat row, card) or when asked to make a UI reusable/modular/less hardcoded. Returns the new componentId. Cannot extract a document root.',
+    inputSchema: z.object({
+      documentId: z.string(),
+      elementId: z.string().describe('The element to turn into a component. Its whole subtree comes along.'),
+      name: z.string().optional().describe('Component name; defaults to the element name.'),
+    }),
+    execute: async ({ documentId, elementId, name }) => {
+      const doc = findUIDocument(documentId);
+      if (!doc) return `No UI document with id ${documentId}.`;
+      const element = findUIElement(doc.root, elementId);
+      if (!element) return `No element ${elementId} in UI ${documentId}.`;
+      if (elementId === doc.root.id) return `Cannot extract the root of "${doc.name}" — extract a child instead.`;
+      const componentId = store().extractUIComponent(documentId, elementId, name);
+      if (!componentId) return `Could not extract ${elementId}.`;
+      return `Extracted "${element.name}" into component ${componentId}; "${doc.name}" now instances it. Add more copies with insert_ui_component.`;
+    },
+  }),
+
+  create_ui_component: tool({
+    description:
+      'Create an empty reusable UI component (a widget you compose into other UI documents rather than show on its own). Build it with add_ui_element/add_ui_preset like any document, then place copies with insert_ui_component. Prefer extract_ui_component when the widget already exists somewhere. Returns componentId.',
+    inputSchema: z.object({ name: z.string().optional() }),
+    execute: async ({ name }) => {
+      const id = store().createUIComponent(name);
+      const doc = findUIDocument(id);
+      return `Created component "${doc?.name}" with componentId ${id}. Its root panel id is ${doc?.root.id}.`;
+    },
+  }),
+
+  insert_ui_component: tool({
+    description:
+      'Place an instance of a reusable component inside a UI document. The instance renders that component BY REFERENCE, so editing the component updates this and every other instance. Give each instance its own data with set_ui_component_param. Returns the instance elementId.',
+    inputSchema: z.object({
+      documentId: z.string(),
+      componentId: z.string().describe('The UI document to instance (from extract_ui_component / create_ui_component).'),
+      parentId: z.string().optional().describe('Parent element id; defaults to the root panel.'),
+    }),
+    execute: async ({ documentId, componentId, parentId }) => {
+      const doc = findUIDocument(documentId);
+      if (!doc) return `No UI document with id ${documentId}.`;
+      const source = findUIDocument(componentId);
+      if (!source) return `No component with id ${componentId}.`;
+      const id = store().insertUIComponent(documentId, parentId, componentId);
+      if (!id) return `Cannot instance "${source.name}" inside "${doc.name}" — that would make a component contain itself.`;
+      return `Added an instance of "${source.name}" (element ${id}) to "${doc.name}".`;
+    },
+  }),
+
+  set_ui_component_param: tool({
+    description:
+      'Give ONE component instance its own data. The component\'s bindings read these as param.<key> — e.g. set param "label" on each instance and bind the component\'s text to param.label, and one component serves every slot. The value is an expression evaluated in the PARENT document, so it can be a literal ("Slot 1"), a variable name (health), or forwarded data (self.health). Empty value clears the parameter.',
+    inputSchema: z.object({
+      documentId: z.string(),
+      elementId: z.string().describe('The component INSTANCE element, not the component document.'),
+      key: z.string().describe('Parameter name, read inside the component as param.<key>.'),
+      value: z.string().describe('Literal or expression. Empty clears it.'),
+    }),
+    execute: async ({ documentId, elementId, key, value }) => {
+      const doc = findUIDocument(documentId);
+      if (!doc) return `No UI document with id ${documentId}.`;
+      const element = findUIElement(doc.root, elementId);
+      if (!element) return `No element ${elementId} in UI ${documentId}.`;
+      if (element.kind !== 'component') return `Element ${elementId} is a ${element.kind}, not a component instance.`;
+      store().setUIComponentParam(documentId, elementId, key, value);
+      return value.trim() ? `Set param.${key} = "${value}" on this instance.` : `Cleared param.${key} on this instance.`;
+    },
+  }),
+
+  set_ui_css: tool({
+    description:
+      'Write the raw CSS stylesheet for a UI document — the escape hatch for anything the flat style model cannot express: gradients, pseudo-elements (::before/::after), :hover/:focus, transitions, @keyframes animations, @media queries, backdrop-filter. This is the fastest way to make a HUD look designed. Target elements by their className (set it with update_ui_element). The sheet is auto-scoped to this document, so :root, html and body rules style the widget frame and cannot touch the editor, ids are matched as classes (#hud targets class "id-hud"), and @keyframes are namespaced. Applies identically in the editor preview and in Play. DOM renderer only — WebGL documents ignore it.',
+    inputSchema: z.object({
+      documentId: z.string(),
+      css: z.string().describe('Full stylesheet. Empty string clears it.'),
+      mode: z.enum(['replace', 'append']).optional().describe('"append" adds to the existing sheet — use it to extend an installed UI kit without resending its CSS. Default "replace".'),
+    }),
+    execute: async ({ documentId, css, mode }) => {
+      const doc = findUIDocument(documentId);
+      if (!doc) return `No UI document with id ${documentId}.`;
+      store().setUIDocumentCss(documentId, css, mode ?? 'replace');
+      const webgl = doc.renderMode === 'webgl' ? ' NOTE: this document uses the WebGL renderer, which ignores CSS — call set_ui_render_mode with "dom" to see it.' : '';
+      if (!css.trim() && mode !== 'append') return `Cleared the stylesheet on UI "${doc.name}".`;
+      return `${mode === 'append' ? 'Extended' : 'Set'} the stylesheet on UI "${doc.name}" (${css.length} chars).${webgl}`;
+    },
+  }),
+
+  set_ui_element_css: tool({
+    description:
+      'Attach raw CSS to ONE UI element, scoped to it automatically. Write bare declarations to style the element itself ("background: linear-gradient(180deg,#2f96a6,#11414c); border-radius: 12px"), or full rules where & is the element and any other selector matches its descendants ("&:hover { filter: brightness(1.15) } .row { gap: 6px }"). Prefer this over set_ui_css for a one-off widget; use set_ui_css for rules shared across many elements. Inline style set by update_ui_element WINS over these rules, so style a property in one place or the other (or add !important). DOM renderer only.',
+    inputSchema: z.object({
+      documentId: z.string(),
+      elementId: z.string(),
+      css: z.string().describe('Declarations or rules. Empty string clears it.'),
+      mode: z.enum(['replace', 'append']).optional().describe('Default "replace".'),
+    }),
+    execute: async ({ documentId, elementId, css, mode }) => {
+      const doc = findUIDocument(documentId);
+      if (!doc) return `No UI document with id ${documentId}.`;
+      const element = findUIElement(doc.root, elementId);
+      if (!element) return `No element ${elementId} in UI ${documentId}.`;
+      store().setUIElementCss(documentId, elementId, css, mode ?? 'replace');
+      if (!css.trim() && mode !== 'append') return `Cleared the CSS on "${element.name}".`;
+      const webgl = doc.renderMode === 'webgl' ? ' NOTE: this document uses the WebGL renderer, which ignores CSS.' : '';
+      return `${mode === 'append' ? 'Extended' : 'Set'} the CSS on "${element.name}" (${element.kind}).${webgl}`;
+    },
+  }),
+
   create_ui_template: tool({
     description:
       'Create a polished screen UI in one call. Generic mockups: "hud", "mainMenu", "dialogue", "inventory". Ready-made GAME HUDs/menus (assemble corner-anchored, data-bound widgets AND auto-create the project variables they bind to, so they show live data immediately): "shooterHud" (health bar + ammo + score + crosshair), "platformerHud" (lives + score + coins), "racingHud" (speed + lap + position), "pauseMenu" (Resume/Restart/Quit buttons firing resumeGame/restartGame/quitGame events, hidden on start), "gameOver" (score + Retry firing restartGame, hidden on start), "settings" (volume SLIDER, difficulty DROPDOWN, fullscreen TOGGLE, name INPUT — each two-way-bound to an auto-created variable — plus a Back button firing closeSettings; hidden on start; showcases interactive controls + keyboard/gamepad focus nav). Prefer the game kinds when the user names a genre HUD; tweak afterward with the other ui tools / set_ui_render_mode.',
@@ -3708,7 +3817,7 @@ const rawEngineTools = {
       elementId: z.string(),
       name: z.string().optional(),
       text: z.string().optional(),
-      className: z.string().optional(),
+      className: z.string().optional().describe('Class used to target this element from the document stylesheet (set_ui_css). For one-off CSS use set_ui_element_css instead — no class needed.'),
       onClickEvent: z.string().optional(),
       assetId: z.string().optional(),
       valueVariable: z.string().optional().describe('Interactive kinds: project variable NAME this control reads + writes during Play (two-way binding).'),

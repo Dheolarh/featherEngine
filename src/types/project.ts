@@ -184,7 +184,23 @@ export interface ProjectGraph {
  * Interactive (read/write a project variable via `valueVariable` during Play): button, input,
  * toggle, slider, dropdown.
  */
-export type UIElementKind = 'panel' | 'text' | 'image' | 'bar' | 'button' | 'scroll' | 'input' | 'toggle' | 'slider' | 'dropdown';
+export type UIElementKind =
+  | 'panel'
+  | 'text'
+  | 'image'
+  | 'bar'
+  | 'button'
+  | 'scroll'
+  | 'input'
+  | 'toggle'
+  | 'slider'
+  | 'dropdown'
+  /**
+   * An INSTANCE of another UI document (`componentId`) — the reusable-widget kind. Renders that
+   * document's tree in place, by reference: edit the component once and every instance updates.
+   * `componentParams` feed its bindings as `param.<key>`, so one component serves many uses.
+   */
+  | 'component';
 
 /** Whether a UI document draws on the player's screen (HUD) or anchored in the 3D world. */
 export type UISurface = 'screen' | 'world';
@@ -276,8 +292,17 @@ export interface UIElement {
   id: string;
   kind: UIElementKind;
   name: string;
-  /** Class for raw-CSS targeting. */
+  /** Class for raw-CSS targeting. Captured kits keep an element's original id here as `id-<name>`. */
   className?: string;
+  /**
+   * Raw CSS attached to THIS element, scoped to it automatically (DOM renderer only).
+   * Either a bare declaration list (`color: gold; border-radius: 8px`) which styles the element
+   * itself, or full rules where `&` is the element and any other selector matches its descendants:
+   * `& { background: linear-gradient(…) } &:hover { filter: brightness(1.2) } .row { gap: 6px }`.
+   * Inline `style` fields still win on conflicts — clear the inspector field (or use `!important`)
+   * to hand a property over to CSS.
+   */
+  css?: string;
   /** Static label for text/button elements. */
   text?: string;
   /** Image source asset id. */
@@ -314,6 +339,15 @@ export interface UIElement {
   step?: number;
   /** Dropdown choices. The selected option string is written to `valueVariable`. */
   options?: string[];
+  /** `component` kind — id of the UI document instanced here. */
+  componentId?: string;
+  /**
+   * `component` kind — per-instance values the component's own bindings read as `param.<key>`
+   * (e.g. `param.label`, `param.variable`). This is what lets one Health Bar component serve the
+   * player and every enemy. Values are expressions evaluated in the PARENT's context, so
+   * `param.slot` can be a literal ("3") or forwarded data (`self.health`).
+   */
+  componentParams?: Record<string, string>;
   /**
    * WebGL-backend visual effect (only honoured when the document's `renderMode` is `'webgl'`).
    * `'glow'` adds emissive bloom (pairs with the HUD bloom pass), `'holographic'` an animated
@@ -335,9 +369,21 @@ export interface UIDocument {
    * onto in-world surfaces (diegetic UI). Bindings, text overrides and click events are identical.
    */
   renderMode?: 'dom' | 'webgl';
+  /**
+   * Marks this document as a REUSABLE COMPONENT rather than a screen/world UI of its own: it is
+   * meant to be instanced inside other documents (`component` elements), so it is never auto-shown
+   * on Play and is listed separately in the pickers. The tree is otherwise identical — any document
+   * can be instanced, this only says what it is FOR.
+   */
+  isComponent?: boolean;
   /** Always a 'panel' element. */
   root: UIElement;
-  /** Raw CSS escape hatch, scoped to this document. */
+  /**
+   * Raw CSS escape hatch for the whole document (DOM renderer only). Rewritten by `scopeUICss` on
+   * injection so it can only match inside this widget: `:root`/`html`/`body` fold onto the
+   * document frame, `#name` matches the `id-<name>` class convention, and `@keyframes` are
+   * namespaced. Applies identically in the design canvas and in Play.
+   */
   css?: string;
   /** Screen docs shown automatically when Play starts. */
   visibleOnStart: boolean;
