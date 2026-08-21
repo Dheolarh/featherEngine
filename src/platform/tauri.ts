@@ -281,12 +281,17 @@ export const tauriPlatform: Platform = {
     return target;
   },
 
-  async buildProduction(bundleJson, targets, onProgress, outDir) {
+  async buildProduction(request, onProgress) {
     const unlisten = await listen<string>('production-build-progress', (event) =>
       onProgress(event.payload),
     );
     try {
-      return await invoke<string>('run_production_build', { bundleJson, targets, outDir });
+      return await invoke<string>('run_production_build', {
+        bundleJson: request.bundleJson,
+        profileJson: JSON.stringify(request.profile),
+        targets: request.targets,
+        outDir: request.outDir,
+      });
     } finally {
       unlisten();
     }

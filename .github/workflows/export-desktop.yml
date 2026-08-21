@@ -34,10 +34,13 @@ jobs:
         include:
           - os: windows-latest
             artifact: game-windows
+            target: windows
           - os: macos-latest
             artifact: game-macos
+            target: macos
           - os: ubuntu-22.04
             artifact: game-linux
+            target: linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -65,9 +68,11 @@ jobs:
       - name: Fetch game bundle
         if: inputs.bundle_url != ''
         shell: bash
+        env:
+          BUNDLE_URL: ${{ inputs.bundle_url }}
         run: |
           mkdir -p exports/staging
-          curl -fsSL "${{ inputs.bundle_url }}" -o exports/staging/game.json
+          curl --proto '=https' --proto-redir '=https' -fsSL -o exports/staging/game.json -- "$BUNDLE_URL"
 
       - name: Verify a bundle is present
         shell: bash
@@ -77,18 +82,27 @@ jobs:
             exit 1
           fi
 
-      - name: Build web + native installer
+      - name: Build exact desktop target (plus Web once)
         shell: bash
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          GAME_NAME: ${{ inputs.game_name }}
         run: |
-          ARGS=(--native --zip)
-          if [ -n "${{ inputs.game_name }}" ]; then ARGS+=(--name "${{ inputs.game_name }}"); fi
+          TARGETS="$BUILD_TARGET"
+          ARGS=()
+          if [ "$BUILD_TARGET" = "linux" ]; then
+            TARGETS="web,linux"
+            ARGS+=(--zip)
+          fi
+          ARGS+=(--targets "$TARGETS")
+          if [ -n "$GAME_NAME" ]; then ARGS+=(--name "$GAME_NAME"); fi
           node scripts/export-production.mjs "${ARGS[@]}"
 
       - name: Upload native installers
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: exports/*-native/*
+          path: exports/*-${{ matrix.target }}/*
           if-no-files-found: error
 
       - name: Upload portable web build (once)

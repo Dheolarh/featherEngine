@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PROJECT_VERSION, type AssetItem, type NodeForgeProject } from '../../types';
-import { GAME_BUNDLE_VERSION, buildGameBundle, readGameBundle, stripUnusedAssets } from '../exportGame';
+import { GAME_BUNDLE_VERSION, buildGameBundle, readGameBundle, stripUnusedAssets, type GameBundle } from '../exportGame';
 import { collectReferencedAssetIds, verifyGameBundle } from '../verifyBundle';
 import currentProjectFixture from './fixtures/project-v0.7.0.json';
 
@@ -137,10 +137,18 @@ describe('legacy game bundles', () => {
   ] as const;
 
   const legacyBundle = () => {
-    const bundle = buildGameBundle(projectWith([])) as unknown as {
-      startSceneId: string;
-      project: Record<string, unknown> & { version: string };
+    const bundle = buildGameBundle(projectWith([])) as unknown as Omit<
+      GameBundle,
+      'buildProfile' | 'runtimeContract' | 'project'
+    > & {
+      buildProfile?: GameBundle['buildProfile'];
+      runtimeContract?: GameBundle['runtimeContract'];
+      project: Record<string, unknown> & { version: string; exportSettings?: NodeForgeProject['exportSettings'] };
     };
+    bundle.bundleVersion = '1.0.0';
+    delete bundle.buildProfile;
+    delete bundle.runtimeContract;
+    delete bundle.project.exportSettings;
     bundle.project.version = '0.2.0';
     for (const collection of LATE_COLLECTIONS) delete bundle.project[collection];
     return bundle;
@@ -156,8 +164,14 @@ describe('legacy game bundles', () => {
   });
 
   it('verifies a migrated legacy bundle instead of throwing', () => {
-    const { project, startSceneId } = readGameBundle(legacyBundle());
-    const report = verifyGameBundle({ bundleVersion: GAME_BUNDLE_VERSION, startSceneId, project });
+    const { project, startSceneId, buildProfile, runtimeContract } = readGameBundle(legacyBundle());
+    const report = verifyGameBundle({
+      bundleVersion: GAME_BUNDLE_VERSION,
+      startSceneId,
+      buildProfile,
+      runtimeContract,
+      project,
+    });
 
     expect(report.errors).toEqual([]);
     expect(report.summary.join('\n')).toContain('Materials: 0');
@@ -172,6 +186,8 @@ describe('legacy game bundles', () => {
     bundle.project.activeSceneId = 'scene-a';
     bundle.startSceneId = 'scene-b';
 
-    expect(readGameBundle(bundle).startSceneId).toBe('scene-b');
+    const loaded = readGameBundle(bundle);
+    expect(loaded.startSceneId).toBe('scene-b');
+    expect(loaded.buildProfile.startSceneId).toBe('scene-b');
   });
 });

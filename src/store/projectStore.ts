@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { getPlatform, isDesktop } from '../platform';
-import type { ExportPlatformsReport, ExportTarget } from '../platform/types';
+import type { ExportPlatformsReport } from '../platform/types';
 import { blankProject } from '../project/serialize';
 import { buildGameBundle, embedAssets, mimeForAsset, stripUnusedAssets, type GameBundle } from '../project/exportGame';
 import { verifyGameBundle, type BundleReport } from '../project/verifyBundle';
@@ -17,10 +17,10 @@ import {
   writePackageArchive,
   type PackageArchive,
 } from '../project/packageArchive';
-import type { AssetItem } from '../types';
+import type { AssetItem, ExportProfile } from '../types';
+import { activeExportProfile } from '../project/exportProfiles';
 import { contentAddressedName, dataUrlToBytes, sha256Hex } from '../utils/contentHash';
 import { useEditorStore } from './editorStore';
-import { setSaveNamespace } from './editor/objectFactory';
 import { clearHistory } from './history';
 import { clearRecovery, type RecoverySnapshot } from './autosave';
 
@@ -249,15 +249,16 @@ interface ProjectState {
   pendingExport: { mode: 'game' | 'production'; bundle: GameBundle; report: BundleReport } | null;
   /** Platform-doctor report for the export dialog's platform picker (desktop only). */
   exportPlatforms: ExportPlatformsReport | null;
+  /** A failed platform-doctor invocation; shown with an explicit retry in the export dialog. */
+  exportPlatformsError: string | null;
   clearToast: () => void;
   clearBuildProgress: () => void;
   /** Refresh `exportPlatforms` from the platform doctor (no-op on web). */
   loadExportPlatforms: () => Promise<void>;
   /** Close the Build Report dialog without exporting. */
   cancelPendingExport: () => void;
-  /** Confirm the Build Report dialog: run the chosen export, optionally stripping unused assets.
-   *  For production mode, `targets` selects the platforms to build (defaults to this desktop). */
-  confirmPendingExport: (stripUnused: boolean, targets?: ExportTarget[]) => Promise<void>;
+  /** Confirm the Build Report dialog with an immutable profile snapshot. */
+  confirmPendingExport: (stripUnused: boolean, profile?: ExportProfile) => Promise<void>;
   newProject: (name: string) => Promise<void>;
   openProject: () => Promise<void>;
   openRecent: (dir: string) => Promise<void>;
@@ -315,10 +316,14 @@ export const useProjectStore = create<ProjectState>()(
         set({ busy: true, error: null });
         try {
           const editor = useEditorStore.getState();
+          if (editor.isPlaying) {
+            set({ toast: { kind: 'error', message: 'Stop Play before exporting so runtime-spawned or moved objects cannot enter the build.' } });
+            return;
+          }
           const project = { ...editor.exportProject(), name: projectName };
           // Inline asset bytes (from the live, url-carrying assets) so the bundle is self-contained.
           project.assets = await embedAssets(editor.assets);
-          const bundle = buildGameBundle(project);
+          const bundle = buildGameBundle(project, activeExportProfile(project.exportSettings));
           const report = verifyGameBundle(bundle);
           set({ pendingExport: { mode, bundle, report } });
         } catch (error) {
@@ -339,7 +344,7 @@ export const useProjectStore = create<ProjectState>()(
       };
 
       // Second half of the Production flow, after the Build Report is confirmed.
-      const runProductionExport = async (bundle: GameBundle, report: BundleReport, targets: ExportTarget[]) => {
+      const runProductionExport = async (bundle: GameBundle, report: BundleReport, profile: ExportProfile) => {
         const { projectName } = get();
         const platform = await getPlatform();
         const reportLines = [
@@ -362,8 +367,12 @@ export const useProjectStore = create<ProjectState>()(
           set({ buildProgress: { running: true, lines: [...reportLines, 'Preparing build…'] } });
           try {
             const outDir = await platform.buildProduction(
-              JSON.stringify(bundle),
-              targets,
+              {
+                bundleJson: JSON.stringify(bundle),
+                profile,
+                targets: profile.targets,
+                outDir: destination ?? undefined,
+              },
               (line) => {
                 set((state) => ({
                   buildProgress: {
@@ -372,11 +381,10 @@ export const useProjectStore = create<ProjectState>()(
                   },
                 }));
               },
-              destination ?? undefined,
             );
             set({
               buildProgress: null,
-              toast: { kind: 'success', message: `Production build complete → ${outDir}` },
+              toast: { kind: 'success', message: `Production export finished → ${outDir}` },
             });
           } catch (err) {
             const message = errorMessage(err);
@@ -423,17 +431,19 @@ export const useProjectStore = create<ProjectState>()(
         buildProgress: null,
         pendingExport: null,
         exportPlatforms: null,
+        exportPlatformsError: null,
         clearToast: () => set({ toast: null }),
         clearBuildProgress: () => set({ buildProgress: null }),
 
         loadExportPlatforms: async () => {
+          set({ exportPlatforms: null, exportPlatformsError: null });
           try {
             const platform = await getPlatform();
             if (!platform.checkExportPlatforms) return;
             set({ exportPlatforms: await platform.checkExportPlatforms() });
           } catch (error) {
-            // Non-fatal: the dialog just falls back to the plain desktop build.
             console.warn('Platform doctor failed:', error);
+            set({ exportPlatformsError: errorMessage(error) });
           }
         },
 
@@ -545,24 +555,47 @@ export const useProjectStore = create<ProjectState>()(
 
         cancelPendingExport: () => set({ pendingExport: null }),
 
-        confirmPendingExport: async (stripUnused, targets) => {
+        confirmPendingExport: async (stripUnused, profile) => {
           const pending = get().pendingExport;
           if (!pending) return;
-          const { mode, report } = pending;
+          const mode = pending.mode;
+          const selectedProfile = profile ?? pending.bundle.buildProfile;
+          const exportSettings = {
+            ...pending.bundle.project.exportSettings,
+            activeProfileId: selectedProfile.id,
+            profiles: pending.bundle.project.exportSettings.profiles.some(
+              (candidate) => candidate.id === selectedProfile.id,
+            )
+              ? pending.bundle.project.exportSettings.profiles.map((candidate) =>
+                  candidate.id === selectedProfile.id ? selectedProfile : candidate,
+                )
+              : [...pending.bundle.project.exportSettings.profiles, selectedProfile],
+          };
+          const profiledBundle: GameBundle = {
+            ...pending.bundle,
+            startSceneId: selectedProfile.startSceneId,
+            buildProfile: selectedProfile,
+            project: { ...pending.bundle.project, exportSettings },
+          };
+          const report = verifyGameBundle(profiledBundle);
           // Errors mean a referenced resource would 404 at runtime — the dialog disables Export,
           // but guard here too in case it's called directly.
-          if (report.errors.length) return;
+          if (report.errors.length) {
+            set({ pendingExport: { ...pending, bundle: profiledBundle, report } });
+            return;
+          }
+          if (mode === 'production') useEditorStore.getState().updateExportProfile(selectedProfile);
           // Never strip when the reference scan failed — fail open and ship everything.
           const bundle =
             stripUnused && !report.scanFailed
-              ? stripUnusedAssets(pending.bundle, report.referencedAssetIds)
-              : pending.bundle;
+              ? stripUnusedAssets(profiledBundle, report.referencedAssetIds)
+              : profiledBundle;
           set({ pendingExport: null, busy: true, error: null });
           try {
             if (report.warnings.length) console.warn('Export issues:', report.warnings);
             console.info('Export contents:', report.summary);
             if (mode === 'game') await runGameExport(bundle);
-            else await runProductionExport(bundle, report, targets?.length ? targets : ['desktop']);
+            else await runProductionExport(bundle, report, selectedProfile);
           } catch (error) {
             const message = errorMessage(error);
             set({ error: message, toast: { kind: 'error', message: `Export failed: ${message}` } });
@@ -780,9 +813,3 @@ export const useProjectStore = create<ProjectState>()(
     { name: 'nodeforge.projects', partialize: (state) => ({ recentProjects: state.recentProjects }) },
   ),
 );
-
-// Keep game-save slots scoped to the open project, whatever path set the name (new/open/save-as/demo).
-// loadProject covers the standalone player; this covers the editor's project lifecycle.
-useProjectStore.subscribe((state, prev) => {
-  if (state.projectName !== prev.projectName) setSaveNamespace(state.projectName);
-});

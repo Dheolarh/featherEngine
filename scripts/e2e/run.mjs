@@ -31,6 +31,123 @@ async function openScripting(app) {
   await app.waitFor(`document.querySelector('.nodeforge-node')`, { label: 'graph nodes rendered' });
 }
 
+spec('production export exposes one profile and all six exact platform targets', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=timeline' });
+  try {
+    await app.waitFor(`document.querySelector('button[title="Export your game"]')`, { label: 'Export menu trigger' });
+    await app.realClick('button[title="Export your game"]');
+    await app.waitFor(`document.querySelector('.export-popover')`, { label: 'Export menu open' });
+    await app.realClick('.export-popover button:nth-of-type(2)');
+    await app.waitFor(`document.querySelector('[role="dialog"][aria-label="Build report"]')`, {
+      label: 'Production Build Report open',
+    });
+
+    const dialog = await app.evaluate(`(() => {
+      const labels = [...document.querySelectorAll('.report-platform-label')].map((element) => element.textContent.trim());
+      const checked = [...document.querySelectorAll('.report-platform-main')]
+        .filter((label) => label.querySelector('input').checked)
+        .map((label) => label.querySelector('.report-platform-label').textContent.trim());
+      const profileFields = [...document.querySelectorAll('.report-profile-grid label > span')]
+        .map((element) => element.textContent.trim());
+      const build = document.querySelector('.report-footer .prefs-primary-button');
+      return { labels, checked, profileFields, buildText: build?.textContent.trim(), buildDisabled: build?.disabled };
+    })()`);
+
+    assert.deepEqual(dialog.labels, ['Web', 'Windows', 'macOS', 'Linux', 'Android', 'iOS']);
+    assert.deepEqual(dialog.checked, ['Web'], 'a new project starts with a portable Web profile');
+    assert.deepEqual(dialog.profileFields, [
+      'Product name',
+      'Application identifier',
+      'Version',
+      'Build number',
+      'Launch scene',
+      'Configuration',
+      'Window title',
+      'Window width',
+      'Window height',
+      'Minimum width',
+      'Minimum height',
+    ]);
+    assert.equal(dialog.buildText, 'Build');
+    assert.equal(dialog.buildDisabled, false, 'a valid Web production profile can be built');
+
+    await app.evaluate(`(() => {
+      const label = [...document.querySelectorAll('.report-profile-grid label')]
+        .find((candidate) => candidate.querySelector('span')?.textContent.trim() === 'Application identifier');
+      const input = label.querySelector('input');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, 'invalid');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await app.waitFor(`document.querySelector('.report-footer .prefs-primary-button').disabled`, {
+      label: 'invalid profile blocks the build',
+    });
+    await app.evaluate(`(() => {
+      const label = [...document.querySelectorAll('.report-profile-grid label')]
+        .find((candidate) => candidate.querySelector('span')?.textContent.trim() === 'Application identifier');
+      const input = label.querySelector('input');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, 'com.example.repaired');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await app.waitFor(`!document.querySelector('.report-footer .prefs-primary-button').disabled`, {
+      label: 'repairing the profile re-enables the build',
+    });
+
+    await app.evaluate(
+      `document.querySelector('.report-platform:nth-child(2) input[type="checkbox"]')?.scrollIntoView({ block: 'center' })`,
+    );
+    await delay(100);
+    await app.realClick('.report-platform:nth-child(2) input[type="checkbox"]');
+    await app.waitFor(
+      `[...document.querySelectorAll('.report-platform-main')].filter((label) => label.querySelector('input').checked).length === 2`,
+      { label: 'Windows added to the staged profile' },
+    );
+    assert.equal(
+      await app.evaluate(`document.querySelector('.report-platform:nth-child(2) input').disabled`),
+      false,
+      'a browser-authored profile can stage Windows for packaging on a Windows runner',
+    );
+  } finally {
+    await app.dispose();
+  }
+});
+
+spec('the production parity fixture behaves the same in editor Play', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script' });
+  try {
+    await app.evaluate(`(async () => {
+      const raw = await fetch('/scripts/fixtures/production-smoke-game.json').then((response) => response.json());
+      const { readGameBundle } = await import('/src/project/exportGame.ts');
+      const { useEditorStore } = await import('/src/store/editorStore.ts');
+      const loaded = readGameBundle(raw);
+      const store = useEditorStore.getState();
+      store.loadProject(loaded.project);
+      store.setActiveScene(loaded.startSceneId);
+      store.setPlaying(true);
+    })()`);
+    await app.waitFor(
+      `document.querySelector('.smoke-script-status')?.textContent?.trim() === 'SCRIPT_OK'`,
+      { label: 'Blueprint Start and HUD binding ran in editor Play', timeout: 45_000 },
+    );
+    await app.waitFor(
+      `(() => {
+        const values = (document.querySelector('.smoke-physics-position')?.textContent || '').split(',').map(Number);
+        return values.length === 3 && Number.isFinite(values[1]) && values[1] < 3.5;
+      })()`,
+      { label: 'Rapier and Blueprint Update advanced in editor Play', timeout: 45_000 },
+    );
+    await app.realClick('.smoke-runtime-button');
+    await app.waitFor(
+      `document.querySelector('.smoke-script-status')?.textContent?.trim() === 'BUTTON_OK'`,
+      { label: 'widget custom event reached the Blueprint runtime', timeout: 45_000 },
+    );
+    assert.equal(await app.count('.cinematic-overlay'), 1, 'editor Play mounts one cinematic overlay, like the player');
+  } finally {
+    await app.dispose();
+  }
+});
+
 spec('graph nodes respond to a real click by selecting', async () => {
   const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script' });
   try {

@@ -14,13 +14,29 @@ import {
   X,
 } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
-import type { ExportPlatformInfo, ExportTarget } from '../platform/types';
+import { isDesktop as runningInDesktopShell } from '../platform';
+import type { ExportPlatformInfo, ExportPlatformsReport } from '../platform/types';
+import type { ExportProfile, ExportTargetId } from '../types';
+import { validateExportProfile } from '../project/exportProfiles';
 
 /** Single asset above this size gets flagged in the breakdown — it dominates load time. */
 const LARGE_ASSET_BYTES = 8 * 1024 * 1024;
 
 /** Remembers the "Strip unused assets" choice across sessions. */
 const STRIP_PREF_KEY = 'nodeforge.export.stripUnused';
+
+const STAGED_PLATFORMS: ExportPlatformsReport = {
+  host: 'web',
+  hostLabel: 'Staged build',
+  platforms: [
+    { id: 'web', label: 'Web', kind: 'web', status: 'ready', requirements: [] },
+    { id: 'windows', label: 'Windows', kind: 'desktop', status: 'ci', requirements: [] },
+    { id: 'macos', label: 'macOS', kind: 'desktop', status: 'ci', requirements: [] },
+    { id: 'linux', label: 'Linux', kind: 'desktop', status: 'ci', requirements: [] },
+    { id: 'android', label: 'Android', kind: 'mobile', status: 'ci', requirements: [] },
+    { id: 'ios', label: 'iOS', kind: 'mobile', status: 'ci', requirements: [] },
+  ],
+};
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -36,14 +52,6 @@ function platformIcon(info: ExportPlatformInfo) {
   return <Monitor size={14} aria-hidden />;
 }
 
-/** The buildProduction target a doctor platform maps to ('desktop' = installer for the host OS). */
-function platformTarget(info: ExportPlatformInfo): ExportTarget | null {
-  if (info.id === 'web') return 'web';
-  if (info.id === 'android') return 'android';
-  if (info.id === 'ios') return 'ios';
-  return info.status === 'ready' || info.status === 'missing' ? 'desktop' : null;
-}
-
 /**
  * Per-platform rows for a Production export: what this machine can build right now (checkbox),
  * what belongs on CI (cloud hint), and exactly what's missing otherwise (first unmet requirement).
@@ -51,21 +59,42 @@ function platformTarget(info: ExportPlatformInfo): ExportTarget | null {
 function PlatformPicker({
   selected,
   onToggle,
+  platforms,
+  staged,
+  error,
+  onRetry,
 }: {
-  selected: Set<ExportTarget>;
-  onToggle: (target: ExportTarget) => void;
+  selected: Set<ExportTargetId>;
+  onToggle: (target: ExportTargetId) => void;
+  platforms: ExportPlatformsReport | null;
+  staged: boolean;
+  error?: string | null;
+  onRetry: () => void;
 }) {
-  const platforms = useProjectStore((state) => state.exportPlatforms);
-  if (!platforms) return null;
+  if (!platforms) {
+    return (
+      <section className="report-section">
+        <h3>Platforms</h3>
+        {error ? (
+          <div className="report-platform-loading">
+            Platform check failed: {error}{' '}
+            <button type="button" className="prefs-link-button" onClick={onRetry}>Retry</button>
+          </div>
+        ) : (
+          <div className="report-platform-loading">Checking local compilers and SDKs…</div>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className="report-section">
       <h3>Platforms</h3>
       <ul className="report-platforms">
         {platforms.platforms.map((info) => {
-          const target = platformTarget(info);
-          const buildable = target !== null && (info.status === 'ready' || info.id === 'web');
-          const checked = info.id === 'web' || (target !== null && selected.has(target));
+          const target = info.id;
+          const buildable = staged || info.status !== 'missing';
+          const checked = selected.has(target);
           const firstMissing = info.requirements.find((req) => !req.ok);
           return (
             <li key={info.id} className={`report-platform ${info.status}`}>
@@ -73,33 +102,36 @@ function PlatformPicker({
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={!buildable || info.id === 'web'}
-                  onChange={() => target && onToggle(target)}
+                  // A profile opened on another OS may contain unavailable targets. It must still
+                  // be possible to uncheck those targets instead of trapping the dialog.
+                  disabled={!buildable && !checked}
+                  onChange={() => onToggle(target)}
                 />
                 {platformIcon(info)}
                 <span className="report-platform-label">{info.label}</span>
-                {info.id === 'web' && <span className="report-flag ok">always included</span>}
-                {info.status === 'ready' && info.id !== 'web' && <span className="report-flag ok">ready</span>}
-                {info.status === 'ci' && (
+                {staged && target !== 'web' && <span className="report-flag">package on target OS</span>}
+                {staged && target === 'web' && <span className="report-flag ok">portable build</span>}
+                {!staged && info.status === 'ready' && <span className="report-flag ok">ready locally</span>}
+                {!staged && info.status === 'ci' && (
                   <span className="report-flag" title={info.notes}>
-                    <Cloud size={11} aria-hidden /> build on CI
+                    <Cloud size={11} aria-hidden /> stage for CI
                   </span>
                 )}
-                {info.status === 'missing' && (
+                {!staged && info.status === 'missing' && (
                   <span className="report-flag warn" title={info.notes}>
                     setup needed
                   </span>
                 )}
-                {info.status === 'unsupported' && <span className="report-flag error">needs a Mac</span>}
+                {!staged && info.status === 'unsupported' && <span className="report-flag">stage for a Mac</span>}
               </label>
-              {info.status === 'missing' && firstMissing && (
+              {!staged && info.status === 'missing' && firstMissing && (
                 <div className="report-platform-hint">
                   {firstMissing.label}
                   {firstMissing.fix ? ` — ${firstMissing.fix}` : ''}
                   {' · run `npm run doctor` for the full checklist'}
                 </div>
               )}
-              {info.status === 'ci' && (
+              {!staged && info.status === 'ci' && (
                 <div className="report-platform-hint">
                   One click away on GitHub: Actions → “Export Desktop Installers”.
                 </div>
@@ -122,14 +154,16 @@ export function BuildReportDialog() {
   const cancel = useProjectStore((state) => state.cancelPendingExport);
   const confirm = useProjectStore((state) => state.confirmPendingExport);
   const loadExportPlatforms = useProjectStore((state) => state.loadExportPlatforms);
+  const platforms = useProjectStore((state) => state.exportPlatforms);
+  const platformsError = useProjectStore((state) => state.exportPlatformsError);
   const [stripUnused, setStripUnused] = useState(() => localStorage.getItem(STRIP_PREF_KEY) !== '0');
-  // Native build targets for Production mode; the desktop installer for this OS starts selected.
-  const [targets, setTargets] = useState<Set<ExportTarget>>(() => new Set<ExportTarget>(['desktop']));
+  const [profile, setProfile] = useState<ExportProfile | null>(null);
 
   const isProduction = pending?.mode === 'production';
 
   useEffect(() => {
     if (!pending) return;
+    setProfile(structuredClone(pending.bundle.buildProfile));
     if (isProduction) void loadExportPlatforms();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') cancel();
@@ -138,16 +172,33 @@ export function BuildReportDialog() {
     return () => window.removeEventListener('keydown', onKey);
   }, [pending, isProduction, cancel, loadExportPlatforms]);
 
-  const toggleTarget = (target: ExportTarget) => {
-    setTargets((current) => {
-      const next = new Set(current);
-      if (next.has(target)) next.delete(target);
-      else next.add(target);
-      return next;
+  const toggleTarget = (target: ExportTargetId) => {
+    setProfile((current) => {
+      if (!current) return current;
+      const targets = new Set(current.targets);
+      if (targets.has(target)) targets.delete(target);
+      else targets.add(target);
+      return { ...current, targets: [...targets] };
     });
   };
 
-  const report = pending?.report ?? null;
+  const report = useMemo(() => {
+    if (!pending) return null;
+    if (!isProduction || !profile) return pending.report;
+    // Content/resource findings are immutable for this dialog. Remove only the errors produced by
+    // the original profile so a user can repair bad metadata live without rescanning a large game
+    // bundle on every keystroke; current profile errors are computed separately below.
+    const originalProfileErrors = new Set(
+      validateExportProfile(
+        pending.bundle.buildProfile,
+        pending.bundle.project.scenes.map((scene) => scene.id),
+      ),
+    );
+    return {
+      ...pending.report,
+      errors: pending.report.errors.filter((error) => !originalProfileErrors.has(error)),
+    };
+  }, [pending, isProduction, profile]);
   const stripped = useMemo(
     () => (report && !report.scanFailed ? report.assets.filter((asset) => !asset.referenced) : []),
     [report],
@@ -162,6 +213,17 @@ export function BuildReportDialog() {
 
   const hasErrors = (report?.errors.length ?? 0) > 0;
   const hasWarnings = (report?.warnings.length ?? 0) > 0;
+  const profileErrors =
+    isProduction && profile && pending
+      ? validateExportProfile(profile, pending.bundle.project.scenes.map((scene) => scene.id))
+      : [];
+  const selectedUnavailable =
+    isProduction && runningInDesktopShell && profile && platforms
+      ? profile.targets.filter((target) => {
+          const platform = platforms.platforms.find((entry) => entry.id === target);
+          return !platform || platform.status === 'missing';
+        })
+      : [];
 
   // Portal to <body> so the modal escapes the toolbar's `backdrop-filter` containing block
   // (otherwise `position: fixed` resolves against the 58px toolbar and gets clipped).
@@ -212,6 +274,190 @@ export function BuildReportDialog() {
                   ))}
                 </ul>
               </section>
+
+              {isProduction && profile && (
+                <section className="report-section">
+                  <h3>Build profile — {profile.name}</h3>
+                  <div className="report-profile-grid">
+                    <label>
+                      <span>Product name</span>
+                      <input
+                        value={profile.application.productName}
+                        onChange={(event) => {
+                          const productName = event.target.value;
+                          setProfile({
+                            ...profile,
+                            application: { ...profile.application, productName },
+                            window: {
+                              ...profile.window,
+                              title: profile.window.title === profile.application.productName
+                                ? productName
+                                : profile.window.title,
+                            },
+                          });
+                        }}
+                      />
+                    </label>
+                    <label>
+                      <span>Application identifier</span>
+                      <input
+                        value={profile.application.identifier}
+                        spellCheck={false}
+                        onChange={(event) =>
+                          setProfile({
+                            ...profile,
+                            application: { ...profile.application, identifier: event.target.value },
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Version</span>
+                      <input
+                        value={profile.application.version}
+                        spellCheck={false}
+                        onChange={(event) =>
+                          setProfile({
+                            ...profile,
+                            application: { ...profile.application, version: event.target.value },
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Build number</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={profile.application.buildNumber}
+                        onChange={(event) =>
+                          setProfile({
+                            ...profile,
+                            application: { ...profile.application, buildNumber: Number(event.target.value) },
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Launch scene</span>
+                      <select
+                        value={profile.startSceneId}
+                        onChange={(event) => setProfile({ ...profile, startSceneId: event.target.value })}
+                      >
+                        {pending.bundle.project.scenes.map((scene) => (
+                          <option key={scene.id} value={scene.id}>
+                            {scene.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Configuration</span>
+                      <select
+                        value={profile.configuration}
+                        onChange={(event) =>
+                          setProfile({ ...profile, configuration: event.target.value === 'debug' ? 'debug' : 'release' })
+                        }
+                      >
+                        <option value="release">Release</option>
+                        <option value="debug">Development</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Window title</span>
+                      <input
+                        value={profile.window.title}
+                        onChange={(event) =>
+                          setProfile({ ...profile, window: { ...profile.window, title: event.target.value } })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Window width</span>
+                      <input
+                        type="number"
+                        min={profile.window.minWidth}
+                        value={profile.window.width}
+                        onChange={(event) =>
+                          setProfile({ ...profile, window: { ...profile.window, width: Number(event.target.value) } })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Window height</span>
+                      <input
+                        type="number"
+                        min={profile.window.minHeight}
+                        value={profile.window.height}
+                        onChange={(event) =>
+                          setProfile({ ...profile, window: { ...profile.window, height: Number(event.target.value) } })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Minimum width</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={profile.window.width}
+                        value={profile.window.minWidth}
+                        onChange={(event) =>
+                          setProfile({ ...profile, window: { ...profile.window, minWidth: Number(event.target.value) } })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Minimum height</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={profile.window.height}
+                        value={profile.window.minHeight}
+                        onChange={(event) =>
+                          setProfile({ ...profile, window: { ...profile.window, minHeight: Number(event.target.value) } })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="report-profile-toggles">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={profile.window.resizable}
+                        onChange={(event) =>
+                          setProfile({ ...profile, window: { ...profile.window, resizable: event.target.checked } })
+                        }
+                      />
+                      Resizable window
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={profile.window.fullscreen}
+                        onChange={(event) =>
+                          setProfile({ ...profile, window: { ...profile.window, fullscreen: event.target.checked } })
+                        }
+                      />
+                      Start fullscreen
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={profile.includeDebugOverlay}
+                        onChange={(event) => setProfile({ ...profile, includeDebugOverlay: event.target.checked })}
+                      />
+                      Include runtime diagnostics
+                    </label>
+                  </div>
+                  {profileErrors.length > 0 && (
+                    <ul className="report-issues error">
+                      {profileErrors.map((error) => (
+                        <li key={error}>{error}</li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
 
               {hasErrors && (
                 <section className="report-section">
@@ -271,7 +517,26 @@ export function BuildReportDialog() {
                 </section>
               )}
 
-              {isProduction && <PlatformPicker selected={targets} onToggle={toggleTarget} />}
+              {isProduction && profile && (
+                <PlatformPicker
+                  selected={new Set(profile.targets)}
+                  onToggle={toggleTarget}
+                  platforms={platforms ?? (runningInDesktopShell ? null : STAGED_PLATFORMS)}
+                  staged={!runningInDesktopShell}
+                  error={platformsError}
+                  onRetry={() => void loadExportPlatforms()}
+                />
+              )}
+
+              {selectedUnavailable.length > 0 && (
+                <section className="report-section">
+                  <ul className="report-issues warn">
+                    <li>
+                      Not buildable on this machine yet: {selectedUnavailable.join(', ')}. Configure its SDK or a remote builder before exporting.
+                    </li>
+                  </ul>
+                </section>
+              )}
 
               <section className="report-section">
                 <label className="report-strip-toggle">
@@ -300,11 +565,22 @@ export function BuildReportDialog() {
               </button>
               <button
                 className="prefs-primary-button"
-                disabled={hasErrors}
-                title={hasErrors ? 'Fix the errors above first — a used resource is missing.' : undefined}
-                onClick={() => void confirm(stripUnused, isProduction ? [...targets] : undefined)}
+                disabled={
+                  hasErrors ||
+                  profileErrors.length > 0 ||
+                  selectedUnavailable.length > 0 ||
+                  (isProduction && (!profile || (runningInDesktopShell && !platforms)))
+                }
+                title={
+                  hasErrors || profileErrors.length || selectedUnavailable.length
+                    ? 'Fix the build errors above first.'
+                    : isProduction && runningInDesktopShell && !platforms
+                      ? 'Waiting for the local platform check.'
+                      : undefined
+                }
+                onClick={() => void confirm(stripUnused, isProduction ? profile ?? undefined : undefined)}
               >
-                {hasErrors ? 'Export' : hasWarnings ? 'Export anyway' : 'Export'}
+                {isProduction ? 'Build' : hasWarnings ? 'Export anyway' : 'Export'}
               </button>
             </footer>
           </motion.div>

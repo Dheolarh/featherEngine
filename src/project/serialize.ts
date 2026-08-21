@@ -9,6 +9,7 @@ import { defaultSceneEnvironment } from '../three/environmentSettings';
 import { defaultRenderSettings } from '../store/editor/defaults';
 import { DEFAULT_RENDER_PRESET, renderPresetEnvironmentPatch, renderPresetRenderPatch } from '../three/presets';
 import { defaultTreeLibrary } from '../tree/treeSpec';
+import { createDefaultExportSettings, parseExportSettings } from './exportProfiles';
 
 export const SCENES_DIR = 'scenes';
 export const ASSETS_DIR = 'assets';
@@ -31,6 +32,12 @@ export function splitProject(project: NodeForgeProject): {
     name: project.name,
     savedAt: new Date().toISOString(),
     activeSceneId,
+    exportSettings: parseExportSettings(
+      project.exportSettings,
+      project.name,
+      realScenes.map((scene) => scene.id),
+      project.activeSceneId,
+    ),
     scenes: realScenes.map((scene) => ({ id: scene.id, name: scene.name, file: sceneFile(scene.id) })),
     // Never persist runtime-only / bundle-only fields (url, unresolved, embedded data).
     assets: project.assets.map(({ url: _url, unresolved: _unresolved, data: _data, ...asset }) => asset),
@@ -61,6 +68,12 @@ export function joinProject(manifest: ProjectManifest, scenes: Scene[]): NodeFor
     name: manifest.name,
     savedAt: manifest.savedAt,
     activeSceneId: manifest.activeSceneId,
+    exportSettings: parseExportSettings(
+      manifest.exportSettings,
+      manifest.name,
+      scenes.map((scene) => scene.id),
+      manifest.activeSceneId,
+    ),
     scenes,
     assets: manifest.assets,
     folders: manifest.folders ?? [],
@@ -97,6 +110,12 @@ export function migrateLoaded(raw: unknown): NodeForgeProject {
       name: (data.name as string) ?? 'Imported Project',
       savedAt: data.savedAt as string | undefined,
       activeSceneId,
+      exportSettings: parseExportSettings(
+        data.exportSettings,
+        (data.name as string) ?? 'Imported Project',
+        scenes.map((scene) => scene.id),
+        activeSceneId,
+      ),
       scenes: scenes.length ? scenes : [{ id: 'scene-main', name: 'Main', objects: [] }],
       assets: ((data.assets as NodeForgeProject['assets']) ?? []).map((asset) => ({ ...asset, url: undefined })),
       folders: (data.folders as NodeForgeProject['folders']) ?? [],
@@ -127,6 +146,12 @@ export function migrateLoaded(raw: unknown): NodeForgeProject {
       version: PROJECT_VERSION,
       name: (data.name as string) ?? 'Imported Project',
       activeSceneId: sceneId,
+      exportSettings: parseExportSettings(
+        data.exportSettings,
+        (data.name as string) ?? 'Imported Project',
+        [sceneId],
+        sceneId,
+      ),
       scenes: [{ id: sceneId, name: 'Main', objects: legacyScene.objects as Scene['objects'] }],
       // Legacy assets had no bytes on disk — flag them unresolved.
       assets: ((data.assets as NodeForgeProject['assets']) ?? []).map((asset) => ({
@@ -187,6 +212,7 @@ export function blankProject(name: string): NodeForgeProject {
     version: PROJECT_VERSION,
     name,
     activeSceneId: sceneId,
+    exportSettings: createDefaultExportSettings(name, sceneId),
     scenes: [{ id: sceneId, name: 'Main', objects: [], environment }],
     renderSettings,
     assets: [],

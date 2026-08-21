@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { useEditorStore } from '../editorStore';
-import { nonVfxObjectsSignature, vfxObjectsSignature } from '../stableSelectors';
+import { nonVfxObjectsSignature, structuralObjectsSignature, vfxObjectsSignature } from '../stableSelectors';
 import { makeImpactObject } from '../editor/objectFactory';
 
 /**
@@ -32,5 +32,62 @@ describe('VFX render-layer split — signature isolation', () => {
     expect(authoredAfter).toBe(authoredBefore);
     // The VFX list genuinely changed.
     expect(vfxAfter).not.toBe(vfxBefore);
+  });
+
+  it('runtime material overrides invalidate the shared GameView while transform-only ticks do not', () => {
+    const originalScenes = useEditorStore.getState().scenes;
+    const originalPlaying = useEditorStore.getState().isPlaying;
+    try {
+      useEditorStore.setState({ isPlaying: true });
+      const state = useEditorStore.getState();
+      const scene = state.scenes.find((candidate) => candidate.id === state.activeSceneId)!;
+      const objectIndex = scene.objects.findIndex((object) => object.renderer);
+      expect(objectIndex).toBeGreaterThanOrEqual(0);
+      const before = structuralObjectsSignature(useEditorStore.getState());
+
+      useEditorStore.setState((current) => ({
+        scenes: current.scenes.map((candidate) =>
+          candidate.id === current.activeSceneId
+            ? {
+                ...candidate,
+                objects: candidate.objects.map((object, index) =>
+                  index === objectIndex
+                    ? {
+                        ...object,
+                        renderer: {
+                          ...object.renderer!,
+                          materialOverrides: {
+                            ...object.renderer!.materialOverrides,
+                            emissiveIntensity: 4,
+                          },
+                        },
+                      }
+                    : object,
+                ),
+              }
+            : candidate,
+        ),
+      }));
+      const materialChanged = structuralObjectsSignature(useEditorStore.getState());
+      expect(materialChanged).not.toBe(before);
+
+      useEditorStore.setState((current) => ({
+        scenes: current.scenes.map((candidate) =>
+          candidate.id === current.activeSceneId
+            ? {
+                ...candidate,
+                objects: candidate.objects.map((object, index) =>
+                  index === objectIndex
+                    ? { ...object, transform: { ...object.transform, position: [9, 8, 7] } }
+                    : object,
+                ),
+              }
+            : candidate,
+        ),
+      }));
+      expect(structuralObjectsSignature(useEditorStore.getState())).toBe(materialChanged);
+    } finally {
+      useEditorStore.setState({ scenes: originalScenes, isPlaying: originalPlaying });
+    }
   });
 });

@@ -127,8 +127,10 @@ class CdpSession {
     this.nextId = 1;
     this.pending = new Map();
     this.listeners = new Set();
+    this.closed = false;
     socket.on('message', (raw) => this.onMessage(raw));
     socket.on('close', () => {
+      this.closed = true;
       for (const { reject, timer } of this.pending.values()) {
         clearTimeout(timer);
         reject(new Error('Chrome DevTools connection closed'));
@@ -167,6 +169,9 @@ class CdpSession {
   }
 
   call(method, params = {}) {
+    if (this.closed || this.socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('Chrome DevTools connection closed'));
+    }
     const id = this.nextId++;
     return new Promise((resolveCall, reject) => {
       const timer = setTimeout(() => {
@@ -247,6 +252,7 @@ async function waitFor(cdp, label, expression, predicate = Boolean, timeout = 20
       if (predicate(lastValue)) return lastValue;
     } catch (error) {
       // A navigation briefly destroys the old execution context. Retry against the new document.
+      if (error.message.includes('Chrome DevTools connection closed')) throw error;
       lastError = error;
     }
     await delay(100);
@@ -442,9 +448,22 @@ async function main() {
     );
   } finally {
     cdp?.close();
-    if (chrome && chrome.exitCode === null) chrome.kill();
-    await closeServer(staticServer);
-    rmSync(profileDir, { recursive: true, force: true });
+    if (chrome && chrome.exitCode === null) {
+      chrome.kill();
+      await Promise.race([
+        new Promise((done) => chrome.once('exit', done)),
+        delay(5_000),
+      ]);
+      if (chrome.exitCode === null) chrome.kill('SIGKILL');
+    }
+    const serverClosed = closeServer(staticServer);
+    staticServer.closeAllConnections?.();
+    await serverClosed;
+    try {
+      rmSync(profileDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch {
+      // A stale browser temp directory must not turn a successful runtime assertion into a failure.
+    }
   }
 }
 

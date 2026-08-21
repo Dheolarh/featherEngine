@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 // The doctor is a plain-node script (it shells out to rustc/xcodebuild/etc.), but its report
 // shape is a frontend contract: the export dialog's platform picker renders it verbatim.
 // @ts-expect-error — plain .mjs module without type declarations
-import { diagnosePlatforms } from '../../../scripts/platform-doctor.mjs';
+import { diagnosePlatforms, findMacCodeSigningIdentity } from '../../../scripts/platform-doctor.mjs';
 import type { ExportPlatformsReport } from '../types';
 
 describe('platform doctor report contract', () => {
@@ -40,5 +40,19 @@ describe('platform doctor report contract', () => {
     for (const platform of report.platforms) {
       expect(['ready', 'ci', 'missing', 'unsupported']).toContain(platform.status);
     }
+  });
+
+  it('checks the extra iOS runtime and signing prerequisites on macOS', () => {
+    if (process.platform !== 'darwin') return;
+    const ios = report.platforms.find((platform) => platform.id === 'ios');
+    expect(ios?.requirements.map((requirement) => requirement.id)).toEqual(
+      expect.arrayContaining(['xcode', 'ios-simulator', 'cocoapods', 'rust-ios', 'ios-signing']),
+    );
+  });
+
+  it('honors an explicit macOS signing identity from CI', () => {
+    expect(findMacCodeSigningIdentity({ APPLE_SIGNING_IDENTITY: '  Developer ID Application: Studio  ' })).toBe(
+      'Developer ID Application: Studio',
+    );
   });
 });

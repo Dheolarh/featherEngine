@@ -2,15 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { GAME_BUNDLE_FILE, readGameBundle } from '../project/exportGame';
 import { useRuntimeAudio } from '../runtime/useRuntimeAudio';
-import { resetGamepadInput, sampleGamepads } from '../runtime/gamepadInput';
-import { resetFrameClock, smoothFrameDelta } from '../runtime/frameClock';
-import { ScreenUILayer } from '../ui/ScreenUILayer';
-import { DynamicCrosshair } from '../ui/DynamicCrosshair';
-import { GameHud } from '../ui/GameHud';
-import { MiniMap } from '../ui/MiniMap';
+import { useGameRuntime } from '../runtime/useGameRuntime';
+import { RuntimeOverlays } from '../runtime/RuntimeOverlays';
 import { GameView } from './GameView';
-import { CinematicOverlay } from '../components/CinematicOverlay';
-import { DebugOverlay, PlayerErrorBoundary } from './PlayerDiagnostics';
+import { PlayerErrorBoundary } from './PlayerDiagnostics';
 
 type Status = 'loading' | 'ready' | 'needs-file' | 'error';
 
@@ -25,54 +20,6 @@ const overlayStyle: React.CSSProperties = {
   textAlign: 'center',
   padding: 24,
 };
-
-/** Drives the runtime loop and forwards keyboard input — the player's equivalent of the editor's preview loop. */
-function useRuntimeLoop(active: boolean) {
-  const tickRuntime = useEditorStore((state) => state.tickRuntime);
-  const setRuntimeKey = useEditorStore((state) => state.setRuntimeKey);
-
-  useEffect(() => {
-    if (!active) return;
-    resetFrameClock();
-    let frame = 0;
-    let lastTime = performance.now();
-    const loop = (time: number) => {
-      // Smoothed clock (see runtime/frameClock): evens RAF jitter, spreads hitch backlogs over a few
-      // gentle steps — kills the freeze-then-snap teleport on moving cars/characters.
-      const delta = smoothFrameDelta((time - lastTime) / 1000);
-      lastTime = time;
-      sampleGamepads(delta, setRuntimeKey);
-      tickRuntime(delta);
-      frame = requestAnimationFrame(loop);
-    };
-    frame = requestAnimationFrame(loop);
-    return () => {
-      cancelAnimationFrame(frame);
-      resetGamepadInput();
-    };
-  }, [active, tickRuntime, setRuntimeKey]);
-
-  useEffect(() => {
-    if (!active) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return;
-      setRuntimeKey(event.code, true);
-    };
-    const onKeyUp = (event: KeyboardEvent) => setRuntimeKey(event.code, false);
-    const onMouseDown = (event: MouseEvent) => setRuntimeKey(`Mouse${event.button}`, true);
-    const onMouseUp = (event: MouseEvent) => setRuntimeKey(`Mouse${event.button}`, false);
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mouseup', onMouseUp);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }, [active, setRuntimeKey]);
-}
 
 export function Player() {
   const [status, setStatus] = useState<Status>('loading');
@@ -131,7 +78,7 @@ export function Player() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useRuntimeLoop(status === 'ready');
+  useGameRuntime(status === 'ready');
   useRuntimeAudio();
 
   const onPickFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,12 +97,7 @@ export function Player() {
     return (
       <PlayerErrorBoundary>
         <GameView />
-        <ScreenUILayer />
-        <DynamicCrosshair />
-        <GameHud />
-        <MiniMap />
-        <CinematicOverlay />
-        <DebugOverlay />
+        <RuntimeOverlays />
       </PlayerErrorBoundary>
     );
 

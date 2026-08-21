@@ -55,8 +55,10 @@ export class CdpSession {
     this.socket = socket;
     this.nextId = 1;
     this.pending = new Map();
+    this.closed = false;
     socket.on('message', (raw) => this.onMessage(raw));
     socket.on('close', () => {
+      this.closed = true;
       for (const { reject, timer } of this.pending.values()) {
         clearTimeout(timer);
         reject(new Error('Chrome DevTools connection closed'));
@@ -86,6 +88,9 @@ export class CdpSession {
   }
 
   call(method, params = {}) {
+    if (this.closed || this.socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('Chrome DevTools connection closed'));
+    }
     const id = this.nextId++;
     return new Promise((done, reject) => {
       const timer = setTimeout(() => {
@@ -131,17 +136,31 @@ export async function launch({ width = 1600, height = 1000 } = {}) {
       '--remote-debugging-port=0',
       `--user-data-dir=${profileDir}`,
       `--window-size=${width},${height}`,
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-background-networking',
+      '--disable-component-update',
+      '--disable-default-apps',
+      '--disable-sync',
       '--no-first-run',
       '--no-default-browser-check',
-      '--disable-gpu',
-      // The editor is a WebGL app; software rendering keeps it deterministic in headless CI.
-      '--use-gl=swiftshader',
+      '--enable-webgl',
       '--enable-unsafe-swiftshader',
+      '--ignore-gpu-blocklist',
+      '--metrics-recording-only',
+      '--mute-audio',
+      // The editor is a WebGL app; ANGLE's SwiftShader path is the stable deterministic headless
+      // renderer. Combining the older --use-gl flag with --disable-gpu intermittently killed Chrome.
+      '--use-angle=swiftshader',
       '--hide-scrollbars',
       'about:blank',
     ],
     { stdio: ['ignore', 'pipe', 'pipe'] },
   );
+  // Drain Chrome diagnostics even when the suite does not need to print them. Leaving these pipes
+  // unread can fill the OS buffer during WebGL-heavy specs and stall or terminate the browser.
+  chrome.stdout.resume();
+  chrome.stderr.resume();
 
   const browserWs = await waitForDevToolsUrl(profileDir, chrome);
   const browser = await CdpSession.connect(browserWs);
@@ -168,6 +187,13 @@ export async function launch({ width = 1600, height = 1000 } = {}) {
         new Promise((done) => chrome.once('exit', done)),
         delay(5_000),
       ]);
+      if (chrome.exitCode === null) {
+        chrome.kill('SIGKILL');
+        await Promise.race([
+          new Promise((done) => chrome.once('exit', done)),
+          delay(2_000),
+        ]);
+      }
       // A leftover temp dir is never worth failing a test over — the OS reaps it.
       try {
         rmSync(profileDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });

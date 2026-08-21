@@ -1,9 +1,31 @@
-import { PROJECT_VERSION, type AssetItem, type NodeForgeProject } from '../types';
+import { PROJECT_VERSION, type AssetItem, type ExportProfile, type NodeForgeProject } from '../types';
 import { sha256Hex } from '../utils/contentHash';
+import { activeExportProfile, parseExportSettings } from './exportProfiles';
+import {
+  buildRuntimeContract,
+  validateRuntimeContract,
+  validateRuntimeReferences,
+  type RuntimeContract,
+} from './runtimeCompatibility';
 import { migrateLoaded } from './serialize';
 
 /** Bundle format version, bumped independently of the project file format. */
-export const GAME_BUNDLE_VERSION = '1.0.0';
+export const GAME_BUNDLE_VERSION = '1.1.0';
+const PROFILED_BUNDLE_VERSION = '1.1.0';
+
+function compareVersions(left: string, right: string, label: string): number {
+  const parse = (value: string) => {
+    const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value);
+    if (!match) throw new Error(`Invalid ${label} version: ${value}`);
+    return match.slice(1).map(Number);
+  };
+  const a = parse(left);
+  const b = parse(right);
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index] !== b[index]) return a[index]! - b[index]!;
+  }
+  return 0;
+}
 
 /** File name the standalone player fetches at startup (next to its index.html). */
 export const GAME_BUNDLE_FILE = 'game.json';
@@ -17,6 +39,10 @@ export interface GameBundle {
   bundleVersion: string;
   /** When the game's window/player opens, this scene plays first. */
   startSceneId: string;
+  /** Immutable profile snapshot used to build this artifact. */
+  buildProfile: ExportProfile;
+  /** Required engine subsystems; older players reject features they cannot execute. */
+  runtimeContract: RuntimeContract;
   project: NodeForgeProject;
 }
 
@@ -104,12 +130,18 @@ export async function embedAssets(assets: AssetItem[]): Promise<AssetItem[]> {
  * Build a portable game bundle from a project. Pass assets through `embedAssets` first to
  * make it self-contained; this keeps the embedded `data` but drops the runtime-only `url`.
  */
-export function buildGameBundle(project: NodeForgeProject): GameBundle {
+export function buildGameBundle(project: NodeForgeProject, profile?: ExportProfile): GameBundle {
+  const sceneIds = project.scenes.map((scene) => scene.id);
+  const exportSettings = parseExportSettings(project.exportSettings, project.name, sceneIds, project.activeSceneId);
+  const buildProfile = structuredClone(profile ?? activeExportProfile(exportSettings));
+  const canonicalProject = { ...project, exportSettings };
   return {
     bundleVersion: GAME_BUNDLE_VERSION,
-    startSceneId: project.activeSceneId,
+    startSceneId: buildProfile.startSceneId,
+    buildProfile,
+    runtimeContract: buildRuntimeContract(canonicalProject),
     project: {
-      ...project,
+      ...canonicalProject,
       version: project.version || PROJECT_VERSION,
       // Drop the runtime-only url; keep embedded `data` so the player can resolve assets offline.
       assets: project.assets.map(({ url: _url, ...asset }) => asset),
@@ -142,15 +174,62 @@ function resolveEmbeddedAssets(project: NodeForgeProject): NodeForgeProject {
 }
 
 /** Parse a loaded game bundle back into a runnable project. Accepts a raw `NodeForgeProject` too. */
-export function readGameBundle(raw: unknown): { project: NodeForgeProject; startSceneId: string } {
+export function readGameBundle(raw: unknown): {
+  project: NodeForgeProject;
+  startSceneId: string;
+  buildProfile: ExportProfile;
+  runtimeContract: RuntimeContract;
+} {
   const data = raw as Partial<GameBundle> & Partial<NodeForgeProject>;
   const isBundle = Boolean(data && typeof data === 'object' && 'project' in data && data.project);
+  if (isBundle && data.bundleVersion !== undefined && typeof data.bundleVersion !== 'string') {
+    throw new Error('Game bundle version must be a semantic-version string.');
+  }
+  const bundleVersion = isBundle && typeof data.bundleVersion === 'string' ? data.bundleVersion : '1.0.0';
+  if (isBundle && compareVersions(bundleVersion, GAME_BUNDLE_VERSION, 'game bundle') > 0) {
+    throw new Error(
+      `Game bundle ${bundleVersion} is newer than this player (${GAME_BUNDLE_VERSION}). Update Feather Engine/player.`,
+    );
+  }
+  const hasProfiledFormat =
+    isBundle && compareVersions(bundleVersion, PROFILED_BUNDLE_VERSION, 'game bundle') >= 0;
+  if (hasProfiledFormat && !data.buildProfile) {
+    throw new Error(`Game bundle ${bundleVersion} is missing its required build profile.`);
+  }
+  if (hasProfiledFormat && !data.runtimeContract) {
+    throw new Error(`Game bundle ${bundleVersion} is missing its required runtime contract.`);
+  }
   // Bundles exported by older engine versions predate whole project collections, so run the same
   // migration the editor uses when opening a project file. Without it the player would hand the
   // runtime a project whose collections are `undefined` rather than empty arrays.
   // The payload may also be a bare `NodeForgeProject` (e.g. a raw .nforge file dropped next to
   // the player), which `migrateLoaded` accepts and normalizes the same way.
-  const project = resolveEmbeddedAssets(migrateLoaded(isBundle ? data.project : raw));
+  const rawProject = (isBundle ? data.project : raw) as Partial<NodeForgeProject> | undefined;
+  if (typeof rawProject?.version === 'string' && compareVersions(rawProject.version, PROJECT_VERSION, 'project') > 0) {
+    throw new Error(
+      `Project ${rawProject.version} is newer than this player (${PROJECT_VERSION}). Update Feather Engine/player.`,
+    );
+  }
+  let project = resolveEmbeddedAssets(migrateLoaded(rawProject));
   const startSceneId = (isBundle ? data.startSceneId : undefined) ?? project.activeSceneId;
-  return { project, startSceneId };
+  const rawBundle = data as Partial<GameBundle>;
+  const buildProfile =
+    rawBundle.buildProfile ?? { ...activeExportProfile(project.exportSettings), startSceneId };
+  if (!rawBundle.buildProfile) {
+    project = {
+      ...project,
+      exportSettings: {
+        ...project.exportSettings,
+        profiles: project.exportSettings.profiles.map((profile) =>
+          profile.id === project.exportSettings.activeProfileId ? buildProfile : profile,
+        ),
+      },
+    };
+  }
+  const runtimeContract = rawBundle.runtimeContract ?? buildRuntimeContract(project);
+  const contractErrors = validateRuntimeContract(runtimeContract);
+  const referenceErrors = validateRuntimeReferences(project, startSceneId, buildProfile).errors;
+  const errors = [...contractErrors, ...referenceErrors];
+  if (errors.length) throw new Error(`Game bundle is not runtime-compatible:\n- ${errors.join('\n- ')}`);
+  return { project, startSceneId, buildProfile, runtimeContract };
 }

@@ -7,6 +7,7 @@ import type { RenderSettings, SceneEnvironmentSettings } from './environment';
 import type { CinematicSequence } from './cinematics';
 import type { NodeForgeNode } from './graph';
 import type { ParticleSystemDefinition, SceneObject } from './gameplay';
+import type { ExportSettings } from './export';
 
 /** World streaming for big scenes: objects beyond `radius` of the player fully deactivate
  *  (no render/scripts/physics) and wake as the player approaches. */
@@ -394,7 +395,7 @@ export interface UIDocument {
 }
 
 /** Current project file format version. */
-export const PROJECT_VERSION = '0.7.0';
+export const PROJECT_VERSION = '0.8.0';
 
 /** Scene entry in the project manifest (project.json), pointing at its scene file. */
 export interface SceneRef {
@@ -414,6 +415,8 @@ export interface NodeForgeProject {
   name: string;
   savedAt?: string;
   activeSceneId: string;
+  /** Versioned, reusable production build profiles. */
+  exportSettings: ExportSettings;
   scenes: Scene[];
   assets: AssetItem[];
   folders: ProjectFolder[];
@@ -443,6 +446,8 @@ export interface ProjectManifest {
   name: string;
   savedAt?: string;
   activeSceneId: string;
+  /** Versioned, reusable production build profiles. */
+  exportSettings: ExportSettings;
   scenes: SceneRef[];
   assets: AssetItem[];
   folders: ProjectFolder[];

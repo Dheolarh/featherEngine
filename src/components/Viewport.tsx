@@ -32,11 +32,7 @@ import { useResolvedMaterial, useResolvedMaterialSlots, hasPhysicalLayers } from
 import { useToonMaterial } from '../three/toonMaterial';
 import { assetDrag, isAssetDrag, isPrefabDrag, prefabDrag, readAssetDragId, readPrefabDragId } from './dragShared';
 import { WorldUIAnchor } from '../ui/WorldUIAnchor';
-import { ScreenUILayer } from '../ui/ScreenUILayer';
 import { WebGLScreenUILayer } from '../ui/WebGLScreenUILayer';
-import { DynamicCrosshair } from '../ui/DynamicCrosshair';
-import { GameHud } from '../ui/GameHud';
-import { MiniMap } from '../ui/MiniMap';
 import { ImpactParticles } from '../three/ImpactParticles';
 import { ParticleSystem } from '../three/ParticleSystem';
 import { DamageNumber } from '../three/DamageNumber';
@@ -72,6 +68,8 @@ import { Terrain, TerrainBrushCursor } from '../three/Terrain';
 import { TreeMesh } from '../three/TreeMesh';
 import { highestTerrainWorldHeight } from '../terrain/terrain';
 import type { MaterialOverrides, SceneObject } from '../types';
+import { GameView } from '../player/GameView';
+import { RuntimeOverlays } from '../runtime/RuntimeOverlays';
 
 type DropContext = { camera: THREE.Camera; canvas: HTMLCanvasElement };
 
@@ -2040,7 +2038,12 @@ export function ViewportPanel() {
       >
         {hasWebGL ? (
           <WebGLErrorBoundary>
-            <Canvas
+            {isPlaying ? (
+              // Editor Play deliberately mounts the exact standalone renderer. Blueprints already
+              // share the same store/runtime; this removes the remaining camera/light/object drift.
+              <GameView />
+            ) : (
+              <Canvas
               className="scene-canvas"
               shadows={qProfile.shadows}
               // During Play the bloom/HDR post pass is the dominant GPU cost and it scales with resolution, so
@@ -2087,8 +2090,9 @@ export function ViewportPanel() {
                 sceneApiRef={sceneApiRef}
                 suppressDeselectRef={suppressDeselectRef}
               />
-              <DropController contextRef={dropContextRef} />
-            </Canvas>
+                <DropController contextRef={dropContextRef} />
+              </Canvas>
+            )}
           </WebGLErrorBoundary>
         ) : (
           <ViewportFallback />
@@ -2122,12 +2126,12 @@ export function ViewportPanel() {
         {/* Cinematic film look (letterbox / grade / grain) + fade — clipped to the viewport (Unreal-style
             "Game View"), not the whole window. During Play it reads the live runtime cinematic; while
             scrubbing in the editor it's driven by the preview look/fade. */}
-        {isPlaying ? <CinematicOverlay /> : <CinematicOverlay look={cinematicPreviewLook} fade={cinematicPreviewFade} />}
-        <ScreenUILayer />
-        <DynamicCrosshair />
-        <GameHud />
-        <MiniMap />
-        <QuickStartOverlay />
+        {isPlaying ? (
+          <RuntimeOverlays />
+        ) : (
+          <CinematicOverlay look={cinematicPreviewLook} fade={cinematicPreviewFade} />
+        )}
+        {!isPlaying && <QuickStartOverlay />}
       </div>
     </section>
   );

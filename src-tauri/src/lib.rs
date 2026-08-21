@@ -9,6 +9,31 @@ use tauri_plugin_fs::FsExt;
 const MAX_LINKED_TEXT_BYTES: usize = 4 * 1024 * 1024;
 static LINKED_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+struct ScopedTempDir(PathBuf);
+
+impl Drop for ScopedTempDir {
+  fn drop(&mut self) {
+    let _ = std::fs::remove_dir_all(&self.0);
+  }
+}
+
+fn create_scoped_temp_dir(prefix: &str) -> Result<ScopedTempDir, String> {
+  for _ in 0..32 {
+    let sequence = LINKED_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+      "{prefix}-{}-{sequence}",
+      std::process::id()
+    ));
+    match std::fs::create_dir(&path) {
+      Ok(()) => return Ok(ScopedTempDir(path)),
+      Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+      Err(error) => return Err(format!("Could not create isolated build staging: {error}")),
+    }
+  }
+
+  Err("Could not allocate a unique isolated build staging directory.".into())
+}
+
 fn ensure_project_scope(app: &AppHandle, project_dir: &str) -> Result<(), String> {
   let root = std::fs::canonicalize(project_dir)
     .map_err(|error| format!("Could not open the project directory: {error}"))?;
@@ -42,7 +67,7 @@ fn validate_project_relative_path(relative_path: &str) -> Result<Vec<String>, St
     if part.is_empty()
       || part == "."
       || part == ".."
-      || part.as_bytes().len() > 240
+      || part.len() > 240
       || part.ends_with('.')
       || part.ends_with(' ')
       || reserved
@@ -120,7 +145,7 @@ fn read_linked_text_file(
   target: &std::path::Path,
   relative_path: &str,
 ) -> Result<Option<String>, String> {
-  let file = match OpenOptions::new().read(true).open(&target) {
+  let file = match OpenOptions::new().read(true).open(target) {
     Ok(file) => file,
     Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
     Err(error) => return Err(error.to_string()),
@@ -389,6 +414,25 @@ mod linked_project_file_tests {
   }
 
   #[test]
+  fn production_targets_are_exact_and_stageable() {
+    assert!(validate_production_targets(&[
+      "web".into(),
+      "windows".into(),
+      "macos".into(),
+      "linux".into(),
+      "android".into(),
+      "ios".into(),
+    ])
+    .is_ok());
+    assert!(validate_production_targets(&["desktop".into()])
+      .expect_err("legacy ambiguous target should fail")
+      .contains("Unknown export target"));
+    assert!(validate_production_targets(&["web".into(), "web".into()])
+      .expect_err("duplicate targets should fail")
+      .contains("Duplicate"));
+  }
+
+  #[test]
   fn atomically_replaces_and_reads_linked_utf8_text() {
     let project = TestProject::new("roundtrip");
     write_project_text_atomic_impl(
@@ -580,51 +624,69 @@ fn find_engine_root() -> Result<PathBuf, String> {
   }
 }
 
+fn validate_production_targets(targets: &[String]) -> Result<(), String> {
+  if targets.is_empty() {
+    return Err("Select at least one production export target.".into());
+  }
+  let mut seen = std::collections::HashSet::new();
+  for target in targets {
+    if !seen.insert(target.as_str()) {
+      return Err(format!("Duplicate export target: {target}"));
+    }
+    match target.as_str() {
+      "web" | "windows" | "macos" | "linux" | "android" | "ios" => {}
+      other => return Err(format!("Unknown export target: {other}")),
+    }
+  }
+  Ok(())
+}
+
 /// Run the production export pipeline for the staged game bundle, streaming each output line to
-/// the frontend as a `production-build-progress` event. `targets` selects what gets built beyond
-/// the always-produced portable web folder: "desktop" (native installer for this OS), "android"
-/// (APK via the Tauri mobile shell), "ios" (Xcode build, macOS only). Returns the bundle output
-/// directory on success.
+/// the frontend as a `production-build-progress` event. `targets` contains exact platform ids
+/// (web/windows/macos/linux/android/ios). Targets that need a different host are staged with an
+/// actionable runner command. `profile_json` is staged beside the bundle so the Node/Tauri packager
+/// applies the same immutable identity, launch-scene, version and window settings the editor audited.
 #[tauri::command]
 async fn run_production_build(
   app: AppHandle,
   bundle_json: String,
+  profile_json: String,
   targets: Vec<String>,
   out_dir: Option<String>,
 ) -> Result<String, String> {
   tauri::async_runtime::spawn_blocking(move || {
     let root = find_engine_root()?;
+    validate_production_targets(&targets)?;
 
-    // Stage the bundle where the export script reads it by default.
-    let staging = root.join("exports").join("staging");
-    std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    // Stage the exact audited bundle/profile pair. The script validates both again before writing
+    // any output, so direct command invocation has the same parity gate as the editor flow.
+    let staging_guard = create_scoped_temp_dir("nodeforge-production")?;
+    let staging = staging_guard.0.clone();
+    let _staging_guard = staging_guard;
     let bundle_path = staging.join("game.json");
+    let profile_path = staging.join("export-profile.json");
     std::fs::write(&bundle_path, &bundle_json).map_err(|e| e.to_string())?;
+    std::fs::write(&profile_path, &profile_json).map_err(|e| e.to_string())?;
 
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
     let _ = app.emit(
       "production-build-progress",
-      format!("Starting build (web + {})…", if targets.is_empty() { "nothing else".to_string() } else { targets.join(" + ") }),
+      format!("Starting build ({})…", targets.join(" + ")),
     );
 
-    // npm run export:web -- --bundle <path> --zip [--native] [--android] [--ios] [--out <dir>]
+    // npm run export:build -- --bundle <path> --profile <path> --targets <exact,csv> --zip
     let mut args: Vec<String> = vec![
       "run".into(),
-      "export:web".into(),
+      "export:build".into(),
       "--".into(),
       "--bundle".into(),
       bundle_path.to_string_lossy().into_owned(),
+      "--profile".into(),
+      profile_path.to_string_lossy().into_owned(),
+      "--targets".into(),
+      targets.join(","),
       "--zip".into(),
     ];
-    for target in &targets {
-      match target.as_str() {
-        "desktop" => args.push("--native".into()),
-        "android" => args.push("--android".into()),
-        "ios" => args.push("--ios".into()),
-        "web" => {}
-        other => return Err(format!("Unknown export target: {other}")),
-      }
-    }
     if let Some(out) = out_dir.as_deref() {
       args.push("--out".into());
       args.push(out.to_string());
@@ -714,7 +776,7 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
       .arg(format!("/select,{}", p.display()))
       .spawn()
       .map_err(|e| e.to_string())?;
-    return Ok(());
+    Ok(())
   }
 
   #[cfg(target_os = "macos")]
@@ -724,7 +786,7 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
       .arg(&p)
       .spawn()
       .map_err(|e| e.to_string())?;
-    return Ok(());
+    Ok(())
   }
 
   #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]

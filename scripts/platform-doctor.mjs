@@ -48,8 +48,19 @@ export function findAndroidNdk(sdkPath, env = process.env) {
   if (!sdkPath) return null;
   const ndkRoot = join(sdkPath, 'ndk');
   if (!existsSync(ndkRoot)) return null;
-  const versions = readdirSync(ndkRoot).filter((entry) => !entry.startsWith('.')).sort();
+  const versions = readdirSync(ndkRoot)
+    .filter((entry) => !entry.startsWith('.'))
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
   return versions.length ? join(ndkRoot, versions[versions.length - 1]) : null;
+}
+
+function directoryHas(path, predicate = () => true) {
+  if (!path || !existsSync(path)) return false;
+  try {
+    return readdirSync(path).some(predicate);
+  } catch {
+    return false;
+  }
 }
 
 function javaMajorVersion() {
@@ -64,6 +75,37 @@ function javaMajorVersion() {
 function installedRustTargets() {
   const out = capture('rustup', ['target', 'list', '--installed']);
   return out ? new Set(out.split('\n').map((line) => line.trim())) : new Set();
+}
+
+function hasIosSimulatorRuntime() {
+  const out = capture('xcrun', ['simctl', 'list', 'runtimes', '--json']);
+  if (!out) return false;
+  try {
+    const runtimes = JSON.parse(out).runtimes;
+    return Array.isArray(runtimes) && runtimes.some((runtime) => {
+      const identity = `${runtime?.identifier ?? ''} ${runtime?.name ?? ''}`.toLowerCase();
+      const unavailable = runtime?.isAvailable === false || /unavailable/i.test(String(runtime?.availability ?? ''));
+      return identity.includes('ios') && !unavailable;
+    });
+  } catch {
+    return false;
+  }
+}
+
+export function hasAppleCodeSigningIdentity(configuration = 'debug') {
+  const out = capture('security', ['find-identity', '-v', '-p', 'codesigning']);
+  if (!out || /\b0 valid identities found\b/i.test(out)) return false;
+  if (configuration === 'release') return /Apple Distribution:|iPhone Distribution:/i.test(out);
+  return /Apple (?:Development|Distribution):|iPhone (?:Developer|Distribution):/i.test(out);
+}
+
+/** Resolve a deterministic macOS signing identity, preferring the caller's explicit CI choice. */
+export function findMacCodeSigningIdentity(env = process.env) {
+  const explicit = env.APPLE_SIGNING_IDENTITY?.trim();
+  if (explicit) return explicit;
+  const out = capture('security', ['find-identity', '-v', '-p', 'codesigning']);
+  const match = out?.match(/"(Developer ID Application:[^"]+)"/i);
+  return match?.[1] ?? null;
 }
 
 const DESKTOP_LABELS = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
@@ -130,10 +172,24 @@ export function diagnosePlatforms() {
     const sdk = findAndroidSdk();
     const ndk = findAndroidNdk(sdk);
     const java = javaMajorVersion();
-    const targetOk = rustTargets.has('aarch64-linux-android');
+    const sdkPlatform = directoryHas(sdk ? join(sdk, 'platforms') : null, (entry) => /^android-\d+$/i.test(entry));
+    const buildTools = directoryHas(sdk ? join(sdk, 'build-tools') : null);
+    const platformTools = Boolean(sdk && existsSync(join(sdk, 'platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb')));
+    const licenses = directoryHas(sdk ? join(sdk, 'licenses') : null);
+    const androidRustTargets = [
+      'aarch64-linux-android',
+      'armv7-linux-androideabi',
+      'i686-linux-android',
+      'x86_64-linux-android',
+    ];
+    const targetOk = androidRustTargets.every((target) => rustTargets.has(target));
     const requirements = [
       ...desktopBase,
       requirement('android-sdk', 'Android SDK', sdk, 'Install Android Studio (or SDK cmdline-tools) and set ANDROID_HOME'),
+      requirement('android-platform', 'Android SDK platform', sdkPlatform, 'Install a current Android SDK Platform in Android Studio SDK Manager'),
+      requirement('android-build-tools', 'Android SDK Build-Tools', buildTools, 'Install Android SDK Build-Tools in Android Studio SDK Manager'),
+      requirement('android-platform-tools', 'Android SDK Platform-Tools', platformTools, 'Install Android SDK Platform-Tools in Android Studio SDK Manager'),
+      requirement('android-licenses', 'Accepted Android SDK licenses', licenses, 'Run sdkmanager --licenses (or accept licenses in Android Studio)'),
       requirement('android-ndk', 'Android NDK', ndk, 'Install an NDK via Android Studio SDK Manager (or set NDK_HOME)'),
       requirement('java', 'Java 17+', java != null && java >= 17, 'Install JDK 17+ (Android Studio bundles one)'),
       requirement('rust-android', 'Rust Android targets', targetOk,
@@ -147,20 +203,26 @@ export function diagnosePlatforms() {
       requirements,
       sdkPath: sdk ?? undefined,
       ndkPath: ndk ?? undefined,
-      notes: 'Builds a signed-debug APK you can sideload. Play Store uploads need a release keystore.',
+      notes: 'Builds a debug APK or release AAB. Play Store uploads require your release keystore/signing configuration.',
     });
   }
 
   if (host === 'darwin') {
     const xcode = capture('xcodebuild', ['-version']);
     const pods = capture('pod', ['--version']);
+    const iosRuntime = hasIosSimulatorRuntime();
+    const signingIdentity = hasAppleCodeSigningIdentity('debug');
     const targetOk = rustTargets.has('aarch64-apple-ios') && rustTargets.has('aarch64-apple-ios-sim');
     const requirements = [
       ...desktopBase,
       requirement('xcode', 'Xcode', xcode, 'Install Xcode from the App Store, then run: sudo xcodebuild -license accept'),
+      requirement('ios-simulator', 'iOS Simulator runtime', iosRuntime,
+        'Open Xcode → Settings → Components and download an iOS Simulator runtime'),
       requirement('cocoapods', 'CocoaPods', pods, 'Run: brew install cocoapods'),
       requirement('rust-ios', 'Rust iOS targets', targetOk,
         'Run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim'),
+      requirement('ios-signing', 'Apple iOS code-signing identity', signingIdentity,
+        'Add your Apple ID/team in Xcode and install an Apple Development or Distribution certificate'),
     ];
     platforms.push({
       id: 'ios',

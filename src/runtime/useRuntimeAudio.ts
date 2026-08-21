@@ -14,6 +14,7 @@ export function useRuntimeAudio() {
   const queue = useEditorStore((state) => state.runtimeSoundQueue);
   const clearRuntimeSounds = useEditorStore((state) => state.clearRuntimeSounds);
   const isPlaying = useEditorStore((state) => state.isPlaying);
+  const activeSceneId = useEditorStore((state) => state.activeSceneId);
 
   // One-shot SFX: drain the queue and fire each through the spatial audio engine.
   useEffect(() => {
@@ -45,7 +46,7 @@ export function useRuntimeAudio() {
       loops.current.forEach((handle) => audioEngine.stopLoop(handle));
       loops.current = [];
     };
-  }, [isPlaying]);
+  }, [isPlaying, activeSceneId]);
 
   // Race-countdown beeps: watch the "Count" project var (a countdown blueprint steps it 3→2→1→0) and chirp
   // each step — short low blips for the red lights, a held two-tone chord at the green. Synthesized (no

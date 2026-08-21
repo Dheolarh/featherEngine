@@ -98,6 +98,8 @@ import {
   type TreeComponent,
   type TreeSpec,
   type WaterVolumeComponent,
+  type ExportProfile,
+  type ExportSettings,
 } from '../types';
 import { getActivePhysics, startPhysics, stopPhysics, type PhysicsContactEvent, type VehicleWheelState } from '../runtime/physicsWorld';
 import { audioEngine } from '../runtime/audioEngine';
@@ -136,6 +138,7 @@ import { GRASS_PRESETS, applyTerrainFoliagePaint, applyTerrainPaint, applyTerrai
 import { worldTransformOf, worldToLocalUnderParent } from '../utils/transformHierarchy';
 import type { ModelInspection } from '../three/inspectModel';
 import { collectPackage, collectPrefabPackage, collectProjectPackage, type PackageContent, type PackageSeeds, type PackageSource } from '../project/package';
+import { activeExportProfile, createDefaultExportSettings, parseExportSettings, retargetDeletedScene } from '../project/exportProfiles';
 import {
   cinematicActionsAt,
   cinematicCameraAt,
@@ -366,6 +369,8 @@ interface EditorState {
   prefabs: Prefab[];
   /** Reusable parametric tree assets, edited in the Tree Builder. */
   treeSpecs: TreeSpec[];
+  /** Project-owned production profiles; credentials remain outside the project file. */
+  exportSettings: ExportSettings;
   activeTreeSpecId: string;
   /** Id of the prefab currently open in the prefab editor, or null when editing a normal scene. */
   editingPrefabId: string | null;
@@ -617,6 +622,8 @@ interface EditorState {
   deleteScene: (id: string) => void;
   setActiveScene: (id: string) => void;
   duplicateScene: (id: string) => void;
+  updateExportProfile: (profile: ExportProfile) => void;
+  setActiveExportProfile: (id: string) => void;
   activeBlueprint: () => ScriptBlueprint | undefined;
   activeGraph: () => ProjectGraph | undefined;
   selectedGraphNode: () => NodeForgeNode | undefined;
@@ -1359,6 +1366,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   uiDocuments: [],
   prefabs: [],
   treeSpecs: defaultTreeLibrary(),
+  exportSettings: createDefaultExportSettings('Untitled Project', starterSceneId),
   activeTreeSpecId: DEFAULT_TREE_IDS.oak,
   editingPrefabId: null,
   prefabReturnSceneId: null,
@@ -1510,7 +1518,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const activeSceneId = state.activeSceneId === id ? remaining[0].id : state.activeSceneId;
       const selectedObjectId =
         state.activeSceneId === id ? remaining[0].objects[0]?.id ?? '' : state.selectedObjectId;
-      return { scenes: remaining, activeSceneId, selectedObjectId, isDirty: true };
+      return {
+        scenes: remaining,
+        activeSceneId,
+        selectedObjectId,
+        exportSettings: retargetDeletedScene(state.exportSettings, id, remaining[0].id),
+        isDirty: true,
+      };
     }),
   setActiveScene: (id) =>
     set((state) => {
@@ -1530,6 +1544,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return { scenes: [...state.scenes, copy], isDirty: true };
     });
     return newId;
+  },
+  updateExportProfile: (profile) => {
+    const settings = get().exportSettings;
+    if (settings.activeProfileId === profile.id) {
+      const previous = settings.profiles.find((candidate) => candidate.id === profile.id);
+      setSaveNamespace(
+        profile.application.identifier,
+        previous && previous.application.identifier !== profile.application.identifier
+          ? [previous.application.identifier]
+          : undefined,
+        true,
+      );
+    }
+    set((state) => ({
+      exportSettings: {
+        ...state.exportSettings,
+        profiles: state.exportSettings.profiles.map((candidate) =>
+          candidate.id === profile.id ? structuredClone(profile) : candidate,
+        ),
+      },
+      isDirty: true,
+    }));
+  },
+  setActiveExportProfile: (id) => {
+    const profile = get().exportSettings.profiles.find((candidate) => candidate.id === id);
+    if (!profile) return;
+    setSaveNamespace(profile.application.identifier, []);
+    set((state) => ({
+      exportSettings: { ...state.exportSettings, activeProfileId: id },
+      isDirty: true,
+    }));
   },
   activeBlueprint: () => get().blueprints.find((blueprint) => blueprint.id === get().activeBlueprintId),
   activeGraph: () => {
@@ -12679,6 +12724,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             state.scenes.find((scene) => scene.id !== PREFAB_EDIT_SCENE_ID)?.id ??
             state.activeSceneId
           : state.activeSceneId,
+      exportSettings: state.exportSettings,
       scenes: state.scenes.filter((scene) => scene.id !== PREFAB_EDIT_SCENE_ID),
       assets: state.assets.map(({ url: _url, ...asset }) => asset),
       folders: state.folders,
@@ -12700,8 +12746,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   loadProject: (project) =>
     set(() => {
-      // Scope game-save slots to this game (the standalone player loads through here too).
-      setSaveNamespace(project.name ?? 'project');
       // Backfill component defaults so older saves load safely.
       const rawScenes = project.scenes.length ? project.scenes : [{ id: 'scene-main', name: 'Main', objects: [] }];
       const normalizeSceneObject = (object: SceneObject): SceneObject => ({
@@ -12734,6 +12778,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ? project.activeSceneId
         : scenes[0].id;
       const activeScene = scenes.find((scene) => scene.id === activeSceneId)!;
+      const exportSettings = parseExportSettings(
+        project.exportSettings,
+        project.name,
+        scenes.map((scene) => scene.id),
+        project.activeSceneId,
+      );
+      // Save slots follow the stable app id rather than the mutable display/project name. The
+      // standalone player loads through this same path, so preview and packaged upgrades agree.
+      setSaveNamespace(activeExportProfile(exportSettings).application.identifier, [project.name]);
 
       // Harden the material↔graph round-trip: guarantee every material owns a real graph, and
       // drop orphan graphs that no blueprint or material references anymore.
@@ -12759,6 +12812,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         scenes,
         activeSceneId,
+        exportSettings,
         selectedObjectId: activeScene.objects[0]?.id ?? '',
         assets: project.assets,
         folders: project.folders ?? [],
@@ -12983,7 +13037,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         folders: [...state.folders, ...(content.folders ?? [])],
         prefabThumbnailQueue: [...state.prefabThumbnailQueue, ...content.prefabs.map((p) => p.id)],
         // The package's world replaces the blank starter scene rather than sitting beside it.
-        ...(scenes.length ? { scenes, activeSceneId: scenes[0].id, selectedIds: [] } : {}),
+        ...(scenes.length
+          ? {
+              scenes,
+              activeSceneId: scenes[0].id,
+              selectedIds: [],
+              exportSettings: {
+                ...state.exportSettings,
+                profiles: state.exportSettings.profiles.map((profile) => ({
+                  ...profile,
+                  startSceneId: scenes[0].id,
+                })),
+              },
+            }
+          : {}),
         isDirty: true,
       };
     }),

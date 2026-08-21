@@ -25,6 +25,10 @@ const webOutput = resolve(outputRoot, 'portable-export-smoke-web');
 const legacyName = 'Portable Export Legacy Smoke';
 const legacyWebOutput = resolve(outputRoot, 'portable-export-legacy-smoke-web');
 const browserEnabled = process.argv.includes('--browser');
+const hostDesktopTarget = { darwin: 'macos', linux: 'linux', win32: 'windows' }[process.platform];
+const stagedDesktopTarget = ['windows', 'macos', 'linux'].find(
+  (target) => target !== hostDesktopTarget,
+);
 
 function walkFiles(dir) {
   const files = [];
@@ -57,11 +61,18 @@ function exportBundle(payload, name, fileName) {
 }
 
 function assertAssembledPlayer(output, expectedBundle) {
-  for (const required of ['index.html', 'game-bundle.js', 'README.txt']) {
+  for (const required of ['index.html', 'game-bundle.js', 'README.txt', 'build-report.json']) {
     assert.ok(existsSync(resolve(output, required)), `portable export is missing ${required}`);
   }
   assert.ok(!existsSync(resolve(output, 'templates')), 'portable export copied editor-only templates');
   assert.ok(!existsSync(resolve(output, 'store')), 'portable export copied the editor-only marketplace');
+  const buildReport = JSON.parse(readFileSync(resolve(output, 'build-report.json'), 'utf8'));
+  assert.equal(buildReport.status, 'complete');
+  assert.deepEqual(buildReport.targets, ['web']);
+  assert.deepEqual(buildReport.builtTargets, ['web']);
+  assert.deepEqual(buildReport.stagedTargets, []);
+  assert.deepEqual(buildReport.failedTargets, []);
+  assert.deepEqual(buildReport.errors, []);
 
   const files = walkFiles(output);
   const relativeFiles = files.map((file) => relative(output, file).replaceAll('\\', '/'));
@@ -92,9 +103,47 @@ function assertAssembledPlayer(output, expectedBundle) {
   const prefix = 'window.__NODEFORGE_GAME__ = ';
   assert.ok(bundleSource.startsWith(prefix), 'game-bundle.js did not define the baked game global');
   const baked = JSON.parse(bundleSource.slice(prefix.length).replace(/;\s*$/, ''));
-  assert.deepEqual(baked, expectedBundle, 'assembled player did not bake the requested bundle exactly');
+  if (expectedBundle) {
+    assert.deepEqual(baked, expectedBundle, 'assembled player did not bake the requested canonical bundle exactly');
+  }
 
-  return { files, relativeFiles };
+  return { files, relativeFiles, baked };
+}
+
+function assertCrossHostStaging() {
+  assert.ok(stagedDesktopTarget, `unsupported smoke-test host: ${process.platform}`);
+  const bundlePath = resolve(scratch, 'game-cross-host.json');
+  writeFileSync(bundlePath, JSON.stringify(bundle));
+  execFileSync(
+    process.execPath,
+    [
+      resolve(root, 'scripts/export-production.mjs'),
+      '--bundle',
+      bundlePath,
+      '--out',
+      outputRoot,
+      '--name',
+      gameName,
+      '--targets',
+      stagedDesktopTarget,
+      '--skip-build',
+    ],
+    { cwd: root, stdio: 'inherit' },
+  );
+
+  const stagingOutput = resolve(
+    outputRoot,
+    `portable-export-smoke-${stagedDesktopTarget}-staging`,
+  );
+  for (const required of ['game.json', 'export-profile.json', 'README.txt', 'build-report.json']) {
+    assert.ok(existsSync(resolve(stagingOutput, required)), `cross-host staging is missing ${required}`);
+  }
+  const report = JSON.parse(readFileSync(resolve(stagingOutput, 'build-report.json'), 'utf8'));
+  assert.equal(report.status, 'staged');
+  assert.deepEqual(report.targets, [stagedDesktopTarget]);
+  assert.deepEqual(report.builtTargets, []);
+  assert.deepEqual(report.stagedTargets, [stagedDesktopTarget]);
+  assert.deepEqual(report.failedTargets, []);
 }
 
 try {
@@ -110,8 +159,20 @@ try {
 
   // Keep this fixture canonical and player-loadable. If the persisted schema grows, this list forces
   // the production fixture to be updated instead of silently exercising an obsolete partial object.
-  assert.equal(bundle.bundleVersion, '1.0.0');
-  assert.equal(bundle.project.version, '0.7.0');
+  assert.equal(bundle.bundleVersion, '1.1.0');
+  assert.equal(bundle.project.version, '0.8.0');
+  assert.equal(bundle.buildProfile.startSceneId, bundle.startSceneId);
+  assert.deepEqual(bundle.runtimeContract.requiredFeatures, [
+    'multi-scene',
+    'blueprints',
+    'ui-dom',
+    'physics',
+    'water',
+    'cloth',
+    'cables',
+    'cinematics',
+  ]);
+  assert.ok(bundle.project.exportSettings?.profiles?.length, 'canonical fixture is missing export profiles');
   assert.ok(bundle.project.scenes.some((scene) => scene.id === bundle.startSceneId));
   assert.notEqual(
     bundle.project.activeSceneId,
@@ -147,6 +208,10 @@ try {
   // Exercise the player's real migration path, not merely the export assembler. Version 0.2 projects
   // legitimately predate these collections; the v0.7 migration must restore them before validation.
   const legacyBundle = structuredClone(bundle);
+  legacyBundle.bundleVersion = '1.0.0';
+  delete legacyBundle.buildProfile;
+  delete legacyBundle.runtimeContract;
+  delete legacyBundle.project.exportSettings;
   legacyBundle.project.version = '0.2.0';
   legacyBundle.project.name = legacyName;
   for (const collection of [
@@ -171,7 +236,12 @@ try {
   exportBundle(legacyBundle, legacyName, 'game-legacy.json');
 
   const currentResult = assertAssembledPlayer(webOutput, bundle);
-  assertAssembledPlayer(legacyWebOutput, legacyBundle);
+  const legacyResult = assertAssembledPlayer(legacyWebOutput, null);
+  assertCrossHostStaging();
+  assert.equal(legacyResult.baked.bundleVersion, '1.1.0');
+  assert.equal(legacyResult.baked.project.version, '0.8.0');
+  assert.ok(legacyResult.baked.project.exportSettings?.profiles?.length, 'legacy export did not migrate profiles');
+  assert.ok(legacyResult.baked.runtimeContract?.requiredFeatures?.length, 'legacy export did not add runtime contract');
 
   const totalBytes = currentResult.files.reduce((total, file) => total + statSync(file).size, 0);
   const maximumPortableExportBytes = 25 * 1024 * 1024;
@@ -181,17 +251,22 @@ try {
   );
 
   if (browserEnabled) {
-    execFileSync(
-      process.execPath,
-      [
-        resolve(root, 'scripts/player-browser-smoke.mjs'),
-        '--dir',
-        webOutput,
-        '--legacy-dir',
-        legacyWebOutput,
-      ],
-      { cwd: root, stdio: 'inherit' },
-    );
+    const browserArgs = [
+      resolve(root, 'scripts/player-browser-smoke.mjs'),
+      '--dir',
+      webOutput,
+      '--legacy-dir',
+      legacyWebOutput,
+    ];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        execFileSync(process.execPath, browserArgs, { cwd: root, stdio: 'inherit' });
+        break;
+      } catch (error) {
+        if (attempt === 2) throw error;
+        console.warn('WARNING: The headless browser process exited; retrying the runtime smoke once.');
+      }
+    }
   }
 
   console.log(

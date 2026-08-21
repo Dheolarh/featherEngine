@@ -30,6 +30,7 @@ export function WorldUIAnchor({ object }: { object: SceneObject }) {
   const runtimeVariableValues = useEditorStore((state) => state.runtimeVariableValues);
   const runtimeObjectVariables = useEditorStore((state) => state.runtimeObjectVariables);
   const assets = useEditorStore((state) => state.assets);
+  const fireCustomEvent = useEditorStore((state) => state.fireCustomEvent);
   const setRuntimeVariableByName = useEditorStore((state) => state.setRuntimeVariableByName);
 
   if (!ui || !doc || doc.surface !== 'world') return null;
@@ -56,7 +57,13 @@ export function WorldUIAnchor({ object }: { object: SceneObject }) {
             <meshBasicMaterial toneMapped={false}>
               <RenderTexture attach="map" width={texW} height={texH} anisotropy={16}>
                 <Fullscreen flexDirection="column" backgroundColor="#000000">
-                  <UIElementMesh element={doc.root} ctx={ctx} resolveAssetUrl={resolveAssetUrl} resolveComponent={resolveComponent} />
+                  <UIElementMesh
+                    element={doc.root}
+                    ctx={ctx}
+                    resolveAssetUrl={resolveAssetUrl}
+                    resolveComponent={resolveComponent}
+                    onButtonClick={(element) => element.onClickEvent && fireCustomEvent(element.onClickEvent)}
+                  />
                 </Fullscreen>
               </RenderTexture>
             </meshBasicMaterial>
@@ -68,7 +75,13 @@ export function WorldUIAnchor({ object }: { object: SceneObject }) {
     // pixelSize maps UI pixels → world units; `scale` lets authors tune size per object.
     const root = (
       <Root pixelSize={0.0045 * ui.scale} anchorX="center" anchorY="center" flexDirection="column" depthTest={!ui.billboard}>
-        <UIElementMesh element={doc.root} ctx={ctx} resolveAssetUrl={resolveAssetUrl} resolveComponent={resolveComponent} />
+        <UIElementMesh
+          element={doc.root}
+          ctx={ctx}
+          resolveAssetUrl={resolveAssetUrl}
+          resolveComponent={resolveComponent}
+          onButtonClick={(element) => element.onClickEvent && fireCustomEvent(element.onClickEvent)}
+        />
       </Root>
     );
     return (
@@ -88,6 +101,7 @@ export function WorldUIAnchor({ object }: { object: SceneObject }) {
             ctx={ctx}
             resolveAssetUrl={resolveAssetUrl}
             resolveComponent={resolveComponent}
+            onButtonClick={(element) => element.onClickEvent && fireCustomEvent(element.onClickEvent)}
             onValueChange={(el, value) => el.valueVariable && setRuntimeVariableByName(el.valueVariable, value)}
           />
         </div>

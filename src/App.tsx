@@ -14,14 +14,12 @@ import { RuntimeConsole } from './components/RuntimeConsole';
 import { VariableWatch } from './components/VariableWatch';
 import { PrefabThumbnailHost } from './components/PrefabThumbnailer';
 import { ModelThumbnailHost } from './components/ModelThumbnailHost';
-import { CinematicOverlay } from './components/CinematicOverlay';
 import { useEditorStore } from './store/editorStore';
 import { useMarketplaceStore } from './store/marketplaceStore';
 import { useEditorPrefs } from './store/editorPrefsStore';
 import { useRuntimeAudio } from './runtime/useRuntimeAudio';
 import { recordFrame, resetHitches } from './runtime/perfStats';
-import { resetFrameClock, smoothFrameDelta } from './runtime/frameClock';
-import { resetGamepadInput, sampleGamepads } from './runtime/gamepadInput';
+import { useGameRuntime, type RuntimeLoopInstrumentation } from './runtime/useGameRuntime';
 import { PerfOverlay } from './components/PerfOverlay';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { CommandPalette } from './components/CommandPalette';
@@ -175,65 +173,18 @@ function useBreakpointFocus() {
   }, [brokeAt]);
 }
 
+const EDITOR_RUNTIME_INSTRUMENTATION: RuntimeLoopInstrumentation = {
+  onSessionStart: () => {
+    resetHitches();
+    resetReactProfile();
+  },
+  onFrame: recordFrame,
+};
+
 function RuntimePreviewLoop() {
   const isPlaying = useEditorStore((state) => state.isPlaying);
-  const tickRuntime = useEditorStore((state) => state.tickRuntime);
-  const setRuntimeKey = useEditorStore((state) => state.setRuntimeKey);
   useRuntimeAudio();
-
-  useEffect(() => {
-    if (!isPlaying) return;
-    resetHitches(); // the hitch counters describe THIS Play session
-    resetReactProfile(); // ...and so does the per-region React render attribution
-    resetFrameClock();
-
-    let frame = 0;
-    let lastTime = performance.now();
-
-    const loop = (time: number) => {
-      const frameMs = time - lastTime;
-      // Smoothed clock: evens out RAF jitter and spreads hitch backlogs over a few gentle steps —
-      // without it, a moving car/character visibly freezes then SNAPS forward after every spike.
-      const delta = smoothFrameDelta(frameMs / 1000);
-      lastTime = time;
-      const tickStart = performance.now();
-      sampleGamepads(delta, setRuntimeKey);
-      tickRuntime(delta);
-      recordFrame(frameMs, performance.now() - tickStart);
-      frame = requestAnimationFrame(loop);
-    };
-
-    frame = requestAnimationFrame(loop);
-    return () => {
-      cancelAnimationFrame(frame);
-      resetGamepadInput();
-    };
-  }, [isPlaying, tickRuntime, setRuntimeKey]);
-
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return;
-      setRuntimeKey(event.code, true);
-    };
-    const handleKeyUp = (event: KeyboardEvent) => setRuntimeKey(event.code, false);
-    // Mouse buttons are exposed as runtime "keys" too: Mouse0 (left), Mouse1 (middle), Mouse2 (right).
-    const handleMouseDown = (event: MouseEvent) => setRuntimeKey(`Mouse${event.button}`, true);
-    const handleMouseUp = (event: MouseEvent) => setRuntimeKey(`Mouse${event.button}`, false);
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isPlaying, setRuntimeKey]);
-
+  useGameRuntime(isPlaying, EDITOR_RUNTIME_INSTRUMENTATION);
   return null;
 }
 
@@ -297,7 +248,6 @@ export default function App() {
       <StatusBar />
       {profiled('console', <RuntimeConsole />)}
       {profiled('varwatch', <VariableWatch />)}
-      {profiled('cine-overlay', <CinematicOverlay />)}
       {profiled('ai-chat', <AIChatWidget />)}
       <PrefabThumbnailHost />
       <ModelThumbnailHost />

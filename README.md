@@ -178,9 +178,10 @@ My Game/
 
 ## Ship your game
 
-The recommended path is **Export → Production** in the desktop editor. Feather stages a
-self-contained game bundle, validates its resources, builds a web player for static hosting, and can
-package it as a standalone native Tauri app for the current machine. Browsers do not run the web
+The recommended path is **Export → Production** in the desktop editor. Configure the saved build
+profile (stable app id, version/build number, launch scene, window, configuration, exact targets),
+then Feather snapshots a self-contained game bundle and runs its runtime/resource parity gate.
+Web, Windows, macOS, Linux, Android, and iOS are independent targets. Browsers do not run the web
 build by double-clicking `index.html`; serve or upload the complete folder.
 
 Run the platform doctor before shipping:
@@ -199,16 +200,21 @@ handles staging for you; for a bundle exported elsewhere, pass `--bundle "path/t
 | **Windows** | `.msi` / `.exe` | `npm run ship:native` | Windows or the included CI workflow |
 | **macOS** | `.app` / `.dmg` | `npm run ship:native` | macOS or the included CI workflow |
 | **Linux** | `.AppImage` / `.deb` | `npm run ship:native` | Linux or the included CI workflow |
-| **Android** | `.apk` / `.aab` | `npm run export:android` | Android SDK/NDK and Rust mobile targets required |
-| **iOS** | Xcode project / `.ipa` | `npm run export:ios` | macOS, Xcode, CocoaPods, and signing required |
+| **Android** | debug `.apk` / release `.aab` | `npm run export:android` | Android SDK/NDK and Rust mobile targets required |
+| **iOS** | Xcode project / `.ipa` | `npm run export:ios` | macOS, Xcode + iOS runtime, CocoaPods, and signing required |
+
+macOS `.app` bundles are signature-verified during export. Without a Developer ID identity they are
+ad-hoc signed for local testing; public downloads still need Developer ID signing and notarization.
 
 For faster iteration, `npm run ship:fast` rebuilds with reduced checks and `npm run ship:reuse`
 reuses the existing `dist-player/` for content-only re-exports.
 
 Desktop installers are native builds, so Tauri does not cross-compile them from one operating
-system. Use [the included GitHub Actions matrix](.github/workflows/export-desktop.yml) to build all
-three desktop targets. See the [Production Export guide](docs/PRODUCTION_EXPORT.md) for staging,
-fast/reuse builds, mobile setup, output locations, and troubleshooting.
+system. Selecting another OS creates a runner-ready staging folder; use
+[the included GitHub Actions matrix](.github/workflows/export-desktop.yml) to package all three
+desktop targets. See the [Production Export guide](docs/PRODUCTION_EXPORT.md) for staging,
+runtime parity, build profiles, exact target selection, fast/reuse builds, mobile setup, output
+locations, and troubleshooting.
 
 ## Scripting
 

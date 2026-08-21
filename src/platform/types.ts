@@ -1,7 +1,7 @@
-import type { NodeForgeProject } from '../types';
+import type { ExportProfile, ExportTargetId, NodeForgeProject } from '../types';
 
 /** One export platform (build target) an exported game can ship to. */
-export type ExportTarget = 'web' | 'desktop' | 'android' | 'ios';
+export type ExportTarget = ExportTargetId;
 
 /** One toolchain requirement inside a platform-doctor report entry. */
 export interface ExportRequirement {
@@ -14,7 +14,7 @@ export interface ExportRequirement {
 
 /** Per-platform readiness from `scripts/platform-doctor.mjs`. */
 export interface ExportPlatformInfo {
-  id: 'web' | 'windows' | 'macos' | 'linux' | 'android' | 'ios';
+  id: ExportTargetId;
   label: string;
   kind: 'web' | 'desktop' | 'mobile';
   /** ready = buildable on this machine now; ci = build on another OS / GitHub Actions;
@@ -28,6 +28,14 @@ export interface ExportPlatformsReport {
   host: string;
   hostLabel: string;
   platforms: ExportPlatformInfo[];
+}
+
+/** Immutable request handed from the editor to a local or future remote build provider. */
+export interface ProductionBuildRequest {
+  bundleJson: string;
+  profile: ExportProfile;
+  targets: ExportTargetId[];
+  outDir?: string;
 }
 
 export interface OpenedProject {
@@ -114,17 +122,12 @@ export interface Platform {
   stageProduction(name: string, bundle: unknown): Promise<string | null>;
   /**
    * Desktop only: actually run the production build for an already-built bundle, streaming each
-   * output line via `onProgress`. The portable web folder is always produced; `targets` adds
-   * native builds on top: 'desktop' (installer for this OS), 'android' (APK), 'ios' (Xcode).
-   * Resolves to the bundle output directory. Undefined on platforms that can't build locally
-   * (web) — callers fall back to `stageProduction`.
+   * output line via `onProgress`. Targets are exact and independent: web, windows, macos, linux,
+   * android or ios. Desktop targets require their matching host OS; the platform doctor supplies
+   * that readiness to the UI. Resolves to the artifact root. Undefined in the browser, where the
+   * caller falls back to staging the canonical game bundle.
    */
-  buildProduction?(
-    bundleJson: string,
-    targets: ExportTarget[],
-    onProgress: (line: string) => void,
-    outDir?: string,
-  ): Promise<string>;
+  buildProduction?(request: ProductionBuildRequest, onProgress: (line: string) => void): Promise<string>;
   /**
    * Desktop only: run the platform doctor and report which export platforms this machine can
    * build right now (and what's missing for the rest). Undefined on web.

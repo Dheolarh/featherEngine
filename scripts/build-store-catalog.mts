@@ -30,7 +30,7 @@ const KIND_DIRS = { project: 'projects', asset: 'assets', plugin: 'plugins' } as
 
 const PACKAGE_FORMAT = 'nodeforge-package';
 const PACKAGE_VERSION = '1.0.0';
-const ENGINE_VERSION = '0.7.0'; // PROJECT_VERSION in src/types/project.ts
+const ENGINE_VERSION = '0.8.0'; // PROJECT_VERSION in src/types/project.ts
 const CATALOG_FORMAT = 'feather-store-catalog';
 /** Fixed so regenerating the catalog produces identical bytes. */
 const EPOCH = Date.parse('2026-01-01T00:00:00.000Z');

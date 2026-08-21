@@ -88,30 +88,60 @@ export const inferGraphType = (value: GraphValue | undefined): GraphValueType =>
 };
 
 // --- Game save slots --------------------------------------------------------------------------
-// Slots are NAMESPACED PER GAME (set from the project name on new/open and in the exported player),
+// Slots are NAMESPACED PER GAME (set from the stable application id in editor Play and the player),
 // so two games on the same browser origin can't read or clobber each other's saves. Values are
 // keyed by VARIABLE NAME (stable across template re-imports and project copies — variable ids are
-// random per project); readers fall back to the legacy un-namespaced, id-keyed format.
+// random per project); readers fall back to the former project-name namespace and then to the
+// oldest un-namespaced, id-keyed format.
 let saveNamespace = 'project';
+let legacySaveNamespaces: string[] = [];
 
-/** Scope all save slots to one game. Call when a project is created/opened/renamed and in the player. */
-export const setSaveNamespace = (name: string) => {
+const saveNamespaceSlug = (name: string) => {
   const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  saveNamespace = slug || 'project';
+  return slug || 'project';
+};
+
+/** Scope slots to one stable game id, with explicit read-only aliases for pre-0.8 save keys. */
+export const setSaveNamespace = (
+  name: string,
+  legacyNames?: readonly string[],
+  preserveExistingAliases = false,
+) => {
+  saveNamespace = saveNamespaceSlug(name);
+  if (legacyNames) {
+    legacySaveNamespaces = [
+      ...new Set(
+        [...(preserveExistingAliases ? legacySaveNamespaces : []), ...legacyNames.map(saveNamespaceSlug)].filter(
+          (candidate) => candidate !== saveNamespace,
+        ),
+      ),
+    ];
+  } else {
+    legacySaveNamespaces = legacySaveNamespaces.filter((candidate) => candidate !== saveNamespace);
+  }
 };
 
 const saveKeyForSlot = (slot: string) => `nodeforge.save.${saveNamespace}.${slot.trim() || 'slot1'}`;
+const legacyNamespacedSaveKeysForSlot = (slot: string) =>
+  legacySaveNamespaces.map(
+    (namespace) => `nodeforge.save.${namespace}.${slot.trim() || 'slot1'}`,
+  );
 /** Pre-namespace key — old saves live here; read-only fallback so they keep loading. */
 const legacySaveKeyForSlot = (slot: string) => `nodeforge.save.${slot.trim() || 'slot1'}`;
 
 export const readSaveSlot = (slot: string): Record<string, GraphValue> | null => {
   if (typeof localStorage === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(saveKeyForSlot(slot)) ?? localStorage.getItem(legacySaveKeyForSlot(slot));
-    return raw ? (JSON.parse(raw) as Record<string, GraphValue>) : null;
-  } catch {
-    return null;
+  const keys = [saveKeyForSlot(slot), ...legacyNamespacedSaveKeysForSlot(slot), legacySaveKeyForSlot(slot)];
+  for (const key of keys) {
+    const raw = localStorage.getItem(key);
+    if (raw === null) continue;
+    try {
+      return JSON.parse(raw) as Record<string, GraphValue>;
+    } catch {
+      // A corrupt newer slot must not hide a readable legacy save during migration.
+    }
   }
+  return null;
 };
 
 export const writeSaveSlot = (slot: string, values: Record<string, GraphValue>) => {
@@ -122,6 +152,7 @@ export const writeSaveSlot = (slot: string, values: Record<string, GraphValue>) 
 export const clearSaveSlot = (slot: string) => {
   if (typeof localStorage === 'undefined') return;
   localStorage.removeItem(saveKeyForSlot(slot));
+  for (const key of legacyNamespacedSaveKeysForSlot(slot)) localStorage.removeItem(key);
   localStorage.removeItem(legacySaveKeyForSlot(slot));
 };
 

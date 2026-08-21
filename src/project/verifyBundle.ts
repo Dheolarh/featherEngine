@@ -1,5 +1,6 @@
 import type { AssetItem, NodeForgeProject } from '../types';
 import type { GameBundle } from './exportGame';
+import { validateRuntimeContract, validateRuntimeReferences, type RuntimeFeatureId } from './runtimeCompatibility';
 
 /** Per-asset entry in the build report (sizes are decoded bytes, not base64 length). */
 export interface BundleAssetInfo {
@@ -30,6 +31,8 @@ export interface BundleReport {
   referencedAssetIds: string[];
   /** True when the reference scan threw — callers must fail open (treat everything as used). */
   scanFailed: boolean;
+  /** Authored engine subsystems the production player must execute for parity with editor Play. */
+  runtimeFeatures: RuntimeFeatureId[];
 }
 
 /**
@@ -174,6 +177,10 @@ export function verifyGameBundle(bundle: GameBundle): BundleReport {
   const warnings: string[] = [];
   const errors: string[] = [];
 
+  const compatibility = validateRuntimeReferences(bundle.project, bundle.startSceneId, bundle.buildProfile);
+  errors.push(...validateRuntimeContract(bundle.runtimeContract), ...compatibility.errors);
+  warnings.push(...compatibility.warnings);
+
   const objectCount = project.scenes.reduce((total, scene) => total + (scene.objects?.length ?? 0), 0);
   const scriptedObjects = project.scenes.reduce(
     (total, scene) => total + (scene.objects?.filter((object) => object.script?.enabled).length ?? 0),
@@ -192,6 +199,9 @@ export function verifyGameBundle(bundle: GameBundle): BundleReport {
     `UI: ${project.uiDocuments?.length ?? 0} docs · Data assets: ${project.dataAssets.length} · Variables: ${project.variables.length}`,
   );
   summary.push(`Render settings: ${project.renderSettings ? 'included' : 'defaults'}`);
+  summary.push(
+    `Runtime parity: ${compatibility.features.length ? compatibility.features.join(', ') : 'core scene runtime'} — supported by this player`,
+  );
 
   const assets = project.assets ?? [];
   const byId = new Map(assets.map((asset) => [asset.id, asset]));
@@ -282,5 +292,6 @@ export function verifyGameBundle(bundle: GameBundle): BundleReport {
     totalBytes: JSON.stringify(bundle).length,
     referencedAssetIds: [...referenced],
     scanFailed,
+    runtimeFeatures: compatibility.features,
   };
 }

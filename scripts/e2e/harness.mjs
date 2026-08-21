@@ -34,6 +34,7 @@ export async function openEditor({ baseUrl, query = '', timeoutMs = 60_000, widt
         last = await evaluate(`Boolean(${expression})`);
         if (last) return true;
       } catch (error) {
+        if (error.message.includes('Chrome DevTools connection closed')) throw error;
         last = error.message;
       }
       await delay(250);

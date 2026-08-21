@@ -54,6 +54,7 @@ import { WaterEnvCapture } from '../three/WaterEnvCapture';
 import { UnderwaterOverlay } from '../three/UnderwaterOverlay';
 import { FragmentMesh } from '../three/FragmentMesh';
 import { readTransform } from '../runtime/transformBuffer';
+import { structuralObjectsSignature } from '../store/stableSelectors';
 import type { SceneObject } from '../types';
 
 const hideInRuntime = (object: SceneObject) => object.renderer?.hideInPlay ?? Boolean(object.physics?.isTrigger);
@@ -66,48 +67,11 @@ const SHARED_GEO = {
 };
 
 function gameSceneSignature(state: ReturnType<typeof useEditorStore.getState>) {
-  const objects = selectActiveObjects(state)
-    .map((object) => {
-      const renderer = object.renderer;
-      return [
-        object.id,
-        object.parentId ?? '',
-        object.kind,
-        object.name,
-        object.viewModel?.ownerObjectId ?? '',
-        object.attachment?.targetObjectId ?? '',
-        object.attachment?.socketName ?? '',
-        object.physics?.enabled ? 'p' : '',
-        object.physics?.isTrigger ? 't' : '',
-        object.character?.enabled ? 'c' : '',
-        object.vehicle?.enabled ? 'v' : '',
-        object.vehicle?.deformable ? 'deform' : '',
-        object.terrain?.enabled ? 'terrain' : '',
-        object.tree?.enabled ? `tree:${object.tree.spec.archetype}:${object.tree.seed}` : '',
-        object.cloth?.enabled ? `cloth:${JSON.stringify(object.cloth)}` : '',
-        object.cable?.enabled ? `cable:${JSON.stringify(object.cable)}` : '',
-        object.water?.enabled ? `water:${JSON.stringify(object.water)}` : '',
-        object.effect?.kind ?? '',
-        object.projectile ? 'projectile' : '',
-        renderer?.enabled === false ? 'off' : '',
-        renderer?.hideInPlay ? 'hide' : '',
-        renderer?.mesh ?? '',
-        renderer?.modelAssetId ?? '',
-        renderer?.materialId ?? '',
-        renderer?.materialSlots?.join(',') ?? '',
-        renderer?.textureAssetId ?? '',
-        renderer?.fragmentKey ?? '',
-        renderer?.overrideMaterial ? 'override' : '',
-        renderer?.materialOverrides?.color ?? '',
-        object.animator?.enabled ? 'anim' : '',
-        object.animator?.controllerId ?? '',
-        object.particles?.systemId ?? '',
-        object.ui?.documentId ?? '',
-      ].join(':');
-    })
-    .join('|');
-  // Scene ids make otherwise structurally-identical scene transitions invalidate the memo too.
-  return `${state.activeSceneId}|${objects}`;
+  // The shared structural selector ignores only Play-mode transforms (those flow through the
+  // transform buffer) and invalidates for every other authored/runtime field. This keeps material
+  // overrides, animator/controller changes, UI, VFX and future components visible without another
+  // hand-maintained partial signature drifting from the runtime.
+  return `${state.activeSceneId}|${structuralObjectsSignature(state)}`;
 }
 
 /** Built-in mesh rendering — mirrors the editor's primitives, minus selection/gizmo chrome. */

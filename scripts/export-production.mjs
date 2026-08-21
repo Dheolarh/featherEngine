@@ -1,28 +1,16 @@
 #!/usr/bin/env node
 // Production export assembler for Feather Engine games.
 //
-// Turns a self-contained game bundle (game.json, produced by the editor's
-// Production button) into shippable artifacts:
-//
-//   - a PORTABLE WEB FOLDER: copy of the player build with the game baked in;
-//     serve the folder from any static web host (browsers restrict file:// module apps).
-//   - a NATIVE APP (--native): wraps that folder in the Tauri player target,
-//     producing a real .app/.dmg (mac), .msi/.exe (windows), or
-//     .AppImage/.deb (linux) for the current operating system.
-//   - an ANDROID APK (--android): the same player wrapped in the Tauri mobile
-//     shell; requires the Android SDK/NDK (run `npm run doctor` to check).
-//   - an iOS APP (--ios): Xcode-built via the Tauri mobile shell (macOS only);
-//     device installs need a signing team — the Xcode project is generated
-//     under src-tauri/gen/apple either way.
+// A build profile is embedded in game.json and can optionally be supplied with --profile. The
+// selected targets are exact OS/store targets rather than an ambiguous "desktop" switch:
+// web, windows, macos, linux, android, ios.
 //
 // Usage:
-//   node scripts/export-production.mjs [--bundle <game.json>] [--name "<Game>"]
-//                                      [--out <dir>] [--native] [--android] [--ios]
-//                                      [--fast] [--skip-build] [--zip] [--open]
+//   node scripts/export-production.mjs [--bundle <game.json>] [--profile <profile.json>]
+//     [--targets web,macos,android] [--out <dir>] [--fast] [--skip-build] [--zip] [--open]
 //
-// Defaults: --bundle exports/staging/game.json, --out exports/
+// Legacy flags remain supported: --native, --android, --ios, --no-web.
 import { execFileSync } from 'node:child_process';
-import { findAndroidSdk, findAndroidNdk } from './platform-doctor.mjs';
 import {
   cpSync,
   existsSync,
@@ -30,6 +18,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -37,8 +26,19 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  diagnosePlatforms,
+  findAndroidSdk,
+  findAndroidNdk,
+  findMacCodeSigningIdentity,
+  hasAppleCodeSigningIdentity,
+} from './platform-doctor.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const TARGET_IDS = new Set(['web', 'windows', 'macos', 'linux', 'android', 'ios']);
+const DESKTOP_TARGETS = new Set(['windows', 'macos', 'linux']);
+const HOST_DESKTOP_TARGET =
+  process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux';
 
 function parseArgs(argv) {
   const opts = {};
@@ -55,6 +55,61 @@ function parseArgs(argv) {
     }
   }
   return opts;
+}
+
+function fail(message) {
+  console.error(`\nERROR: ${message}\n`);
+  process.exit(1);
+}
+
+function processIsRunning(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+/** Serialize all exporters because dist-player and Tauri's generated mobile folders are shared. */
+function acquireBuildLock() {
+  const lock = resolve(root, 'src-tauri/target/nodeforge-export.lock');
+  mkdirSync(dirname(lock), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      mkdirSync(lock);
+      writeFileSync(
+        resolve(lock, 'owner.json'),
+        `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2)}\n`,
+      );
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        rmSync(lock, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      let owner = null;
+      try {
+        owner = JSON.parse(readFileSync(resolve(lock, 'owner.json'), 'utf8'));
+      } catch {
+        fail(
+          'Another production export is acquiring the build lock. Wait a moment and retry. ' +
+            'If no build is running, remove src-tauri/target/nodeforge-export.lock.',
+        );
+      }
+      if (processIsRunning(Number(owner?.pid))) {
+        fail(
+          `Another production export is already running (process ${owner.pid}). ` +
+            'Wait for it to finish before starting another build.',
+        );
+      }
+      rmSync(lock, { recursive: true, force: true });
+    }
+  }
+  fail('Could not acquire the production export lock. Remove src-tauri/target/nodeforge-export.lock if no build is running.');
 }
 
 function slugify(name) {
@@ -91,21 +146,7 @@ function openPath(path) {
   }
 }
 
-function collectInstallers(bundleDir) {
-  if (!existsSync(bundleDir)) return [];
-  const wanted = /\.(dmg|app|msi|exe|AppImage|deb|rpm)$/i;
-  const found = [];
-  for (const sub of readdirSync(bundleDir)) {
-    const subDir = resolve(bundleDir, sub);
-    if (!statSync(subDir).isDirectory()) continue;
-    for (const entry of readdirSync(subDir)) {
-      if (wanted.test(entry)) found.push(resolve(subDir, entry));
-    }
-  }
-  return found;
-}
-
-/** Recursively find files matching `pattern` under `dir` (mobile build outputs move around). */
+/** Recursively find matching build outputs. Native `.app` bundles are directories and stay intact. */
 function findArtifacts(dir, pattern, depth = 8) {
   if (depth < 0 || !existsSync(dir)) return [];
   const found = [];
@@ -117,64 +158,111 @@ function findArtifacts(dir, pattern, depth = 8) {
     } catch {
       continue;
     }
-    if (stat.isDirectory()) found.push(...findArtifacts(full, pattern, depth - 1));
-    else if (pattern.test(entry)) found.push(full);
+    if (pattern.test(entry)) found.push(full);
+    else if (stat.isDirectory()) found.push(...findArtifacts(full, pattern, depth - 1));
   }
   return found;
 }
 
-/** Copy build artifacts into a fresh `<out>/<slug>-<suffix>/` folder; returns the folder or null. */
-function copyArtifacts(files, outRoot, slug, suffix) {
+/** Copy build artifacts into a fresh `<out>/<slug>-<target>/` folder. */
+function copyArtifacts(files, outRoot, slug, target) {
   if (!files.length) return null;
-  const dest = resolve(outRoot, `${slug}-${suffix}`);
-  rmSync(dest, { recursive: true, force: true });
-  mkdirSync(dest, { recursive: true });
-  for (const src of files) cpSync(src, resolve(dest, basename(src)), { recursive: true });
-  return dest;
+  const destination = resolve(outRoot, `${slug}-${target}`);
+  rmSync(destination, { recursive: true, force: true });
+  mkdirSync(destination, { recursive: true });
+  for (const source of files) cpSync(source, resolve(destination, basename(source)), { recursive: true });
+  return destination;
+}
+
+function verifyMacAppSignatures(files) {
+  const applications = files.filter((file) => /\.app$/i.test(file));
+  if (!applications.length) throw new Error('The macOS build did not produce an application bundle to verify.');
+  for (const application of applications) {
+    try {
+      execFileSync('codesign', ['--verify', '--deep', '--strict', application], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      const detail = String(error?.stderr ?? error?.message ?? error).trim();
+      throw new Error(`macOS code-signature verification failed for ${basename(application)}: ${detail}`);
+    }
+  }
 }
 
 function injectBundleScript(html, title) {
-  let out = html.replace(/<title>[^<]*<\/title>/i, `<title>${title.replace(/[<>&]/g, '')}</title>`);
-  if (!out.includes('game-bundle.js')) {
-    out = out.replace(/(<script\b[^>]*\bsrc=)/i, '<script src="./game-bundle.js"></script>\n    $1');
+  let output = html.replace(/<title>[^<]*<\/title>/i, `<title>${title.replace(/[<>&]/g, '')}</title>`);
+  if (!output.includes('game-bundle.js')) {
+    output = output.replace(/(<script\b[^>]*\bsrc=)/i, '<script src="./game-bundle.js"></script>\n    $1');
   }
-  return out;
+  return output;
 }
 
-function zipFolder(webOut) {
-  const zipPath = `${webOut}.zip`;
+function zipFolder(folder) {
+  const zipPath = `${folder}.zip`;
   rmSync(zipPath, { force: true });
   if (process.platform === 'win32') {
     const stage = mkdtempSync(join(tmpdir(), 'feather-export-'));
     try {
-      const stagedWeb = resolve(stage, basename(webOut));
-      cpSync(webOut, stagedWeb, { recursive: true });
+      const stagedFolder = resolve(stage, basename(folder));
+      cpSync(folder, stagedFolder, { recursive: true });
       run('powershell', [
         '-NoProfile',
         '-Command',
-        `Compress-Archive -Path '${stagedWeb}' -DestinationPath '${zipPath}'`,
+        `Compress-Archive -Path '${stagedFolder}' -DestinationPath '${zipPath}'`,
       ]);
     } finally {
       rmSync(stage, { recursive: true, force: true });
     }
   } else {
-    execFileSync('zip', ['-r', '-q', zipPath, '.'], { cwd: webOut, stdio: 'inherit' });
+    execFileSync('zip', ['-r', '-q', zipPath, '.'], { cwd: folder, stdio: 'inherit' });
   }
   console.log(`\nOK: Zipped -> ${zipPath}`);
 }
 
+function readProfile(pathOption) {
+  if (!pathOption) return null;
+  if (pathOption === true) fail('--profile requires a JSON file path.');
+  const profilePath = resolve(root, pathOption);
+  if (!existsSync(profilePath)) fail(`Build profile not found: ${profilePath}`);
+  try {
+    return JSON.parse(readFileSync(profilePath, 'utf8'));
+  } catch (error) {
+    fail(`Build profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function selectedTargets(opts, profile) {
+  let requested;
+  if (typeof opts.targets === 'string') {
+    requested = opts.targets.split(',').map((target) => target.trim()).filter(Boolean);
+  } else if (opts.targets === true) {
+    fail('--targets requires a comma-separated list.');
+  } else if (opts.native || opts.android || opts.ios || opts['no-web']) {
+    requested = opts['no-web'] ? [] : ['web'];
+    if (opts.native) requested.push(HOST_DESKTOP_TARGET);
+    if (opts.android) requested.push('android');
+    if (opts.ios) requested.push('ios');
+  } else {
+    requested = [...profile.targets];
+  }
+
+  const unique = [...new Set(requested)];
+  if (unique.length !== requested.length) fail('Export targets must not contain duplicates.');
+  if (!unique.length) fail('Select at least one export target.');
+  for (const target of unique) {
+    if (!TARGET_IDS.has(target)) fail(`Unknown export target: ${target}`);
+  }
+  return unique;
+}
+
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const opts = parseArgs(process.argv.slice(2));
-const bundlePath = resolve(root, opts.bundle || 'exports/staging/game.json');
-const outRoot = resolve(root, opts.out || 'exports');
+const bundlePath = resolve(root, typeof opts.bundle === 'string' ? opts.bundle : 'exports/staging/game.json');
+const outRoot = resolve(root, typeof opts.out === 'string' ? opts.out : 'exports');
 const distPlayer = resolve(root, 'dist-player');
 
-/**
- * Run the exact TypeScript/Zod loader and bundle auditor used by the editor/player. Vite is already
- * a direct build dependency and its SSR loader lets this plain Node CLI reuse that source of truth
- * instead of maintaining a weaker second "looks roughly valid" schema in this script.
- */
-async function validateAndAuditBundle(raw) {
+/** Reuse the editor/player's real loader, migrations, profile validation and runtime parity audit. */
+async function validateAndAuditBundle(raw, profileOverride, nameOverride) {
   const { createServer } = await import('vite');
   const vite = await createServer({
     root,
@@ -189,100 +277,203 @@ async function validateAndAuditBundle(raw) {
       vite.ssrLoadModule('/src/project/verifyBundle.ts'),
     ]);
     const loaded = bundleModule.readGameBundle(raw);
-    const canonicalBundle = {
-      bundleVersion: bundleModule.GAME_BUNDLE_VERSION,
-      startSceneId: loaded.startSceneId,
-      project: loaded.project,
+    let profile = structuredClone(profileOverride ?? loaded.buildProfile);
+    if (nameOverride) {
+      profile = {
+        ...profile,
+        application: { ...profile.application, productName: nameOverride },
+        window: { ...profile.window, title: nameOverride },
+      };
+    }
+    const settings = loaded.project.exportSettings;
+    const hasProfile = settings.profiles.some((candidate) => candidate.id === profile.id);
+    const project = {
+      ...loaded.project,
+      exportSettings: {
+        ...settings,
+        activeProfileId: profile.id,
+        profiles: hasProfile
+          ? settings.profiles.map((candidate) => (candidate.id === profile.id ? profile : candidate))
+          : [...settings.profiles, profile],
+      },
     };
-    return { loaded, report: auditModule.verifyGameBundle(canonicalBundle) };
+    const canonicalBundle = bundleModule.buildGameBundle(project, profile);
+    return {
+      bundle: canonicalBundle,
+      loaded: { ...loaded, project, buildProfile: profile, runtimeContract: canonicalBundle.runtimeContract },
+      report: auditModule.verifyGameBundle(canonicalBundle),
+    };
   } finally {
     await vite.close();
   }
 }
 
 if (!existsSync(bundlePath)) {
-  console.error(
-    `\nERROR: No game bundle found at ${bundlePath}\n` +
-      '  Export one from the editor Production button, or pass --bundle <game.json>.\n',
+  fail(
+    `No game bundle found at ${bundlePath}\n` +
+      '  Export one from the editor Production button, or pass --bundle <game.json>.',
   );
-  process.exit(1);
 }
 
-const bundleRaw = readFileSync(bundlePath, 'utf8');
-let bundle;
+let rawBundle;
 try {
-  bundle = JSON.parse(bundleRaw);
-} catch (err) {
-  console.error(`\nERROR: ${bundlePath} is not valid JSON: ${err.message}\n`);
-  process.exit(1);
+  rawBundle = JSON.parse(readFileSync(bundlePath, 'utf8'));
+} catch (error) {
+  fail(`${bundlePath} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
 }
 
 let preflight;
 try {
-  preflight = await validateAndAuditBundle(bundle);
-} catch (err) {
-  console.error(
-    `\nERROR: ${bundlePath} cannot be loaded by this Feather Engine player:\n` +
-      `  ${err instanceof Error ? err.message : String(err)}\n` +
-      '  Open and re-export the project with this engine version, then try again.\n',
+  preflight = await validateAndAuditBundle(rawBundle, readProfile(opts.profile), typeof opts.name === 'string' ? opts.name : null);
+} catch (error) {
+  fail(
+    `${bundlePath} cannot be loaded by this Feather Engine player:\n` +
+      `  ${error instanceof Error ? error.message : String(error)}\n` +
+      '  Open and re-export the project with this engine version, then try again.',
   );
-  process.exit(1);
 }
 
-const gameName = opts.name || preflight.loaded.project.name || 'Game';
+const bundle = preflight.bundle;
+const profile = bundle.buildProfile;
+const targets = selectedTargets(opts, profile);
+const gameName = profile.application.productName;
 const slug = slugify(gameName);
+const hasInjectedAppleCertificate = Boolean(process.env.APPLE_CERTIFICATE?.trim());
+const macSigningIdentity =
+  targets.includes('macos') && process.platform === 'darwin'
+    ? findMacCodeSigningIdentity() ?? (hasInjectedAppleCertificate ? null : '-')
+    : null;
+const targetsToStage = targets.filter(
+  (target) =>
+    (DESKTOP_TARGETS.has(target) && target !== HOST_DESKTOP_TARGET) ||
+    (target === 'ios' && process.platform !== 'darwin'),
+);
 
 {
-  const p = preflight.loaded.project;
-  const objectCount = (p.scenes ?? []).reduce((n, scene) => n + (scene.objects?.length ?? 0), 0);
-  const assets = p.assets ?? [];
+  const project = bundle.project;
+  const objectCount = project.scenes.reduce((count, scene) => count + (scene.objects?.length ?? 0), 0);
   console.log(
-    `\nContents: ${(p.scenes ?? []).length} scenes / ${objectCount} objects | ` +
-      `${(p.blueprints ?? []).length} blueprints | ${(p.materials ?? []).length} materials | ` +
-      `${(p.particleSystems ?? []).length} particles | ${(p.prefabs ?? []).length} prefabs | ` +
-      `${assets.length} resources`,
+    `\nProfile: ${profile.name} | ${profile.configuration} | ${targets.join(', ')}\n` +
+      `Contents: ${project.scenes.length} scenes / ${objectCount} objects | ` +
+      `${project.blueprints.length} blueprints | ${project.materials.length} materials | ` +
+      `${project.particleSystems.length} particles | ${project.prefabs.length} prefabs | ` +
+      `${project.assets.length} resources`,
+  );
+  console.log(
+    `Runtime parity contract: ${bundle.runtimeContract.version} (` +
+      `${preflight.report.runtimeFeatures.length ? preflight.report.runtimeFeatures.join(', ') : 'core scene runtime'})`,
   );
   for (const warning of preflight.report.warnings) console.warn(`WARNING: ${warning}`);
   if (preflight.report.errors.length) {
     console.error(`\nERROR: Production preflight found ${preflight.report.errors.length} blocking issue(s):`);
     for (const error of preflight.report.errors) console.error(`   - ${error}`);
-    console.error('\nFix these resources in the editor and export a new game.json. No player files were written.\n');
-    process.exit(1);
-  }
-  if (assets.length && !preflight.report.warnings.length) {
-    console.log('OK: All shipped resources are embedded and production-safe.');
+    fail('Fix these runtime/resource references in the editor and export a new game.json. No artifacts were written.');
   }
 }
 
-if (!opts['skip-build']) {
-  run(npmCmd, ['run', opts.fast ? 'build:player:fast' : 'build:player']);
-} else if (!existsSync(distPlayer)) {
-  console.error('\nERROR: --skip-build was set but dist-player/ does not exist. Build it first.\n');
-  process.exit(1);
+const releaseBuildLock = acquireBuildLock();
+process.once('exit', releaseBuildLock);
+mkdirSync(outRoot, { recursive: true });
+for (const target of targets) {
+  rmSync(resolve(outRoot, `${slug}-${target}`), { recursive: true, force: true });
+  rmSync(resolve(outRoot, `${slug}-${target}-staging`), { recursive: true, force: true });
+}
+rmSync(resolve(outRoot, `${slug}-build-report.json`), { force: true });
+if (targets.includes('web')) rmSync(resolve(outRoot, `${slug}-web.zip`), { force: true });
+
+const needsLocalPlayer = targets.some((target) => !targetsToStage.includes(target));
+if (needsLocalPlayer) {
+  if (!opts['skip-build']) {
+    run(npmCmd, ['run', opts.fast ? 'build:player:fast' : 'build:player']);
+  } else if (!existsSync(distPlayer)) {
+    fail('--skip-build was set but dist-player/ does not exist. Build it first.');
+  } else {
+    console.log('\nReusing existing dist-player/ (--skip-build).');
+  }
 } else {
-  console.log('\nReusing existing dist-player/ (--skip-build).');
+  console.log('\nNo local player build is needed; every selected target is being staged for another runner.');
 }
 
 const bundleJs = `window.__NODEFORGE_GAME__ = ${JSON.stringify(bundle)};\n`;
-const webOut = resolve(outRoot, `${slug}-web`);
-rmSync(webOut, { recursive: true, force: true });
-mkdirSync(webOut, { recursive: true });
-cpSync(distPlayer, webOut, { recursive: true });
-writeFileSync(resolve(webOut, 'game-bundle.js'), bundleJs);
-const webIndex = resolve(webOut, 'index.html');
-writeFileSync(webIndex, injectBundleScript(readFileSync(webIndex, 'utf8'), gameName));
-writeFileSync(
-  resolve(webOut, 'README.txt'),
-  `${gameName}\n${'='.repeat(gameName.length)}\n\n` +
-    'Web build: upload/serve this entire folder from any static web server.\n' +
-    'Do not open index.html with file://; browsers block module/resource loading there.\n' +
-    'For a standalone installable application, build the Tauri native target.\n\n' +
-    'Built with Feather Engine. Re-export from the editor to update.\n',
-);
-console.log(`\nOK: Hosted web build -> ${webOut}`);
+const builtTargets = [];
+const stagedTargets = [];
+const outputDirectories = [];
+const buildFailures = new Map();
+const packagingWarnings = [...preflight.report.warnings];
+if (targets.includes('macos')) {
+  packagingWarnings.push(
+    targetsToStage.includes('macos')
+      ? 'The macOS runner must verify Developer ID signing and Apple notarization before public distribution.'
+      : macSigningIdentity === '-'
+      ? 'macOS artifacts are ad-hoc signed and verified for local testing; configure a Developer ID Application identity and Apple notarization for public distribution.'
+      : 'macOS code signing is verified, but Apple notarization is not verified by this exporter.',
+  );
+}
+if (targets.includes('windows')) {
+  packagingWarnings.push('Windows artifact generation does not verify Authenticode signing.');
+}
+if (targets.includes('android') && profile.configuration === 'release') {
+  packagingWarnings.push('Android AAB generation does not verify your Play Store release keystore configuration.');
+}
+const buildReport = {
+  formatVersion: '1.1.0',
+  builtAt: new Date().toISOString(),
+  bundleVersion: bundle.bundleVersion,
+  projectVersion: bundle.project.version,
+  runtimeContract: bundle.runtimeContract,
+  profile,
+  targets,
+  builtTargets,
+  stagedTargets,
+  contents: preflight.report.summary,
+  warnings: packagingWarnings,
+};
 
-/** Bake the game bundle into dist-player, run `fn`, then restore dist-player so repeated
- *  exports never leave game-specific files in the reusable player build. */
+function writeBuildReport(directory) {
+  writeFileSync(resolve(directory, 'build-report.json'), `${JSON.stringify(buildReport, null, 2)}\n`);
+}
+
+let webOut = null;
+if (targets.includes('web')) {
+  webOut = resolve(outRoot, `${slug}-web`);
+  rmSync(webOut, { recursive: true, force: true });
+  mkdirSync(webOut, { recursive: true });
+  cpSync(distPlayer, webOut, { recursive: true });
+  writeFileSync(resolve(webOut, 'game-bundle.js'), bundleJs);
+  const webIndex = resolve(webOut, 'index.html');
+  writeFileSync(webIndex, injectBundleScript(readFileSync(webIndex, 'utf8'), gameName));
+  writeFileSync(
+    resolve(webOut, 'README.txt'),
+    `${gameName}\n${'='.repeat(gameName.length)}\n\n` +
+      `Version ${profile.application.version} (build ${profile.application.buildNumber})\n` +
+      `Launch scene: ${profile.startSceneId}\n\n` +
+      'Upload/serve this entire folder from any static web server. Do not open index.html with\n' +
+      'file:// because browsers block module/resource loading there.\n\n' +
+      'Built with Feather Engine from the same runtime used by editor Play.\n',
+  );
+  builtTargets.push('web');
+  outputDirectories.push(webOut);
+  console.log(`\nOK: Hosted web build -> ${webOut}`);
+}
+
+for (const target of targetsToStage) {
+  const stagedOut = resolve(outRoot, `${slug}-${target}-staging`);
+  mkdirSync(stagedOut, { recursive: true });
+  writeFileSync(resolve(stagedOut, 'game.json'), `${JSON.stringify(bundle, null, 2)}\n`);
+  writeFileSync(resolve(stagedOut, 'export-profile.json'), `${JSON.stringify(profile, null, 2)}\n`);
+  writeFileSync(
+    resolve(stagedOut, 'README.txt'),
+    `${gameName} — ${target} build staging\n\n` +
+      `This target requires a ${target} build runner. Copy game.json to the Feather Engine source tree and run:\n\n` +
+      `  npm run export:build -- --bundle "<path>/game.json" --profile "<path>/export-profile.json" --targets ${target}\n\n` +
+      'For Windows/macOS/Linux you can also use .github/workflows/export-desktop.yml.\n',
+  );
+  stagedTargets.push(target);
+  outputDirectories.push(stagedOut);
+  console.log(`\nSTAGED: ${target} -> ${stagedOut} (package it on a ${target} runner)`);
+}
+
+/** Temporarily bake this exact canonical bundle into the reusable player build. */
 function withBakedBundle(fn) {
   const distIndex = resolve(distPlayer, 'index.html');
   const distBundle = resolve(distPlayer, 'game-bundle.js');
@@ -292,7 +483,7 @@ function withBakedBundle(fn) {
   try {
     writeFileSync(distBundle, bundleJs);
     writeFileSync(distIndex, injectBundleScript(indexBefore, gameName));
-    fn();
+    return fn();
   } finally {
     writeFileSync(distIndex, indexBefore);
     if (hadBundle) writeFileSync(distBundle, bundleBefore);
@@ -300,97 +491,271 @@ function withBakedBundle(fn) {
   }
 }
 
-const PLAYER_CONFIG = 'src-tauri/tauri.player.conf.json';
-
-if (opts.native) {
-  withBakedBundle(() => {
-    run(npmCmd, ['run', 'tauri', '--', 'build', '--config', PLAYER_CONFIG]);
-  });
-
-  const bundleDir = resolve(root, 'src-tauri/target/release/bundle');
-  console.log(`\nOK: Native build complete. Installers are in:\n  ${bundleDir}/`);
-
-  const nativeOut = copyArtifacts(collectInstallers(bundleDir), outRoot, slug, 'native');
-  if (nativeOut) console.log(`OK: Native app copied -> ${nativeOut}`);
-  else console.warn('WARNING: No native installers were found to copy.');
+/** Generate per-game Tauri metadata without mutating the engine/player base configuration. */
+function createPlayerConfig() {
+  const base = JSON.parse(readFileSync(resolve(root, 'src-tauri/tauri.player.conf.json'), 'utf8'));
+  const baseWindow = base.app?.windows?.[0] ?? {};
+  const config = {
+    ...base,
+    productName: profile.application.productName,
+    version: profile.application.version,
+    identifier: profile.application.identifier,
+    build: { ...base.build, frontendDist: distPlayer, beforeBuildCommand: '' },
+    app: {
+      ...base.app,
+      windows: [
+        {
+          ...baseWindow,
+          title: profile.window.title,
+          width: profile.window.width,
+          height: profile.window.height,
+          minWidth: profile.window.minWidth,
+          minHeight: profile.window.minHeight,
+          resizable: profile.window.resizable,
+          fullscreen: profile.window.fullscreen,
+        },
+      ],
+    },
+    bundle: {
+      ...base.bundle,
+      macOS: {
+        ...(base.bundle?.macOS ?? {}),
+        bundleVersion: String(profile.application.buildNumber),
+        ...(macSigningIdentity ? { signingIdentity: macSigningIdentity } : {}),
+      },
+      iOS: { ...(base.bundle?.iOS ?? {}), bundleVersion: String(profile.application.buildNumber) },
+      android: { ...(base.bundle?.android ?? {}), versionCode: profile.application.buildNumber },
+    },
+  };
+  delete config.$schema;
+  const directory = mkdtempSync(join(tmpdir(), 'feather-player-config-'));
+  const path = resolve(directory, 'tauri.player.generated.json');
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+  return { path, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
 }
 
-if (opts.android) {
-  const sdk = findAndroidSdk();
-  const ndk = findAndroidNdk(sdk);
-  if (!sdk || !ndk) {
-    console.error(
-      '\nERROR: Android SDK/NDK not found. Install Android Studio (with an NDK via the SDK Manager)\n' +
-        '  or set ANDROID_HOME / NDK_HOME. Run `npm run doctor` for a full checklist.\n',
-    );
-    process.exit(1);
+/**
+ * Tauri mobile projects are generated around an application id. Keep one ignored cache per game,
+ * swapping it into src-tauri/gen only for the build, so exporting one project can never stamp its
+ * package id over another project (or over the engine's checked-in iOS scaffold).
+ */
+function withMobileProject(platform, fn) {
+  const generated = resolve(root, 'src-tauri/gen', platform);
+  const cache = resolve(
+    root,
+    'src-tauri/target/nodeforge-mobile',
+    profile.application.identifier,
+    platform,
+  );
+  const backup = resolve(root, 'src-tauri/target/nodeforge-mobile', `.restore-${platform}`);
+  mkdirSync(dirname(cache), { recursive: true });
+  // Recover the engine's original scaffold after an interrupted earlier export. The generated
+  // project may be partial, so the preserved backup always wins.
+  if (existsSync(backup)) {
+    rmSync(generated, { recursive: true, force: true });
+    renameSync(backup, generated);
   }
-  const androidEnv = {
-    ANDROID_HOME: process.env.ANDROID_HOME || sdk,
-    NDK_HOME: process.env.NDK_HOME || ndk,
-  };
+  if (existsSync(generated)) renameSync(generated, backup);
+  const hadCache = existsSync(cache);
+  if (hadCache) renameSync(cache, generated);
+  let keepGenerated = hadCache;
+  try {
+    return fn({
+      needsInit: !existsSync(generated),
+      markInitialized: () => {
+        keepGenerated = true;
+      },
+    });
+  } finally {
+    if (existsSync(generated)) {
+      if (keepGenerated) renameSync(generated, cache);
+      else rmSync(generated, { recursive: true, force: true });
+    }
+    if (existsSync(backup)) renameSync(backup, generated);
+  }
+}
 
-  if (!existsSync(resolve(root, 'src-tauri/gen/android'))) {
-    console.log('\nInitializing the Android project (first run only)…');
-    run(npmCmd, ['run', 'tauri', '--', 'android', 'init', '--ci', '--config', PLAYER_CONFIG], androidEnv);
+const nativeTarget = targets.find((target) => target === HOST_DESKTOP_TARGET);
+const buildIosHere = targets.includes('ios') && process.platform === 'darwin';
+const needsTauri = Boolean(nativeTarget || targets.includes('android') || buildIosHere);
+const playerConfig = needsTauri ? createPlayerConfig() : null;
+const buildMode = profile.configuration === 'debug' ? 'debug' : 'release';
+const platformReport = needsTauri ? diagnosePlatforms() : null;
+const platformReadiness = (target) => platformReport?.platforms.find((entry) => entry.id === target);
+const unmetRequirements = (target) =>
+  platformReadiness(target)?.requirements.filter((requirement) => !requirement.ok).map((requirement) => requirement.label) ?? [];
+const recordFailure = (target, error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  buildFailures.set(target, message);
+  console.error(`\nFAILED: ${target} — ${message}`);
+};
+
+try {
+  if (nativeTarget && playerConfig) {
+    try {
+      const readiness = platformReadiness(nativeTarget);
+      if (readiness && readiness.status !== 'ready') {
+        throw new Error(
+          `${nativeTarget} toolchain is not ready: ${unmetRequirements(nativeTarget).join(', ') || readiness.notes}. ` +
+            'Run `npm run doctor` for setup instructions.',
+        );
+      }
+      const args = ['run', 'tauri', '--', 'build', '--config', playerConfig.path];
+      if (profile.configuration === 'debug') args.push('--debug');
+      const nativeTargetDir = resolve(
+        root,
+        'src-tauri/target/nodeforge-exports',
+        profile.application.identifier,
+      );
+      const nativeBundleDir = resolve(nativeTargetDir, buildMode, 'bundle');
+      // Keep Cargo's compiled dependency cache, but remove old installers so a rename/version build can
+      // never copy a stale artifact that happens to share this application's stable id.
+      rmSync(nativeBundleDir, { recursive: true, force: true });
+      withBakedBundle(() => run(npmCmd, args, { CARGO_TARGET_DIR: nativeTargetDir }));
+
+      const installers = findArtifacts(nativeBundleDir, /\.(dmg|app|msi|exe|AppImage|deb|rpm)$/i);
+      if (nativeTarget === 'macos') verifyMacAppSignatures(installers);
+      const nativeOut = copyArtifacts(installers, outRoot, slug, nativeTarget);
+      if (!nativeOut) throw new Error(`No ${nativeTarget} installer was found under ${nativeBundleDir}.`);
+      builtTargets.push(nativeTarget);
+      outputDirectories.push(nativeOut);
+      console.log(`\nOK: ${nativeTarget} app -> ${nativeOut}`);
+    } catch (error) {
+      recordFailure(nativeTarget, error);
+    }
   }
 
-  withBakedBundle(() => {
-    run(npmCmd, ['run', 'tauri', '--', 'android', 'build', '--apk', '--config', PLAYER_CONFIG], androidEnv);
-  });
+  if (targets.includes('android') && playerConfig) {
+    try {
+      const readiness = platformReadiness('android');
+      if (readiness && readiness.status !== 'ready') {
+        throw new Error(
+          `Android toolchain is not ready: ${unmetRequirements('android').join(', ') || readiness.notes}. ` +
+            'Run `npm run doctor` for setup instructions.',
+        );
+      }
+      const sdk = findAndroidSdk();
+      const ndk = findAndroidNdk(sdk);
+      if (!sdk || !ndk) throw new Error('Android SDK/NDK not found. Run `npm run doctor` for setup instructions.');
+      const androidEnv = {
+        ANDROID_HOME: process.env.ANDROID_HOME || sdk,
+        NDK_HOME: process.env.NDK_HOME || ndk,
+      };
+      withMobileProject('android', ({ needsInit, markInitialized }) => {
+        if (needsInit) {
+          console.log('\nInitializing the Android project for this application id…');
+          run(npmCmd, ['run', 'tauri', '--', 'android', 'init', '--ci', '--config', playerConfig.path], androidEnv);
+          markInitialized();
+        }
+        const outputs = resolve(root, 'src-tauri/gen/android/app/build/outputs');
+        rmSync(outputs, { recursive: true, force: true });
+        const args = ['run', 'tauri', '--', 'android', 'build'];
+        if (profile.configuration === 'debug') args.push('--debug', '--apk');
+        else args.push('--aab');
+        args.push('--config', playerConfig.path);
+        withBakedBundle(() => run(npmCmd, args, androidEnv));
 
-  const outputs = resolve(root, 'src-tauri/gen/android/app/build/outputs');
-  const apks = findArtifacts(outputs, /\.(apk|aab)$/i);
-  const androidOut = copyArtifacts(apks, outRoot, slug, 'android');
-  if (androidOut) {
-    console.log(`\nOK: Android build copied -> ${androidOut}`);
-    if (apks.some((file) => /unsigned/i.test(basename(file)))) {
-      console.log(
-        '  NOTE: the APK is unsigned. For sideloading/testing, configure a debug keystore, or set up\n' +
-          '  release signing for the Play Store: https://v2.tauri.app/distribute/sign/android/',
+        const packages = findArtifacts(outputs, /\.(apk|aab)$/i);
+        const androidOut = copyArtifacts(packages, outRoot, slug, 'android');
+        if (!androidOut) throw new Error(`No Android package was found under ${outputs}.`);
+        builtTargets.push('android');
+        outputDirectories.push(androidOut);
+        console.log(`\nOK: Android ${profile.configuration === 'debug' ? 'APK' : 'AAB'} -> ${androidOut}`);
+      });
+    } catch (error) {
+      recordFailure('android', error);
+    }
+  }
+
+  if (buildIosHere && playerConfig) {
+    try {
+      withMobileProject('apple', ({ needsInit, markInitialized }) => {
+        if (needsInit) {
+          console.log('\nInitializing the iOS project for this application id…');
+          run(npmCmd, ['run', 'tauri', '--', 'ios', 'init', '--ci', '--config', playerConfig.path]);
+          markInitialized();
+        }
+        const readiness = platformReadiness('ios');
+        if (readiness && readiness.status !== 'ready') {
+          throw new Error(
+            `iOS toolchain is not ready: ${unmetRequirements('ios').join(', ') || readiness.notes}. ` +
+              'Run `npm run doctor`, then configure the cached Xcode project signing.',
+          );
+        }
+        if (profile.configuration === 'release' && !hasAppleCodeSigningIdentity('release')) {
+          throw new Error(
+            'iOS Release requires an Apple Distribution signing identity and provisioning team. ' +
+              'Install it in Xcode or use a Development profile for device testing.',
+          );
+        }
+        const exportMethod = profile.configuration === 'debug' ? 'debugging' : 'app-store-connect';
+        for (const stalePackage of findArtifacts(resolve(root, 'src-tauri/gen/apple'), /\.ipa$/i)) {
+          rmSync(stalePackage, { force: true });
+        }
+        const args = [
+          'run',
+          'tauri',
+          '--',
+          'ios',
+          'build',
+          '--build-number',
+          String(profile.application.buildNumber),
+          '--export-method',
+          exportMethod,
+          '--config',
+          playerConfig.path,
+        ];
+        if (profile.configuration === 'debug') args.push('--debug');
+        withBakedBundle(() => run(npmCmd, args));
+
+        const packages = findArtifacts(resolve(root, 'src-tauri/gen/apple'), /\.ipa$/i);
+        const iosOut = copyArtifacts(packages, outRoot, slug, 'ios');
+        if (!iosOut) throw new Error('The iOS build completed without producing an IPA.');
+        builtTargets.push('ios');
+        outputDirectories.push(iosOut);
+        console.log(`\nOK: iOS IPA -> ${iosOut}`);
+      });
+    } catch (error) {
+      recordFailure('ios', error);
+      console.warn(
+        `  Per-game Xcode sources are cached under src-tauri/target/nodeforge-mobile/${profile.application.identifier}/apple.\n` +
+          '  Configure Signing & Capabilities there, then export again.',
       );
     }
-  } else {
-    console.warn('WARNING: No .apk/.aab artifacts were found under src-tauri/gen/android.');
   }
+} finally {
+  playerConfig?.cleanup();
 }
 
-if (opts.ios) {
-  if (process.platform !== 'darwin') {
-    console.error('\nERROR: iOS builds require macOS with Xcode installed.\n');
-    process.exit(1);
-  }
+const failedTargets = targets.filter(
+  (target) => !builtTargets.includes(target) && !stagedTargets.includes(target),
+);
+buildReport.status = failedTargets.length ? 'incomplete' : stagedTargets.length ? 'staged' : 'complete';
+buildReport.failedTargets = failedTargets;
+buildReport.errors = [...buildFailures.entries()].map(([target, message]) => `${target}: ${message}`);
+writeFileSync(resolve(outRoot, `${slug}-build-report.json`), `${JSON.stringify(buildReport, null, 2)}\n`);
+for (const directory of outputDirectories) writeBuildReport(directory);
+if (opts.zip) {
+  if (webOut) zipFolder(webOut);
+  else console.warn('\nWARNING: --zip was ignored because Web is not selected.');
+}
+if (opts.open) openPath(webOut ?? outRoot);
 
-  if (!existsSync(resolve(root, 'src-tauri/gen/apple'))) {
-    console.log('\nInitializing the iOS Xcode project (first run only)…');
-    run(npmCmd, ['run', 'tauri', '--', 'ios', 'init', '--ci', '--config', PLAYER_CONFIG]);
-  }
-
-  let iosBuildFailed = false;
-  withBakedBundle(() => {
-    try {
-      run(npmCmd, ['run', 'tauri', '--', 'ios', 'build', '--export-method', 'debugging', '--config', PLAYER_CONFIG]);
-    } catch {
-      iosBuildFailed = true;
-    }
-  });
-
-  const ipas = findArtifacts(resolve(root, 'src-tauri/gen/apple'), /\.ipa$/i);
-  const iosOut = copyArtifacts(ipas, outRoot, slug, 'ios');
-  if (iosOut) {
-    console.log(`\nOK: iOS build copied -> ${iosOut}`);
-  } else {
-    console.warn(
-      `\n${iosBuildFailed ? 'The iOS command-line build did not finish (usually a signing-team issue).' : 'No .ipa was produced.'}\n` +
-        '  The Xcode project is ready: open src-tauri/gen/apple in Xcode, pick your team under\n' +
-        '  Signing & Capabilities, then build/run on a device or simulator.\n' +
-        '  (A free Apple ID works for on-device testing.)',
-    );
-    if (iosBuildFailed) process.exitCode = 1;
-  }
+if (failedTargets.length) {
+  console.error(
+    `\nIncomplete export. Built: ${builtTargets.join(', ') || 'none'}. ` +
+      `Failed: ${failedTargets.join(', ')}. Runtime contract ${bundle.runtimeContract.version} verified.\n`,
+  );
+  process.exitCode = 1;
+} else if (stagedTargets.length) {
+  console.log(
+    `\nDone. Built: ${builtTargets.join(', ') || 'none'}. ` +
+      `Staged for target runners: ${stagedTargets.join(', ')}. ` +
+      `Runtime contract ${bundle.runtimeContract.version} verified.\n`,
+  );
+} else {
+  console.log(`\nDone. Built: ${builtTargets.join(', ')}. Runtime contract ${bundle.runtimeContract.version} verified.\n`);
 }
 
-if (opts.zip) zipFolder(webOut);
-if (opts.open) openPath(webOut);
-
-console.log('\nDone. Share the web folder/zip, or install the native app from the native output folder.\n');
+process.removeListener('exit', releaseBuildLock);
+releaseBuildLock();
