@@ -56,6 +56,17 @@ describe('tree generation', () => {
     }
   });
 
+  it('packs a stylized clusters canopy into a crown volume', () => {
+    const spec = treeSpecFromArchetype('broadleaf', 'oak');
+    expect(spec.foliage.strategy).toBe('clusters');
+    const generated = generateTree(spec, 11);
+    expect(generated.foliage).toBeTruthy();
+    expect(generated.triangles).toBeGreaterThan(100);
+    const box = generated.bounds;
+    expect(box.max.x - box.min.x).toBeGreaterThan(spec.trunk.baseRadius * 2);
+    expect(box.max.y - box.min.y).toBeGreaterThan(spec.trunk.height * 0.5);
+  });
+
   it('keeps aTrunkT inside 0..1 so the sever partition is well defined', () => {
     const generated = generateTree(treeSpecFromArchetype('conifer', 'pine'), 9);
     const t = generated.bark.getAttribute('aTrunkT');

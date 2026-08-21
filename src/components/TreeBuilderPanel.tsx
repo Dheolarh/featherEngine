@@ -185,6 +185,7 @@ export function TreeBuilderPanel() {
               <RangeField label="Lean" value={spec.trunk.lean} min={-45} max={45} step={1} onChange={(lean) => patch({ trunk: { ...spec.trunk, lean } })} />
               <RangeField label="Curl" value={spec.trunk.curl} min={0} max={1} step={0.01} onChange={(curl) => patch({ trunk: { ...spec.trunk, curl } })} />
               <RangeField label="Root Flare" value={spec.trunk.flare} min={0} max={1} step={0.01} onChange={(flare) => patch({ trunk: { ...spec.trunk, flare } })} />
+              <RangeField label="Bark Gnarl" value={spec.trunk.gnarl} min={0} max={1} step={0.01} onChange={(gnarl) => patch({ trunk: { ...spec.trunk, gnarl } })} />
 
               <h4 className="inspector-subhead">Branches</h4>
               <RangeField label="Levels" value={spec.branches.levels} min={0} max={3} step={1} onChange={(levels) => patch({ branches: { ...spec.branches, levels } })} />
@@ -197,7 +198,8 @@ export function TreeBuilderPanel() {
               <label className="node-field">
                 <span>Style</span>
                 <select value={spec.foliage.strategy} onChange={(event) => patch({ foliage: { ...spec.foliage, strategy: event.target.value as TreeSpec['foliage']['strategy'] } })}>
-                  <option value="blob">Blobs</option>
+                  <option value="clusters">Stylized clusters</option>
+                  <option value="blob">Soft blobs</option>
                   <option value="cards">Leaf cards</option>
                   <option value="skirt">Conifer skirt</option>
                   <option value="fronds">Palm fronds</option>
@@ -208,7 +210,35 @@ export function TreeBuilderPanel() {
               <RangeField label="Size" value={spec.foliage.size} min={0.05} max={5} step={0.05} onChange={(size) => patch({ foliage: { ...spec.foliage, size } })} />
               <RangeField label="Density" value={spec.foliage.density} min={0} max={10} step={0.5} onChange={(density) => patch({ foliage: { ...spec.foliage, density } })} />
               <RangeField label="Droop" value={spec.foliage.droop} min={0} max={1} step={0.01} onChange={(droop) => patch({ foliage: { ...spec.foliage, droop } })} />
-
+              {(spec.foliage.strategy === 'clusters' || spec.foliage.strategy === 'blob' || spec.foliage.strategy === 'cards') && (
+                <>
+                  <RangeField
+                    label="Crown Radius"
+                    value={spec.foliage.crownRadius}
+                    min={0.1}
+                    max={1.5}
+                    step={0.01}
+                    onChange={(crownRadius) => patch({ foliage: { ...spec.foliage, crownRadius } })}
+                  />
+                  <RangeField
+                    label="Crown Lift"
+                    value={spec.foliage.crownLift}
+                    min={0.2}
+                    max={1}
+                    step={0.01}
+                    onChange={(crownLift) => patch({ foliage: { ...spec.foliage, crownLift } })}
+                  />
+                  <RangeField
+                    label="Crown Fill"
+                    value={spec.foliage.crownFill}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    onChange={(crownFill) => patch({ foliage: { ...spec.foliage, crownFill } })}
+                  />
+                  <p className="field-hint">Crown fill paints an Unreal-style canopy volume; tip anchors keep the foliage tied to branches.</p>
+                </>
+              )}
               <h4 className="inspector-subhead">Colour</h4>
               <label className="node-field">
                 <span>Bark</span>

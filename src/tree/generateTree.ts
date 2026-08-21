@@ -3,18 +3,19 @@ import type { TreeSpec } from '../types';
 import { treeRng } from './treeSpec';
 
 /**
- * Parametric tree geometry generation: spec + seed -> BufferGeometry.
+ * Parametric tree geometry: spec + seed → BufferGeometry.
  *
- * Pipeline: buildSkeleton -> sweepBark -> emitFoliage. Bark and foliage come out as SEPARATE geometries
- * because they need different materials (opaque bark vs alpha-cut, translucent canopy).
+ * Pipeline: buildSkeleton → sweepBark → emitFoliage. Bark and foliage stay SEPARATE geometries
+ * (opaque bark vs alpha-cut / translucent canopy).
  *
- * Every vertex carries three custom channels the tree material and the chop system rely on:
- *   aWind    0..n  how much this vertex sways — distance from the root, curved by the spec's stiffness
- *   aTrunkT  0..1  the height ALONG THE TRUNK that this vertex's branch is rooted at. This is what makes
- *                  felling work: severing at height h is just "vertices below h stay, above h fall", and
- *                  because a branch inherits its trunk attach height, a whole limb travels with the log
- *                  instead of being sliced through the middle.
- *   color    rgb   baked ramp + ambient occlusion (canopy interior darkening, trunk base darkening)
+ * Placement follows an Unreal/SpeedTree stylized model: paint a crown ellipsoid, then hang
+ * clusters off branch tips — not tip-only confetti. Bark gets deterministic gnarl so trunks
+ * read as wood, not extruded pipes.
+ *
+ * Custom vertex channels (material + chop system):
+ *   aWind    sway weight from root distance, shaped by stiffness
+ *   aTrunkT  trunk height fraction this limb is rooted at (felling partition)
+ *   color    baked ramp + canopy AO
  */
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -43,8 +44,6 @@ export interface GeneratedTree {
 }
 
 // --- mesh accumulator ---------------------------------------------------------------------------------
-// Building into flat arrays and indexing by hand beats merging N small BufferGeometries: no per-primitive
-// allocation, and custom attributes can't silently mismatch between merge inputs.
 
 class MeshBuilder {
   positions: number[] = [];
@@ -79,14 +78,20 @@ class MeshBuilder {
   }
 
   /**
-   * Bake an existing geometry (a cone, an icosphere, a plane) in under a transform.
+   * Bake an existing geometry under a transform.
    *
-   * `normalOverride` replaces every vertex normal with one shared direction. Leaf cards need this: lit by
-   * their own face normals, each quad in a cluster shades independently and the canopy reads as confetti
-   * rather than as one soft mass. Pointing them all outward from the canopy makes the cluster light as a
-   * single volume.
+   * `normalOverride` replaces every vertex normal with one shared direction. Leaf cards need this:
+   * independent face normals shade each quad separately and the canopy reads as confetti; a shared
+   * outward normal makes the cluster light as one soft volume.
    */
-  addGeometry(geo: THREE.BufferGeometry, matrix: THREE.Matrix4, color: THREE.Color, wind: number, trunkT: number, normalOverride?: THREE.Vector3): void {
+  addGeometry(
+    geo: THREE.BufferGeometry,
+    matrix: THREE.Matrix4,
+    color: THREE.Color,
+    wind: number,
+    trunkT: number,
+    normalOverride?: THREE.Vector3,
+  ): void {
     const pos = geo.getAttribute('position');
     const nor = geo.getAttribute('normal');
     const uv = geo.getAttribute('uv');
@@ -127,25 +132,30 @@ class MeshBuilder {
 
 /** Rotate `dir` away from its axis by `pitch`, then spin that offset around `dir` by `yaw`. */
 function offsetDirection(dir: THREE.Vector3, pitch: number, yaw: number): THREE.Vector3 {
-  // Any vector not parallel to dir works as the reference for "sideways".
   const reference = Math.abs(dir.y) > 0.95 ? new THREE.Vector3(1, 0, 0) : UP;
   const side = new THREE.Vector3().crossVectors(dir, reference).normalize();
   return dir.clone().applyAxisAngle(side, pitch).applyAxisAngle(dir, yaw).normalize();
 }
 
 /**
- * Build the curved path of one branch. Curl bends it into an S rather than leaving it a straight stick,
- * and every consumer samples THIS curve — sampling a straight line for child placement while sweeping a
- * curved one for the bark is what makes branches visibly detach from the trunk.
+ * Curved branch path. Curl bends it into an S; gravity sags (or lifts) the tip.
+ * Every consumer samples THIS curve — sampling a straight line for children while sweeping a curved
+ * bark is what makes branches visibly detach from the trunk.
  */
-function branchPath(start: THREE.Vector3, dir: THREE.Vector3, length: number, curl: number, gravity: number, rand: () => number): THREE.CatmullRomCurve3 {
+function branchPath(
+  start: THREE.Vector3,
+  dir: THREE.Vector3,
+  length: number,
+  curl: number,
+  gravity: number,
+  rand: () => number,
+): THREE.CatmullRomCurve3 {
   const points: THREE.Vector3[] = [];
   const segments = 4;
   const side = offsetDirection(dir, Math.PI / 2, rand() * Math.PI * 2);
   for (let i = 0; i <= segments; i += 1) {
     const t = i / segments;
     const p = start.clone().addScaledVector(dir, length * t);
-    // S-curve across the branch axis, plus gravity sagging (or lifting) the far end.
     p.addScaledVector(side, Math.sin(t * Math.PI) * curl * length * 0.28);
     p.y += -gravity * length * 0.3 * t * t;
     points.push(p);
@@ -190,15 +200,17 @@ function grow(branch: TreeBranch, spec: TreeSpec, rand: () => number, out: TreeB
     dir.y += b.gravity * 0.45 * (1 - t);
     dir.normalize();
 
-    const length = branch.length * b.lengthRatio * (0.75 + rand() * 0.5);
+    // Height falloff: upper limbs are shorter so the silhouette tapers like a SpeedTree crown.
+    const heightFalloff = branch.level === 0 ? THREE.MathUtils.lerp(1.05, 0.55, t) : 1;
+    const length = branch.length * b.lengthRatio * heightFalloff * (0.78 + rand() * 0.44);
     const child: TreeBranch = {
       path: branchPath(start, dir, length, branch.level === 0 ? spec.trunk.curl * b.curlPerLevel : b.curlPerLevel * 0.5, b.gravity, rand),
       length,
       radius: branch.radius * b.radiusRatio,
       level: branch.level + 1,
       distFromRoot: branch.distFromRoot + branch.length * t,
-      // Level-1 branches record where they meet the trunk; deeper levels inherit it, so a whole limb
-      // shares one trunk height and therefore always falls (or stays) as a single piece when felled.
+      // Level-1 branches record where they meet the trunk; deeper levels inherit it so a whole limb
+      // shares one trunk height and falls (or stays) as one piece when felled.
       trunkT: branch.level === 0 ? t : branch.trunkT,
       parent: branch,
       children: [],
@@ -227,17 +239,24 @@ function rampColor(ramp: string[], t: number, target: THREE.Color): THREE.Color 
   return target.set(ramp[i]).lerp(new THREE.Color(ramp[i + 1]), scaled - i);
 }
 
-function sweepBark(branches: TreeBranch[], spec: TreeSpec, maxDist: number, builder: MeshBuilder): void {
+/** Cheap deterministic radial noise — stable across rebuilds because it never touches Math.random. */
+function gnarlOffset(rand: () => number, amount: number): number {
+  if (amount <= 0) return 1;
+  // Two octaves so bark reads as irregular wood rather than a single sine corrugation.
+  return 1 + (rand() - 0.5) * 2 * amount * 0.55 + (rand() - 0.5) * 2 * amount * 0.2;
+}
+
+function sweepBark(branches: TreeBranch[], spec: TreeSpec, maxDist: number, rand: () => number, builder: MeshBuilder): void {
   const color = new THREE.Color();
   const p = new THREE.Vector3();
   const normal = new THREE.Vector3();
 
   for (const branch of branches) {
-    // Twigs get fewer sides — nobody resolves the tessellation on a level-2 branch.
     const radial = Math.max(3, Math.round(spec.trunk.radialSegments / (branch.level + 1)));
     const rings = branch.level === 0 ? spec.trunk.heightSegments : Math.max(3, Math.round(spec.trunk.heightSegments / 2));
     const frames = branch.path.computeFrenetFrames(rings, false);
     const ringStart: number[] = [];
+    const gnarlAmount = branch.level === 0 ? spec.trunk.gnarl : spec.trunk.gnarl * 0.45;
 
     for (let r = 0; r <= rings; r += 1) {
       const t = r / rings;
@@ -245,21 +264,20 @@ function sweepBark(branches: TreeBranch[], spec: TreeSpec, maxDist: number, buil
       const N = frames.normals[r];
       const B = frames.binormals[r];
       let radius = branch.radius * (1 - spec.trunk.taper * t);
-      // Root flare: a trunk that meets the ground as a straight cylinder looks like a pipe.
       if (branch.level === 0) radius *= 1 + spec.trunk.flare * Math.pow(1 - t, 3);
 
       const dist = branch.distFromRoot + branch.length * t;
       const wind = windWeight(spec, branch.level, dist, maxDist);
       const trunkT = branch.level === 0 ? t : branch.trunkT;
       rampColor(spec.look.barkRamp, t * 0.6 + branch.level * 0.2, color);
-      // Darken where the trunk meets the ground and inside the canopy — cheap contact occlusion.
       if (branch.level === 0) color.multiplyScalar(THREE.MathUtils.lerp(1 - spec.look.aoStrength * 0.5, 1, Math.min(1, t * 4)));
 
       const first = builder.vertexCount;
       for (let s = 0; s < radial; s += 1) {
         const a = (s / radial) * Math.PI * 2;
+        const localRadius = radius * gnarlOffset(rand, gnarlAmount);
         normal.copy(N).multiplyScalar(Math.cos(a)).addScaledVector(B, Math.sin(a)).normalize();
-        p.copy(center).addScaledVector(normal, radius);
+        p.copy(center).addScaledVector(normal, localRadius);
         builder.vertex(p, normal, s / radial, t, color, wind, trunkT);
       }
       ringStart.push(first);
@@ -273,7 +291,7 @@ function sweepBark(branches: TreeBranch[], spec: TreeSpec, maxDist: number, buil
       }
     }
 
-    // Cap the tip. An open tube end catches light wrong at grazing angles and shows the hollow interior.
+    // Cap the tip so grazing light doesn't reveal a hollow tube.
     const tipT = 1;
     const tip = branch.path.getPoint(tipT);
     const tipDir = branch.path.getTangent(tipT).normalize();
@@ -289,35 +307,73 @@ function sweepBark(branches: TreeBranch[], spec: TreeSpec, maxDist: number, buil
 
 // --- foliage ------------------------------------------------------------------------------------------
 
-// Built once and reused for every cluster — these are baked into the accumulator, never rendered directly.
 const BLOB_GEO = new THREE.IcosahedronGeometry(1, 1);
+const CLUSTER_GEO = new THREE.IcosahedronGeometry(1, 0); // chunkier, reads more stylized at distance
 const CARD_GEO = new THREE.PlaneGeometry(1, 1);
 
-function terminalBranches(branches: TreeBranch[]): TreeBranch[] {
+/** Tips plus near-tips (parents of tips) so the canopy fills instead of floating above bare limbs. */
+function foliageAnchors(branches: TreeBranch[]): TreeBranch[] {
   const tips = branches.filter((b) => b.children.length === 0);
-  return tips.length ? tips : branches;
+  if (!tips.length) return branches;
+  const near = new Set<TreeBranch>(tips);
+  for (const tip of tips) {
+    if (tip.parent && tip.parent.level > 0) near.add(tip.parent);
+  }
+  return [...near];
+}
+
+interface CrownVolume {
+  center: THREE.Vector3;
+  radiusX: number;
+  radiusY: number;
+  radiusZ: number;
+}
+
+function crownVolume(trunk: TreeBranch, spec: TreeSpec): CrownVolume {
+  const lift = spec.foliage.crownLift;
+  const center = trunk.path.getPoint(lift);
+  const r = Math.max(0.15, spec.trunk.height * spec.foliage.crownRadius);
+  // Slightly flatter than a sphere — broadleaf canopies read wider than tall.
+  return { center, radiusX: r, radiusY: r * 0.72, radiusZ: r };
+}
+
+/** Sample a point inside the crown ellipsoid (rejection-ish via cubed radius for denser core). */
+function sampleCrown(volume: CrownVolume, rand: () => number, out: THREE.Vector3): THREE.Vector3 {
+  const u = rand();
+  const v = rand();
+  const w = rand();
+  const theta = u * Math.PI * 2;
+  const phi = Math.acos(2 * v - 1);
+  const rho = Math.cbrt(w); // denser near centre = softer silhouette core
+  const sinPhi = Math.sin(phi);
+  out.set(
+    volume.center.x + rho * volume.radiusX * sinPhi * Math.cos(theta),
+    volume.center.y + rho * volume.radiusY * Math.cos(phi) - volume.radiusY * 0.15 * (1 - rho), // slight droop bias
+    volume.center.z + rho * volume.radiusZ * sinPhi * Math.sin(theta),
+  );
+  return out;
 }
 
 function emitFoliage(branches: TreeBranch[], spec: TreeSpec, maxDist: number, rand: () => number, builder: MeshBuilder): void {
   const f = spec.foliage;
   if (f.strategy === 'none' || f.density <= 0) return;
 
-  const tips = terminalBranches(branches);
-  // Canopy centroid/radius drive ambient occlusion: clusters deep inside the crown are darker than the
-  // ones catching sky at the silhouette edge.
-  const centroid = new THREE.Vector3();
-  for (const b of tips) centroid.add(b.path.getPoint(1));
-  centroid.divideScalar(Math.max(1, tips.length));
-  let canopyRadius = 0.001;
-  for (const b of tips) canopyRadius = Math.max(canopyRadius, b.path.getPoint(1).distanceTo(centroid));
+  const trunk = branches[0];
+  const anchors = foliageAnchors(branches);
+  const volume = crownVolume(trunk, spec);
+
+  const centroid = volume.center.clone();
+  let canopyRadius = Math.max(volume.radiusX, volume.radiusY, volume.radiusZ);
+  for (const b of anchors) canopyRadius = Math.max(canopyRadius, b.path.getPoint(1).distanceTo(centroid));
 
   const color = new THREE.Color();
   const matrix = new THREE.Matrix4();
   const quat = new THREE.Quaternion();
   const scale = new THREE.Vector3();
+  const scratch = new THREE.Vector3();
 
   const shade = (position: THREE.Vector3, edgeBias = 0) => {
-    const d = position.distanceTo(centroid) / canopyRadius;
+    const d = position.distanceTo(centroid) / Math.max(0.001, canopyRadius);
     const ao = THREE.MathUtils.lerp(1 - spec.look.aoStrength, 1, THREE.MathUtils.smoothstep(d + edgeBias, 0.15, 0.9));
     rampColor(spec.look.foliageRamp, THREE.MathUtils.clamp(d, 0, 1), color);
     color.multiplyScalar(ao);
@@ -325,103 +381,264 @@ function emitFoliage(branches: TreeBranch[], spec: TreeSpec, maxDist: number, ra
   };
 
   if (f.strategy === 'skirt') {
-    // Stacked cones down the trunk. The two details that sell it: a jagged lower rim (a clean cone reads
-    // as a traffic cone) and the outer ring sagging under `droop`.
-    const trunk = branches[0];
-    const rings = f.skirtRings ?? 8;
-    for (let i = 0; i < rings; i += 1) {
-      const t = THREE.MathUtils.lerp(spec.branches.startHeight, 0.98, i / Math.max(1, rings - 1));
-      const center = trunk.path.getPoint(t);
-      const shrink = 1 - i / rings;
-      const radius = spec.trunk.height * 0.22 * f.size * (0.35 + shrink * 0.75);
-      const height = spec.trunk.height * 0.17 * f.size * (0.5 + shrink * 0.6);
-      const cone = new THREE.ConeGeometry(radius, height, Math.max(5, 7 - Math.floor(i / 3)), 1, true);
-      const pos = cone.getAttribute('position');
-      const v = new THREE.Vector3();
-      for (let k = 0; k < pos.count; k += 1) {
-        v.fromBufferAttribute(pos, k);
-        if (v.y < 0) {
-          const jag = 1 + (rand() - 0.5) * 2 * (f.skirtJagged ?? 0.35);
-          v.x *= jag;
-          v.z *= jag;
-          v.y -= height * f.droop * 0.5;
-        }
-        pos.setXYZ(k, v.x, v.y, v.z);
-      }
-      cone.computeVertexNormals();
-      matrix.compose(
-        center.clone().setY(center.y + height * 0.3),
-        quat.setFromAxisAngle(UP, THREE.MathUtils.degToRad(37 * i)),
-        scale.set(1, 1, 1),
-      );
-      const dist = trunk.length * t;
-      builder.addGeometry(cone, matrix, shade(center, 0.35), windWeight(spec, 1, dist, maxDist), t);
-      cone.dispose();
-    }
+    emitSkirt(trunk, spec, maxDist, rand, builder, shade);
     return;
   }
+  if (f.strategy === 'fronds') {
+    emitFronds(trunk, anchors, spec, maxDist, rand, builder, shade, matrix, quat, scale);
+    return;
+  }
+  if (f.strategy === 'strands') {
+    emitStrands(anchors, spec, maxDist, rand, builder, shade);
+    return;
+  }
+  if (f.strategy === 'cards') {
+    emitCards(anchors, volume, spec, maxDist, rand, builder, shade, matrix, quat, scale, scratch, centroid);
+    return;
+  }
+  if (f.strategy === 'clusters') {
+    emitClusters(anchors, volume, spec, maxDist, rand, builder, shade, matrix, quat, scale, scratch);
+    return;
+  }
+  // default: blob
+  emitBlobs(anchors, volume, spec, maxDist, rand, builder, shade, matrix, quat, scale, scratch);
+}
 
-  for (const branch of tips) {
+type ShadeFn = (position: THREE.Vector3, edgeBias?: number) => THREE.Color;
+
+/** Conifer skirt: overlapping cones with jagged rims — less traffic-cone, more UE pine. */
+function emitSkirt(trunk: TreeBranch, spec: TreeSpec, maxDist: number, rand: () => number, builder: MeshBuilder, shade: ShadeFn): void {
+  const f = spec.foliage;
+  const rings = f.skirtRings ?? 9;
+  const matrix = new THREE.Matrix4();
+  const quat = new THREE.Quaternion();
+  const scale = new THREE.Vector3(1, 1, 1);
+
+  for (let i = 0; i < rings; i += 1) {
+    const t = THREE.MathUtils.lerp(spec.branches.startHeight * 0.85, 0.98, i / Math.max(1, rings - 1));
+    const center = trunk.path.getPoint(t);
+    const shrink = 1 - i / rings;
+    // Overlap consecutive rings so gaps don't read as stacked discs.
+    const radius = spec.trunk.height * 0.24 * f.size * (0.32 + shrink * 0.78);
+    const height = spec.trunk.height * 0.2 * f.size * (0.48 + shrink * 0.62);
+    const sides = Math.max(6, 9 - Math.floor(i / 3));
+    const cone = new THREE.ConeGeometry(radius, height, sides, 1, true);
+    const pos = cone.getAttribute('position');
+    const v = new THREE.Vector3();
+    for (let k = 0; k < pos.count; k += 1) {
+      v.fromBufferAttribute(pos, k);
+      if (v.y < 0) {
+        const jag = 1 + (rand() - 0.5) * 2 * (f.skirtJagged ?? 0.4);
+        v.x *= jag;
+        v.z *= jag;
+        v.y -= height * f.droop * 0.55;
+      } else {
+        // Soften the tip so stacked cones blend into one silhouette.
+        v.x *= 0.92;
+        v.z *= 0.92;
+      }
+      pos.setXYZ(k, v.x, v.y, v.z);
+    }
+    cone.computeVertexNormals();
+    // Pull each ring down slightly over the one below for a continuous skirt.
+    const nest = height * 0.28;
+    matrix.compose(
+      center.clone().setY(center.y + height * 0.22 - nest * (1 - shrink)),
+      quat.setFromAxisAngle(UP, THREE.MathUtils.degToRad(37 * i + rand() * 8)),
+      scale,
+    );
+    builder.addGeometry(cone, matrix, shade(center, 0.35), windWeight(spec, 1, trunk.length * t, maxDist), t);
+    cone.dispose();
+  }
+}
+
+function emitFronds(
+  trunk: TreeBranch,
+  anchors: TreeBranch[],
+  spec: TreeSpec,
+  maxDist: number,
+  rand: () => number,
+  builder: MeshBuilder,
+  shade: ShadeFn,
+  matrix: THREE.Matrix4,
+  quat: THREE.Quaternion,
+  scale: THREE.Vector3,
+): void {
+  const f = spec.foliage;
+  const branch = anchors[anchors.length - 1] ?? trunk;
+  const tipTrunkT = branch.level === 0 ? 1 : branch.trunkT;
+  const crown = branch.path.getPoint(1);
+  const count = f.frondCount ?? 9;
+  for (let i = 0; i < count; i += 1) {
+    const yaw = (i / count) * Math.PI * 2 + rand() * 0.25;
+    const pitch = THREE.MathUtils.degToRad(8 + rand() * 18);
+    const geo = buildFrond(f.size, f.droop, rand);
+    quat.setFromEuler(new THREE.Euler(pitch, yaw, (rand() - 0.5) * 0.2));
+    matrix.compose(crown, quat, scale.set(1, 1, 1));
+    builder.addGeometry(geo, matrix, shade(crown), windWeight(spec, 1, branch.distFromRoot + branch.length, maxDist), tipTrunkT);
+    geo.dispose();
+  }
+}
+
+function emitStrands(anchors: TreeBranch[], spec: TreeSpec, maxDist: number, rand: () => number, builder: MeshBuilder, shade: ShadeFn): void {
+  const f = spec.foliage;
+  for (const branch of anchors) {
     const tipTrunkT = branch.level === 0 ? 1 : branch.trunkT;
+    for (let i = 0; i < Math.round(f.density); i += 1) {
+      const t = 0.4 + rand() * 0.6;
+      const anchor = branch.path.getPoint(t);
+      anchor.x += (rand() - 0.5) * 0.6;
+      anchor.z += (rand() - 0.5) * 0.6;
+      const dist = branch.distFromRoot + branch.length * t;
+      emitStrand(builder, spec, anchor, f.strandLength ?? 3.2, shade(anchor), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT, rand);
+    }
+  }
+}
 
-    if (f.strategy === 'blob') {
-      for (let i = 0; i < Math.round(f.density); i += 1) {
-        const t = 0.55 + rand() * 0.45;
-        const center = branch.path.getPoint(t);
-        center.x += (rand() - 0.5) * f.size;
-        center.z += (rand() - 0.5) * f.size;
-        center.y += (rand() - 0.5) * f.size * 0.6 - f.droop * f.size * 0.3;
+function placeFromCrownOrTip(
+  useCrown: boolean,
+  branch: TreeBranch,
+  volume: CrownVolume,
+  f: TreeSpec['foliage'],
+  rand: () => number,
+  scratch: THREE.Vector3,
+): { center: THREE.Vector3; t: number } {
+  if (useCrown) {
+    sampleCrown(volume, rand, scratch);
+    scratch.y -= f.droop * f.size * 0.2;
+    return { center: scratch.clone(), t: f.crownLift };
+  }
+  const t = 0.55 + rand() * 0.45;
+  const center = branch.path.getPoint(t);
+  center.x += (rand() - 0.5) * f.size;
+  center.z += (rand() - 0.5) * f.size;
+  center.y += (rand() - 0.5) * f.size * 0.55 - f.droop * f.size * 0.3;
+  return { center, t };
+}
+
+function emitBlobs(
+  anchors: TreeBranch[],
+  volume: CrownVolume,
+  spec: TreeSpec,
+  maxDist: number,
+  rand: () => number,
+  builder: MeshBuilder,
+  shade: ShadeFn,
+  matrix: THREE.Matrix4,
+  quat: THREE.Quaternion,
+  scale: THREE.Vector3,
+  scratch: THREE.Vector3,
+): void {
+  const f = spec.foliage;
+  const fill = f.crownFill;
+  for (const branch of anchors) {
+    const tipTrunkT = branch.level === 0 ? 1 : branch.trunkT;
+    for (let i = 0; i < Math.round(f.density); i += 1) {
+      const { center, t } = placeFromCrownOrTip(rand() < fill, branch, volume, f, rand, scratch);
+      const s = f.size * (1 + (rand() - 0.5) * 2 * f.sizeVariance);
+      matrix.compose(center, quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(s, s * 0.82, s));
+      const dist = branch.distFromRoot + branch.length * t;
+      builder.addGeometry(BLOB_GEO, matrix, shade(center), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT);
+    }
+  }
+  // Pure crown fill when density is low but fill is high — keeps a solid silhouette.
+  const extra = Math.round(f.density * fill * anchors.length * 0.35);
+  for (let i = 0; i < extra; i += 1) {
+    sampleCrown(volume, rand, scratch);
+    scratch.y -= f.droop * f.size * 0.15;
+    const s = f.size * (0.85 + rand() * 0.4);
+    matrix.compose(scratch.clone(), quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(s, s * 0.8, s));
+    builder.addGeometry(BLOB_GEO, matrix, shade(scratch), windWeight(spec, 2, maxDist * 0.7, maxDist), f.crownLift);
+  }
+}
+
+/**
+ * Stylized Unreal/Fortnite canopy: fewer, chunkier icosahedra packed into the crown ellipsoid so the
+ * tree reads as one painted volume with soft secondary lobes.
+ */
+function emitClusters(
+  anchors: TreeBranch[],
+  volume: CrownVolume,
+  spec: TreeSpec,
+  maxDist: number,
+  rand: () => number,
+  builder: MeshBuilder,
+  shade: ShadeFn,
+  matrix: THREE.Matrix4,
+  quat: THREE.Quaternion,
+  scale: THREE.Vector3,
+  scratch: THREE.Vector3,
+): void {
+  const f = spec.foliage;
+  const tipCount = Math.max(2, Math.round(f.density * anchors.length * (1 - f.crownFill * 0.5)));
+  const crownCount = Math.max(3, Math.round(4 + f.density * 3 * f.crownFill + anchors.length * f.crownFill));
+
+  // Structural lobes near branch tips.
+  for (let i = 0; i < tipCount; i += 1) {
+    const branch = anchors[i % anchors.length];
+    const tipTrunkT = branch.level === 0 ? 1 : branch.trunkT;
+    const { center, t } = placeFromCrownOrTip(false, branch, volume, f, rand, scratch);
+    const s = f.size * (1.05 + (rand() - 0.5) * 2 * f.sizeVariance);
+    matrix.compose(center, quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(s * 1.05, s * 0.78, s * 1.05));
+    const dist = branch.distFromRoot + branch.length * t;
+    builder.addGeometry(CLUSTER_GEO, matrix, shade(center), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT);
+  }
+
+  // Crown volume fill — the Unreal "paint the canopy" pass.
+  for (let i = 0; i < crownCount; i += 1) {
+    sampleCrown(volume, rand, scratch);
+    scratch.y -= f.droop * f.size * 0.18;
+    const s = f.size * (0.9 + rand() * 0.55) * (1 + (rand() - 0.5) * f.sizeVariance);
+    // Flatten slightly and vary aspect so lobes don't look like identical balloons.
+    const sx = s * (0.95 + rand() * 0.2);
+    const sy = s * (0.7 + rand() * 0.25);
+    const sz = s * (0.95 + rand() * 0.2);
+    matrix.compose(scratch.clone(), quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(sx, sy, sz));
+    builder.addGeometry(CLUSTER_GEO, matrix, shade(scratch), windWeight(spec, 2, maxDist * (0.55 + rand() * 0.35), maxDist), f.crownLift);
+  }
+}
+
+function emitCards(
+  anchors: TreeBranch[],
+  volume: CrownVolume,
+  spec: TreeSpec,
+  maxDist: number,
+  rand: () => number,
+  builder: MeshBuilder,
+  shade: ShadeFn,
+  matrix: THREE.Matrix4,
+  quat: THREE.Quaternion,
+  scale: THREE.Vector3,
+  scratch: THREE.Vector3,
+  centroid: THREE.Vector3,
+): void {
+  const f = spec.foliage;
+  const fill = f.crownFill;
+  for (const branch of anchors) {
+    const tipTrunkT = branch.level === 0 ? 1 : branch.trunkT;
+    for (let i = 0; i < Math.round(f.density); i += 1) {
+      const useCrown = rand() < fill;
+      const { center: anchor, t } = placeFromCrownOrTip(useCrown, branch, volume, f, rand, scratch);
+      const dist = branch.distFromRoot + branch.length * t;
+      const wind = windWeight(spec, branch.level + 1, dist, maxDist);
+      for (let c = 0; c < (f.cardsPerCluster ?? 6); c += 1) {
+        const center = anchor.clone();
+        center.x += (rand() - 0.5) * f.size * 1.4;
+        center.z += (rand() - 0.5) * f.size * 1.4;
+        center.y += (rand() - 0.5) * f.size - f.droop * f.size * 0.45;
         const s = f.size * (1 + (rand() - 0.5) * 2 * f.sizeVariance);
-        matrix.compose(center, quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(s, s * 0.85, s));
-        const dist = branch.distFromRoot + branch.length * t;
-        builder.addGeometry(BLOB_GEO, matrix, shade(center), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT);
-      }
-    } else if (f.strategy === 'cards') {
-      for (let i = 0; i < Math.round(f.density); i += 1) {
-        const t = 0.5 + rand() * 0.5;
-        const anchor = branch.path.getPoint(t);
-        const dist = branch.distFromRoot + branch.length * t;
-        const wind = windWeight(spec, branch.level + 1, dist, maxDist);
-        for (let c = 0; c < (f.cardsPerCluster ?? 6); c += 1) {
-          const center = anchor.clone();
-          center.x += (rand() - 0.5) * f.size * 1.5;
-          center.z += (rand() - 0.5) * f.size * 1.5;
-          center.y += (rand() - 0.5) * f.size - f.droop * f.size * 0.5;
-          const s = f.size * (1 + (rand() - 0.5) * 2 * f.sizeVariance);
-          quat.setFromEuler(new THREE.Euler(rand() * Math.PI, rand() * Math.PI * 2, rand() * Math.PI));
-          matrix.compose(center, quat, scale.set(s, s, s));
-          const outward = center.clone().sub(centroid);
-          outward.setLength(1);
-          if (!Number.isFinite(outward.x)) outward.copy(UP);
-          builder.addGeometry(CARD_GEO, matrix, shade(center), wind, tipTrunkT, outward);
-        }
-      }
-    } else if (f.strategy === 'fronds') {
-      // Palm: long planes radiating from the crown, bent along their length.
-      const crown = branch.path.getPoint(1);
-      const count = f.frondCount ?? 9;
-      for (let i = 0; i < count; i += 1) {
-        const yaw = (i / count) * Math.PI * 2 + rand() * 0.3;
-        const geo = buildFrond(f.size, f.droop, rand);
-        matrix.compose(crown, quat.setFromAxisAngle(UP, yaw), scale.set(1, 1, 1));
-        builder.addGeometry(geo, matrix, shade(crown), windWeight(spec, 1, branch.distFromRoot + branch.length, maxDist), tipTrunkT);
-        geo.dispose();
-      }
-      break; // one crown only — palms have no branch tips to iterate
-    } else if (f.strategy === 'strands') {
-      for (let i = 0; i < Math.round(f.density); i += 1) {
-        const t = 0.4 + rand() * 0.6;
-        const anchor = branch.path.getPoint(t);
-        anchor.x += (rand() - 0.5) * 0.6;
-        anchor.z += (rand() - 0.5) * 0.6;
-        const dist = branch.distFromRoot + branch.length * t;
-        emitStrand(builder, spec, anchor, f.strandLength ?? 3.2, shade(anchor), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT, rand);
+        quat.setFromEuler(new THREE.Euler(rand() * Math.PI, rand() * Math.PI * 2, rand() * Math.PI));
+        matrix.compose(center, quat, scale.set(s, s, s));
+        const outward = center.clone().sub(centroid);
+        outward.setLength(1);
+        if (!Number.isFinite(outward.x)) outward.copy(UP);
+        builder.addGeometry(CARD_GEO, matrix, shade(center), wind, tipTrunkT, outward);
       }
     }
   }
 }
 
-/** A palm frond: a tapered plane bent downward along its length, with a serrated silhouette in geometry. */
+/** Palm frond: tapered plane bent downward, serrated silhouette in geometry. */
 function buildFrond(size: number, droop: number, rand: () => number): THREE.BufferGeometry {
   const segments = 6;
   const positions: number[] = [];
@@ -447,7 +664,7 @@ function buildFrond(size: number, droop: number, rand: () => number): THREE.Buff
   return g;
 }
 
-/** A willow strand: a narrow ribbon hanging and curving under gravity, whipping hard at the free end. */
+/** Willow strand: narrow ribbon hanging under gravity, whipping at the free end. */
 function emitStrand(
   builder: MeshBuilder,
   spec: TreeSpec,
@@ -467,7 +684,6 @@ function emitStrand(
   for (let i = 0; i <= segments; i += 1) {
     const t = i / segments;
     p.copy(anchor).addScaledVector(drift, t * t).setY(anchor.y - length * t);
-    // The free end sways far more than the attachment — that trailing whip is the whole willow read.
     const wind = baseWind + t * t * 2.2;
     const a = builder.vertex(p.clone().setX(p.x - width), normal, 0, t, color, wind, trunkT);
     const b = builder.vertex(p.clone().setX(p.x + width), normal, 1, t, color, wind, trunkT);
@@ -479,7 +695,7 @@ function emitStrand(
 // --- entry point --------------------------------------------------------------------------------------
 
 export interface GenerateTreeOptions {
-  /** LOD level. 1 and 2 re-run the SAME seed with reduced params, so the silhouette stays put and the pop is small. */
+  /** LOD level. 1 and 2 re-run the SAME seed with reduced params so the silhouette stays put. */
   lod?: number;
 }
 
@@ -493,7 +709,7 @@ export function generateTree(spec: TreeSpec, seed: number, options: GenerateTree
   for (const b of branches) maxDist = Math.max(maxDist, b.distFromRoot + b.length);
 
   const barkBuilder = new MeshBuilder();
-  sweepBark(branches, effective, maxDist, barkBuilder);
+  sweepBark(branches, effective, maxDist, rand, barkBuilder);
   const foliageBuilder = new MeshBuilder();
   emitFoliage(branches, effective, maxDist, rand, foliageBuilder);
 
@@ -512,21 +728,27 @@ export function generateTree(spec: TreeSpec, seed: number, options: GenerateTree
   };
 }
 
-/** LOD is the generator re-run with cheaper params — not a decimator. Same seed keeps the silhouette. */
+/** LOD re-runs the generator with cheaper params — not a decimator. Same seed keeps the silhouette. */
 function reduceForLod(spec: TreeSpec, lod: number): TreeSpec {
   if (lod >= 2) {
     return {
       ...spec,
-      trunk: { ...spec.trunk, radialSegments: Math.max(3, Math.round(spec.trunk.radialSegments / 2)), heightSegments: 4 },
+      trunk: { ...spec.trunk, radialSegments: Math.max(3, Math.round(spec.trunk.radialSegments / 2)), heightSegments: 4, gnarl: 0 },
       branches: { ...spec.branches, levels: 0, countPerLevel: [] },
-      // A single merged blob stands in for the whole canopy at distance.
-      foliage: { ...spec.foliage, strategy: spec.foliage.strategy === 'none' ? 'none' : 'blob', density: 1, size: spec.foliage.size * 2.6, sizeVariance: 0 },
+      foliage: {
+        ...spec.foliage,
+        strategy: spec.foliage.strategy === 'none' ? 'none' : 'clusters',
+        density: 1,
+        size: spec.foliage.size * 2.4,
+        sizeVariance: 0,
+        crownFill: 1,
+      },
     };
   }
   return {
     ...spec,
-    trunk: { ...spec.trunk, radialSegments: Math.max(3, Math.round(spec.trunk.radialSegments / 2)) },
+    trunk: { ...spec.trunk, radialSegments: Math.max(3, Math.round(spec.trunk.radialSegments / 2)), gnarl: spec.trunk.gnarl * 0.5 },
     branches: { ...spec.branches, levels: Math.min(spec.branches.levels, 1), countPerLevel: spec.branches.countPerLevel.slice(0, 1) },
-    foliage: { ...spec.foliage, density: Math.max(1, spec.foliage.density * 0.4) },
+    foliage: { ...spec.foliage, density: Math.max(1, spec.foliage.density * 0.45), crownFill: Math.min(1, spec.foliage.crownFill + 0.15) },
   };
 }

@@ -1372,9 +1372,9 @@ const rawEngineTools = {
     inputSchema: z.object({
       specId: z.string(),
       name: z.string().optional(),
-      trunk: z.object({ height: z.number().optional(), baseRadius: z.number().optional(), taper: z.number().optional(), lean: z.number().optional(), curl: z.number().optional(), flare: z.number().optional() }).optional(),
+      trunk: z.object({ height: z.number().optional(), baseRadius: z.number().optional(), taper: z.number().optional(), lean: z.number().optional(), curl: z.number().optional(), flare: z.number().optional(), gnarl: z.number().optional() }).optional(),
       branches: z.object({ levels: z.number().optional(), angle: z.number().optional(), gravity: z.number().optional(), lengthRatio: z.number().optional() }).optional(),
-      foliage: z.object({ strategy: z.enum(['blob', 'cards', 'skirt', 'fronds', 'strands', 'none']).optional(), size: z.number().optional(), density: z.number().optional(), droop: z.number().optional() }).optional(),
+      foliage: z.object({ strategy: z.enum(['clusters', 'blob', 'cards', 'skirt', 'fronds', 'strands', 'none']).optional(), size: z.number().optional(), density: z.number().optional(), droop: z.number().optional(), crownRadius: z.number().optional(), crownLift: z.number().optional(), crownFill: z.number().optional() }).optional(),
       chop: z.object({
         enabled: z.boolean().optional(),
         breakPoints: z.array(z.object({ height: z.number(), hits: z.number(), label: z.string().optional() })).optional().describe('Heights up the trunk (0-1) where it can be severed, each with its hit count.'),

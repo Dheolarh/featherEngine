@@ -14,8 +14,13 @@
  *  the way to a willow without hitting a wall between "types". */
 export type TreeArchetype = 'conifer' | 'broadleaf' | 'birch' | 'willow' | 'palm' | 'shrub' | 'snag';
 
-/** How a canopy is built out of geometry. */
-export type TreeFoliageStrategy = 'blob' | 'cards' | 'skirt' | 'fronds' | 'strands' | 'none';
+/**
+ * How a canopy is built out of geometry.
+ *
+ * `clusters` is the stylized Unreal/Fortnite path: overlapping soft blobs packed into a crown
+ * ellipsoid so the silhouette reads as one volume rather than confetti on branch tips.
+ */
+export type TreeFoliageStrategy = 'blob' | 'cards' | 'clusters' | 'skirt' | 'fronds' | 'strands' | 'none';
 
 export interface TreeTrunkSpec {
   /** World units, 1–30. */
@@ -31,6 +36,11 @@ export interface TreeTrunkSpec {
   radialSegments: number;
   /** 0–1 root flare at the base. */
   flare: number;
+  /**
+   * 0–1 bark radius noise (Unreal/SpeedTree-style gnarl). Breaks the extruded-pipe look without
+   * needing a bark texture — especially visible on stylized trunks at mid distance.
+   */
+  gnarl: number;
 }
 
 export interface TreeBranchSpec {
@@ -61,6 +71,18 @@ export interface TreeFoliageSpec {
   sizeVariance: number;
   /** 0–1. */
   droop: number;
+  /**
+   * Relative crown width (× trunk height). Drives the ellipsoid canopy volume used by blob /
+   * cards / clusters — the Unreal-style "paint the crown, not the twigs" placement.
+   */
+  crownRadius: number;
+  /** 0–1 height of the crown centre along the trunk (0 = base, 1 = tip). */
+  crownLift: number;
+  /**
+   * 0–1 mix between tip-anchored foliage and crown-volume fill. 0 = classic tip scatter,
+   * 1 = full ellipsoid packing (best for stylized broadleaf silhouettes).
+   */
+  crownFill: number;
   skirtRings?: number;
   /** Radial noise on the cone's lower edge — a clean rim reads as a traffic cone, not a pine. */
   skirtJagged?: number;
