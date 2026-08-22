@@ -257,6 +257,10 @@ export function createFeatherPluginAPI(
       requireEditableProject();
       return useEditorStore.getState().paintModelPart(specId, partId, colorSlot, faceGroup);
     },
+    setPartCorners: (specId, partId, corners) => {
+      requireEditableProject();
+      return useEditorStore.getState().setModelPartCorners(specId, partId, corners);
+    },
     setPalette: (specId, palette) => {
       requireEditableProject();
       return useEditorStore.getState().setModelPalette(specId, palette);

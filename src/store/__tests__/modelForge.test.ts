@@ -112,6 +112,32 @@ describe('Model Forge store actions', () => {
     expect(spec().style?.finish).toBe('smooth');
   });
 
+  it('vertex corners: set, merge-replace, normalize-clamp, and clear', () => {
+    const specId = useEditorStore.getState().createModelSpec('blank')!;
+    const partId = useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!.parts[0].id;
+    const part = () => useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!.parts[0];
+
+    expect(useEditorStore.getState().setModelPartCorners(specId, partId, { 7: [0.2, 0.3, 0.1] })).toBe(true);
+    expect(part().corners).toEqual({ 7: [0.2, 0.3, 0.1] });
+
+    // Out-of-range keys and non-finite offsets are dropped; components clamp to ±2.
+    useEditorStore.getState().setModelPartCorners(specId, partId, {
+      2: [9, 0.1, 0],
+      11: [1, 1, 1],
+      3: [Number.NaN, 0, 0],
+    } as never);
+    expect(part().corners).toEqual({ 2: [2, 0.1, 0] });
+
+    // Reshaping away from a box sheds the deformation; clearing works via null.
+    useEditorStore.getState().updateModelPart(specId, partId, { shape: 'cylinder' });
+    expect(part().corners).toBeUndefined();
+    useEditorStore.getState().updateModelPart(specId, partId, { shape: 'box' });
+    useEditorStore.getState().setModelPartCorners(specId, partId, { 0: [-0.1, 0, 0] });
+    expect(part().corners).toBeDefined();
+    expect(useEditorStore.getState().setModelPartCorners(specId, partId, null)).toBe(true);
+    expect(part().corners).toBeUndefined();
+  });
+
   it('setModelPalette recolors the family and exportProject carries the library', () => {
     const specId = useEditorStore.getState().createModelSpec('tile')!;
     expect(useEditorStore.getState().setModelPalette(specId, ['#ff0000', '#00ff00'])).toBe(true);

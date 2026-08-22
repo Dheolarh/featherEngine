@@ -55,6 +55,11 @@ export const MODEL_FACE_GROUPS: Record<ModelPartShape, Record<number, string>> =
   wedge: { 0: 'Slope', 1: 'Bottom', 2: 'Back', 3: 'Left', 4: 'Right' },
 };
 
+/** Human names for the 8 box corners, by index (bit0=+X, bit1=+Y, bit2=+Z). */
+export const BOX_CORNER_LABELS: readonly string[] = Array.from({ length: 8 }, (_, index) =>
+  `${index & 2 ? 'Top' : 'Bottom'} ${index & 4 ? 'Front' : 'Back'} ${index & 1 ? 'Right' : 'Left'}`,
+);
+
 const SHAPE_SET: ReadonlySet<string> = new Set(MODEL_PART_SHAPES);
 
 const vec = (value: unknown, fallback: Vector3Tuple): Vector3Tuple => {
@@ -72,6 +77,7 @@ export function makeModelPart(shape: ModelPartShape, init: Partial<Omit<ModelPar
     scale: vec(init.scale, [1, 1, 1]),
     colorSlot: init.colorSlot ?? 1,
     ...(init.faceColors ? { faceColors: { ...init.faceColors } } : {}),
+    ...(init.corners ? { corners: { ...init.corners } } : {}),
   };
 }
 
@@ -94,6 +100,25 @@ export function normalizeModelSpec(spec: ModelSpec): ModelSpec {
             .map(([group, slot]) => [group, clampSlot(slot, palette.length)]),
         )
       : undefined;
+    // Corner offsets only mean something on box hulls; reshaping a part sheds them.
+    const corners = part?.corners && typeof part.corners === 'object' && shape === 'box'
+      ? Object.fromEntries(
+          Object.entries(part.corners)
+            .filter(([key, offset]) => {
+              const index = Number(key);
+              return (
+                Number.isInteger(index) && index >= 0 && index < 8 &&
+                Array.isArray(offset) && offset.length === 3 &&
+                offset.every((component) => Number.isFinite(component)) &&
+                offset.some((component) => Math.abs(component as number) > 1e-4)
+              );
+            })
+            .map(([key, offset]) => [
+              key,
+              (offset as number[]).map((component) => Math.min(2, Math.max(-2, component))) as Vector3Tuple,
+            ]),
+        )
+      : undefined;
     return {
       id: part?.id || makeId('part'),
       name: part?.name?.trim() || `Part ${index + 1}`,
@@ -103,6 +128,7 @@ export function normalizeModelSpec(spec: ModelSpec): ModelSpec {
       scale: vec(part?.scale, [1, 1, 1]),
       colorSlot: clampSlot(part?.colorSlot, palette.length),
       ...(faceColors && Object.keys(faceColors).length ? { faceColors } : {}),
+      ...(corners && Object.keys(corners).length ? { corners } : {}),
     };
   });
   return { id: spec.id, name: spec.name?.trim() || 'Model', palette, parts, style: normalizeModelStyle(spec.style) };

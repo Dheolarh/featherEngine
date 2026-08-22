@@ -745,6 +745,8 @@ interface EditorState {
   duplicateModelPart: (specId: string, partId: string) => string | null;
   /** Paint a part from the palette: the whole part when faceGroup is omitted (clearing face overrides), else one face group. */
   paintModelPart: (specId: string, partId: string, colorSlot: number, faceGroup?: number) => boolean;
+  /** Replace a box part's vertex-edit corner offsets (unit space, keys 0-7). null clears the deformation. */
+  setModelPartCorners: (specId: string, partId: string, corners: Record<number, Vector3Tuple> | null) => boolean;
   /** Replace a model asset's flat-color palette (1-16 hex colors). */
   setModelPalette: (specId: string, palette: string[]) => boolean;
   /** Place a prototype model object linked to a library asset (terrain-snapped). Returns the object id; null = unknown spec. */
@@ -2540,6 +2542,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       faceGroup === undefined
         ? { ...target, colorSlot: slot, faceColors: undefined }
         : { ...target, faceColors: { ...target.faceColors, [Math.trunc(faceGroup)]: slot } };
+    get().updateModelSpec(specId, { parts: spec.parts.map((part) => (part.id === partId ? next : part)) });
+    return true;
+  },
+  setModelPartCorners: (specId, partId, corners) => {
+    const spec = get().modelSpecs.find((entry) => entry.id === specId);
+    const target = spec?.parts.find((part) => part.id === partId);
+    if (!spec || !target) return false;
+    const next: ModelPart = { ...target };
+    if (corners && Object.keys(corners).length) next.corners = corners;
+    else delete next.corners;
     get().updateModelSpec(specId, { parts: spec.parts.map((part) => (part.id === partId ? next : part)) });
     return true;
   },

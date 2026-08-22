@@ -5,11 +5,11 @@ import { ContactShadows, Grid, OrbitControls, TransformControls } from '@react-t
 import type { TransformControls as TransformControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 import {
-  Box, Cone, Copy, Cylinder, Globe, Hammer, PackagePlus, Paintbrush, Pyramid, Trash2,
+  Box, Cone, Copy, Cylinder, Globe, Hammer, Move3d, PackagePlus, Paintbrush, Pyramid, RotateCcw, Trash2,
 } from 'lucide-react';
 import type { ModelPart, ModelPartShape, ModelSpec, ModelStyle, Vector3Tuple } from '../types';
 import { DEFAULT_MODEL_STYLE, MODEL_FACE_GROUPS, MODEL_PART_SHAPES } from '../model/modelSpec';
-import { buildModelGroup, faceGroupForFaceIndex, getModelPartEdges, getPartRenderGeometry } from '../model/modelGeometry';
+import { buildModelGroup, faceGroupForFaceIndex, getPartRenderEdges, getPartRenderGeometry } from '../model/modelGeometry';
 import { ModelPartMesh } from '../three/ModelMesh';
 import { RangeField } from '../components/InspectorPanel';
 import { defineFeatherPlugin, type FeatherPluginAPI } from './types';
@@ -43,27 +43,25 @@ const round = (value: number, decimals = 4): number => {
   return Math.round(value * factor) / factor;
 };
 
-/** The part with its transform zeroed — the gizmo group carries the real transform instead. */
-const neutralized = (part: ModelPart): ModelPart => ({
-  ...part,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  scale: [1, 1, 1],
-});
-
 /** Matches the default editor accent; canvas shaders can't read CSS variables. */
 const OUTLINE_ACCENT = '#5b8cff';
 
 const ignoreOutlineRaycast = () => null;
 
-/** Edge outline that hugs one part — the hover/selection feedback in the preview. */
-function PartOutline({ part, color, opacity }: { part: ModelPart; color: string; opacity: number }) {
+/** Edge outline that hugs one part — bevel- and deformation-accurate hover/selection feedback. */
+function PartOutline({ part, style, color, opacity, neutralTransform }: {
+  part: ModelPart;
+  style?: ModelStyle;
+  color: string;
+  opacity: number;
+  neutralTransform?: boolean;
+}) {
   return (
     <lineSegments
-      geometry={getModelPartEdges(part.shape)}
-      position={part.position}
-      rotation={part.rotation}
-      scale={part.scale}
+      geometry={getPartRenderEdges(part, style)}
+      position={neutralTransform ? [0, 0, 0] : part.position}
+      rotation={neutralTransform ? [0, 0, 0] : part.rotation}
+      scale={neutralTransform ? [1, 1, 1] : part.scale}
       raycast={ignoreOutlineRaycast}
     >
       <lineBasicMaterial color={color} transparent opacity={opacity} toneMapped={false} />
@@ -71,18 +69,110 @@ function PartOutline({ part, color, opacity }: { part: ModelPart; color: string;
   );
 }
 
+const cornerBase = (index: number): THREE.Vector3 =>
+  new THREE.Vector3(index & 1 ? 0.5 : -0.5, index & 2 ? 0.5 : -0.5, index & 4 ? 0.5 : -0.5);
+
+/**
+ * Mesh mode: the 8 draggable corner vertices of a box part, in WORLD space (nesting a gizmo under
+ * the part's non-uniform scale would skew it). Commits translate back through the part's inverse
+ * matrix into unit-space offsets — the same gizmo rules as parts: commit on release, guard the ref.
+ */
+function CornerHandles({ part, snap, roundTo, selectedCorner, onSelectCorner, onCommit, gizmoActive }: {
+  part: ModelPart;
+  snap: boolean;
+  roundTo: (value: number, decimals?: number) => number;
+  selectedCorner: number;
+  onSelectCorner: (index: number) => void;
+  onCommit: (corners: Record<number, Vector3Tuple> | null) => void;
+  gizmoActive: { current: boolean };
+}) {
+  const controlsRef = useRef<TransformControlsImpl | null>(null);
+  const { inverse, worldCorners } = useMemo(() => {
+    const matrix = new THREE.Matrix4().compose(
+      new THREE.Vector3(...part.position),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(...part.rotation)),
+      new THREE.Vector3(...part.scale),
+    );
+    return {
+      inverse: matrix.clone().invert(),
+      worldCorners: Array.from({ length: 8 }, (_, index) => {
+        const local = cornerBase(index);
+        const offset = part.corners?.[index];
+        if (offset) local.add(new THREE.Vector3(...offset));
+        return local.applyMatrix4(matrix);
+      }),
+    };
+  }, [part]);
+
+  const commit = () => {
+    const target = (controlsRef.current as unknown as { object?: THREE.Object3D } | null)?.object;
+    if (!target || selectedCorner < 0) return;
+    const offset = target.position.clone().applyMatrix4(inverse).sub(cornerBase(selectedCorner));
+    const rounded: Vector3Tuple = [roundTo(offset.x, 3), roundTo(offset.y, 3), roundTo(offset.z, 3)];
+    const next: Record<number, Vector3Tuple> = { ...part.corners };
+    if (Math.hypot(rounded[0], rounded[1], rounded[2]) < 0.01) delete next[selectedCorner];
+    else next[selectedCorner] = rounded;
+    onCommit(Object.keys(next).length ? next : null);
+  };
+
+  return (
+    <>
+      {worldCorners.map((world, index) =>
+        index === selectedCorner ? (
+          <TransformControls
+            key={index}
+            ref={controlsRef}
+            mode="translate"
+            size={0.65}
+            translationSnap={snap ? 0.05 : null}
+            position={[world.x, world.y, world.z]}
+            onMouseDown={() => {
+              gizmoActive.current = true;
+            }}
+            onMouseUp={() => {
+              commit();
+              setTimeout(() => {
+                gizmoActive.current = false;
+              }, 0);
+            }}
+          >
+            <mesh>
+              <sphereGeometry args={[0.055, 12, 10]} />
+              <meshBasicMaterial color={OUTLINE_ACCENT} toneMapped={false} />
+            </mesh>
+          </TransformControls>
+        ) : (
+          <mesh
+            key={index}
+            position={[world.x, world.y, world.z]}
+            onPointerDown={(event) => {
+              if (event.nativeEvent.button !== 0) return;
+              event.stopPropagation();
+              onSelectCorner(index);
+            }}
+          >
+            <sphereGeometry args={[0.045, 12, 10]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.85} toneMapped={false} />
+          </mesh>
+        ),
+      )}
+    </>
+  );
+}
+
 interface ForgePreviewProps {
   spec: ModelSpec;
-  mode: 'build' | 'paint';
+  mode: 'build' | 'mesh' | 'paint';
   gizmoMode: 'translate' | 'rotate' | 'scale';
   snap: boolean;
   selectedPartId: string;
   onSelectPart: (partId: string) => void;
   onPaintFace: (partId: string, faceGroup: number) => void;
   onCommitPart: (partId: string, patch: Pick<ModelPart, 'position' | 'rotation' | 'scale'>) => void;
+  onCommitCorners: (partId: string, corners: Record<number, Vector3Tuple> | null) => void;
 }
 
-function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPart, onPaintFace, onCommitPart }: ForgePreviewProps) {
+function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPart, onPaintFace, onCommitPart, onCommitCorners }: ForgePreviewProps) {
   const controlsRef = useRef<TransformControlsImpl | null>(null);
   // True from gizmo grab until just AFTER release: the gizmo raycasts through its own DOM
   // listeners, so r3f sees a handle grab as "missed everything" — without this guard the
@@ -99,6 +189,12 @@ function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPar
     // Only on mount (Canvas is remounted per spec id) — see comment above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Mesh mode: which of the selected box part's 8 corners carries the vertex gizmo.
+  const [selectedCorner, setSelectedCorner] = useState(-1);
+  useEffect(() => {
+    setSelectedCorner(-1);
+  }, [selectedPartId, mode]);
 
   // Hover feedback. Guarded during gizmo drags: a hover re-render makes drei re-attach its
   // controls, and detach() would end the active drag (same mechanism as the commit-on-release fix).
@@ -161,10 +257,11 @@ function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPar
         pointerDownAt.current = { x: event.clientX, y: event.clientY };
       }}
       onPointerMissed={(event) => {
-        if (mode !== 'build' || gizmoActive.current) return;
+        if (mode === 'paint' || gizmoActive.current) return;
         // Orbiting also ends in a "missed" click — only a true stationary click deselects.
         const down = pointerDownAt.current;
         if (down && Math.hypot(event.clientX - down.x, event.clientY - down.y) > 5) return;
+        setSelectedCorner(-1);
         onSelectPart('');
       }}
       style={{ cursor: mode === 'paint' ? 'crosshair' : hoveredPartId ? 'pointer' : 'default' }}
@@ -204,14 +301,15 @@ function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPar
             {/* drei types children as ONE element; the identity group also keeps controls attachment stable. */}
             <group>
               <ModelPartMesh
-                part={neutralized(part)}
+                part={part}
                 palette={spec.palette}
                 style={spec.style}
+                neutralTransform
                 onPartPointerDown={handlePartPointerDown}
                 onPartPointerOver={handlePartPointerOver}
                 onPartPointerOut={handlePartPointerOut}
               />
-              <PartOutline part={neutralized(part)} color={OUTLINE_ACCENT} opacity={0.9} />
+              <PartOutline part={part} style={spec.style} color={OUTLINE_ACCENT} opacity={0.9} neutralTransform />
             </group>
           </TransformControls>
         ) : (
@@ -226,13 +324,28 @@ function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPar
           />
         ),
       )}
-      {mode === 'paint' && selectedPartId && (() => {
+      {mode !== 'build' && selectedPartId && (() => {
         const selected = spec.parts.find((part) => part.id === selectedPartId);
-        return selected ? <PartOutline part={selected} color={OUTLINE_ACCENT} opacity={0.55} /> : null;
+        return selected ? <PartOutline part={selected} style={spec.style} color={OUTLINE_ACCENT} opacity={0.55} /> : null;
+      })()}
+      {mode === 'mesh' && (() => {
+        const selected = spec.parts.find((part) => part.id === selectedPartId);
+        if (!selected || selected.shape !== 'box') return null;
+        return (
+          <CornerHandles
+            part={selected}
+            snap={snap}
+            roundTo={round}
+            selectedCorner={selectedCorner}
+            onSelectCorner={setSelectedCorner}
+            onCommit={(corners) => onCommitCorners(selected.id, corners)}
+            gizmoActive={gizmoActive}
+          />
+        );
       })()}
       {hoveredPartId && hoveredPartId !== selectedPartId && (() => {
         const hovered = spec.parts.find((part) => part.id === hoveredPartId);
-        return hovered ? <PartOutline part={hovered} color="#ffffff" opacity={0.3} /> : null;
+        return hovered ? <PartOutline part={hovered} style={spec.style} color="#ffffff" opacity={0.3} /> : null;
       })()}
       {/* makeDefault lets the gizmo auto-pause orbiting while a handle is dragged; damping = the glide. */}
       <OrbitControls makeDefault enablePan enableDamping dampingFactor={0.08} target={[0, framing.height * 0.45, 0]} />
@@ -297,7 +410,7 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
   useEffect(() => api.events.on('scene:changed', () => setPlacedRefresh((tick) => tick + 1)), [api]);
 
   const [selectedSpecId, setSelectedSpecId] = useState('');
-  const [mode, setMode] = useState<'build' | 'paint'>('build');
+  const [mode, setMode] = useState<'build' | 'mesh' | 'paint'>('build');
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate' | 'scale'>('translate');
   const [snap, setSnap] = useState(true);
   const [selectedPartId, setSelectedPartId] = useState('');
@@ -480,6 +593,10 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
                 api.models.updatePart(spec.id, partId, patch);
                 return status;
               })}
+              onCommitCorners={(partId, corners) => attempt('Edit vertices', () => {
+                api.models.setPartCorners(spec.id, partId, corners);
+                return corners ? 'Vertex committed — the whole hull deforms through the 8 corners.' : 'Vertices reset.';
+              })}
             />
           </div>
           <div className="tree-preview-meta">
@@ -490,6 +607,9 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
             <div className="model-toolbar-seg" role="tablist" aria-label="Mode">
               <button className={mode === 'build' ? 'active' : ''} onClick={() => setMode('build')}>
                 <Hammer size={12} aria-hidden /> Build
+              </button>
+              <button className={mode === 'mesh' ? 'active' : ''} onClick={() => setMode('mesh')}>
+                <Move3d size={12} aria-hidden /> Mesh
               </button>
               <button className={mode === 'paint' ? 'active' : ''} onClick={() => setMode('paint')}>
                 <Paintbrush size={12} aria-hidden /> Paint
@@ -509,7 +629,9 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
           <p className="field-hint">
             {mode === 'paint'
               ? 'Click a face in the preview to paint it with the selected palette color.'
-              : 'Click a part to select it, then drag the gizmo. Placed copies update live as you edit.'}
+              : mode === 'mesh'
+                ? 'Click a box part, then drag its corner vertices to sculpt the hull (bevel included). Other shapes edit via Build.'
+                : 'Click a part to select it, then drag the gizmo. Placed copies update live as you edit.'}
           </p>
           <p className="field-hint">{status}</p>
         </div>
@@ -681,6 +803,17 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
                         );
                       })}
                     </div>
+                  )}
+                  {selectedPart.corners && (
+                    <button
+                      className="full-button"
+                      onClick={() => attempt('Reset vertices', () => {
+                        api.models.setPartCorners(spec.id, selectedPart.id, null);
+                        return `Reset "${selectedPart.name}" back to a pristine box.`;
+                      })}
+                    >
+                      <RotateCcw size={13} aria-hidden /> Reset Vertices
+                    </button>
                   )}
                   <div className="model-part-actions">
                     <button

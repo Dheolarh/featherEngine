@@ -103,12 +103,95 @@ function getRoundedUnitBox(scale: readonly number[], bevel: number): THREE.Buffe
   return geometry;
 }
 
+// ------------------------------------------------------------------------------------------------
+// Vertex editing: a box hull (crisp or beveled) deformed trilinearly through its 8 corner offsets.
+// Positions get the interpolated displacement; normals are transformed by the inverse-transpose of
+// the displacement field's Jacobian, so a deformed SMOOTH bevel stays smooth instead of refacetting.
+
+const deformedCache = new Map<string, THREE.BufferGeometry>();
+
+const serializeCorners = (corners: Record<number, readonly number[]>): string =>
+  Object.keys(corners)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((index) => `${index}:${corners[index].map((component) => Math.round(component * 1000) / 1000).join(',')}`)
+    .join(';');
+
+function deformBoxByCorners(base: THREE.BufferGeometry, corners: Record<number, readonly number[]>): THREE.BufferGeometry {
+  const geometry = base.clone();
+  const positions = geometry.attributes.position as THREE.BufferAttribute;
+  const normals = geometry.attributes.normal as THREE.BufferAttribute;
+  const entries = Object.entries(corners).map(([key, offset]) => ({ bits: Number(key), offset }));
+  const jacobian = new THREE.Matrix3();
+  const normalMatrix = new THREE.Matrix3();
+  const n = new THREE.Vector3();
+  const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+  for (let i = 0; i < positions.count; i += 1) {
+    const x = positions.getX(i);
+    const y = positions.getY(i);
+    const z = positions.getZ(i);
+    // Trilinear parameters over the unit hull (bevel insets stay inside [0,1]).
+    const u = clamp01(x + 0.5);
+    const v = clamp01(y + 0.5);
+    const w = clamp01(z + 0.5);
+    let dx = 0, dy = 0, dz = 0;
+    // Jacobian of position' = position + displacement(position); starts as identity.
+    let j00 = 1, j01 = 0, j02 = 0, j10 = 0, j11 = 1, j12 = 0, j20 = 0, j21 = 0, j22 = 1;
+    for (const { bits, offset } of entries) {
+      const wx = bits & 1 ? u : 1 - u;
+      const wy = bits & 2 ? v : 1 - v;
+      const wz = bits & 4 ? w : 1 - w;
+      const weight = wx * wy * wz;
+      dx += offset[0] * weight;
+      dy += offset[1] * weight;
+      dz += offset[2] * weight;
+      const gx = (bits & 1 ? 1 : -1) * wy * wz;
+      const gy = (bits & 2 ? 1 : -1) * wx * wz;
+      const gz = (bits & 4 ? 1 : -1) * wx * wy;
+      j00 += offset[0] * gx; j01 += offset[0] * gy; j02 += offset[0] * gz;
+      j10 += offset[1] * gx; j11 += offset[1] * gy; j12 += offset[1] * gz;
+      j20 += offset[2] * gx; j21 += offset[2] * gy; j22 += offset[2] * gz;
+    }
+    positions.setXYZ(i, x + dx, y + dy, z + dz);
+    jacobian.set(j00, j01, j02, j10, j11, j12, j20, j21, j22);
+    if (Math.abs(jacobian.determinant()) > 1e-6) {
+      n.set(normals.getX(i), normals.getY(i), normals.getZ(i));
+      n.applyMatrix3(normalMatrix.copy(jacobian).invert().transpose()).normalize();
+      normals.setXYZ(i, n.x, n.y, n.z);
+    }
+  }
+  geometry.computeBoundingSphere();
+  geometry.computeBoundingBox();
+  return geometry;
+}
+
 /** The geometry a part actually renders with under a style. Always pairs with mesh scale = part.scale. */
 export function getPartRenderGeometry(part: ModelPart, style?: ModelStyle): THREE.BufferGeometry {
-  if (part.shape === 'box' && style?.finish === 'smooth' && style.bevel > 0.0025) {
-    return getRoundedUnitBox(part.scale, style.bevel);
+  if (part.shape !== 'box') return getModelPartGeometry(part.shape);
+  const beveled = style?.finish === 'smooth' && style.bevel > 0.0025;
+  const base = beveled ? getRoundedUnitBox(part.scale, style.bevel) : getModelPartGeometry('box');
+  const corners = part.corners;
+  if (!corners || !Object.keys(corners).length) return base;
+  const key = `${beveled ? `r|${part.scale.map((component) => Math.round(component * 100) / 100).join(',')}|${style.bevel}` : 'box'}#${serializeCorners(corners)}`;
+  let geometry = deformedCache.get(key);
+  if (!geometry) {
+    geometry = deformBoxByCorners(base, corners);
+    deformedCache.set(key, geometry);
   }
-  return getModelPartGeometry(part.shape);
+  return geometry;
+}
+
+const renderEdgesCache = new Map<THREE.BufferGeometry, THREE.EdgesGeometry>();
+
+/** Edge outline matching what the part ACTUALLY renders (deformation + bevel aware). */
+export function getPartRenderEdges(part: ModelPart, style?: ModelStyle): THREE.EdgesGeometry {
+  const geometry = getPartRenderGeometry(part, style);
+  let edges = renderEdgesCache.get(geometry);
+  if (!edges) {
+    edges = new THREE.EdgesGeometry(geometry, 20);
+    renderEdgesCache.set(geometry, edges);
+  }
+  return edges;
 }
 
 /** Which material group a raycast triangle belongs to — this is what face painting clicks resolve.

@@ -1595,6 +1595,29 @@ const rawEngineTools = {
       store().setModelPalette(specId, palette) ? `Palette of ${specId} set (${palette.length} colors).` : `No model asset with id ${specId}.`,
   }),
 
+  edit_model_vertices: tool({
+    description:
+      "Vertex-edit a BOX part of a model asset: offset its 8 corners (unit space, ±2) to sculpt the hull — roof peaks, tapered pillars, leaning walls, rocks. Corner index = bit0 +X, bit1 +Y, bit2 +Z: 0 bottom-back-left, 1 bottom-back-right, 2 top-back-left, 3 top-back-right, 4 bottom-front-left, 5 bottom-front-right, 6 top-front-left, 7 top-front-right. Offsets MERGE onto existing ones; reset:true clears the deformation first (alone it restores the pristine box). The whole hull deforms smoothly — bevel included. Example roof peak on a 1x1x1 box: pull corners 2,3,6,7 inward to the ridge.",
+    inputSchema: z.object({
+      specId: z.string(),
+      partId: z.string(),
+      offsets: z.array(z.object({ corner: z.number().min(0).max(7), offset: vec3 })).optional(),
+      reset: z.boolean().optional(),
+    }),
+    execute: async ({ specId, partId, offsets, reset }) => {
+      const spec = store().modelSpecs.find((entry) => entry.id === specId);
+      const target = spec?.parts.find((part) => part.id === partId);
+      if (!spec || !target) return `No such model part (${specId} / ${partId}).`;
+      if (target.shape !== 'box') return `Part ${partId} is a ${target.shape} — vertex editing works on box parts.`;
+      const corners: Record<number, [number, number, number]> = reset ? {} : { ...target.corners };
+      for (const entry of offsets ?? []) corners[Math.trunc(entry.corner)] = asVec3(entry.offset);
+      const ok = store().setModelPartCorners(specId, partId, Object.keys(corners).length ? corners : null);
+      return ok
+        ? `Sculpted part ${partId}: ${Object.keys(corners).length} corner(s) offset.`
+        : `Could not edit part ${partId}.`;
+    },
+  }),
+
   set_model_style: tool({
     description:
       "Switch a model asset's finish: 'smooth' (the Spline look — rounded box corners via bevel, smooth shading, subtle satin sheen; the default) or 'flat' (the crisp faceted Meshy look). bevel = world-unit corner radius on box parts (0-0.25, smooth only); roughness 0.05-1 (lower = glossier). Every placed instance restyles live.",

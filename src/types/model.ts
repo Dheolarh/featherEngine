@@ -31,6 +31,13 @@ export interface ModelPart {
    * side/top/bottom, …). Absent faces fall back to `colorSlot`.
    */
   faceColors?: Record<number, number>;
+  /**
+   * Vertex editing (box parts): unit-space offsets per corner, keyed by corner index
+   * bit0=+X, bit1=+Y, bit2=+Z (0 = left-bottom-back … 7 = right-top-front). The whole hull —
+   * including a smooth bevel — deforms trilinearly through the 8 corners, so a box can become a
+   * roof peak, a tapered pillar or a leaning rock while staying a tiny serialized spec.
+   */
+  corners?: Record<number, Vector3Tuple>;
 }
 
 /**

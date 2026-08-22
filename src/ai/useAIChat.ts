@@ -113,6 +113,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Updated model palette';
     case 'set_model_style':
       return input.finish ? `Model style: ${input.finish}` : 'Updated model style';
+    case 'edit_model_vertices':
+      return input.reset && !Array.isArray(input.offsets) ? 'Reset model vertices' : 'Sculpted model vertices';
     case 'place_model':
       return 'Placed model in scene';
     case 'bake_model_asset':

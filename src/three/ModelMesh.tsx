@@ -23,13 +23,19 @@ export interface ModelPartMeshProps {
   palette: readonly string[];
   /** The owning spec's finish (smooth/flat + bevel). Absent = the crisp flat look. */
   style?: ModelStyle;
+  /** Render at identity transform (a gizmo group carries the real transform) while geometry and
+   *  materials still derive from the part's TRUE dimensions (bevel radius, deformation). */
+  neutralTransform?: boolean;
   /** Forge-preview hooks (paint/select/hover); scene rendering leaves them undefined. */
   onPartPointerDown?: (part: ModelPart, event: ThreeEvent<PointerEvent>) => void;
   onPartPointerOver?: (part: ModelPart, event: ThreeEvent<PointerEvent>) => void;
   onPartPointerOut?: (part: ModelPart) => void;
 }
 
-export function ModelPartMesh({ part, palette, style, onPartPointerDown, onPartPointerOver, onPartPointerOut }: ModelPartMeshProps) {
+const ZERO: [number, number, number] = [0, 0, 0];
+const ONE: [number, number, number] = [1, 1, 1];
+
+export function ModelPartMesh({ part, palette, style, neutralTransform, onPartPointerDown, onPartPointerOver, onPartPointerOut }: ModelPartMeshProps) {
   // Cached per (shape | dims+bevel); beveled boxes bake true-radius rounding back into unit space,
   // so mesh scale stays part.scale for every shape.
   const geometry = getPartRenderGeometry(part, style);
@@ -38,9 +44,9 @@ export function ModelPartMesh({ part, palette, style, onPartPointerDown, onPartP
     <mesh
       geometry={geometry}
       material={materials}
-      position={part.position}
-      rotation={part.rotation}
-      scale={part.scale}
+      position={neutralTransform ? ZERO : part.position}
+      rotation={neutralTransform ? ZERO : part.rotation}
+      scale={neutralTransform ? ONE : part.scale}
       castShadow
       receiveShadow
       onPointerDown={onPartPointerDown ? (event) => onPartPointerDown(part, event) : undefined}

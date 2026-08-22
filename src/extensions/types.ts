@@ -168,6 +168,8 @@ export interface FeatherPluginAPI {
     duplicatePart(specId: string, partId: string): string;
     /** Paint from the palette: the whole part when faceGroup is omitted, else one face group. */
     paintPart(specId: string, partId: string, colorSlot: number, faceGroup?: number): boolean;
+    /** Vertex editing: replace a box part's corner offsets (unit space, corner index bit0=+X, bit1=+Y, bit2=+Z). null clears. */
+    setPartCorners(specId: string, partId: string, corners: Record<number, Vector3Tuple> | null): boolean;
     /** Replace the asset's flat-color palette (1-16 hex colors). */
     setPalette(specId: string, palette: string[]): boolean;
     /** Place a linked, terrain-snapped instance in the scene. Returns the object id. */
