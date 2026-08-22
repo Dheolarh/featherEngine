@@ -9,6 +9,7 @@ import { defaultSceneEnvironment } from '../three/environmentSettings';
 import { defaultRenderSettings } from '../store/editor/defaults';
 import { DEFAULT_RENDER_PRESET, renderPresetEnvironmentPatch, renderPresetRenderPatch } from '../three/presets';
 import { defaultTreeLibrary } from '../tree/treeSpec';
+import { defaultModelLibrary } from '../model/modelSpec';
 import { createDefaultExportSettings, parseExportSettings } from './exportProfiles';
 
 export const SCENES_DIR = 'scenes';
@@ -55,6 +56,7 @@ export function splitProject(project: NodeForgeProject): {
     graphs: project.graphs,
     prefabs: project.prefabs,
     treeSpecs: project.treeSpecs,
+    modelSpecs: project.modelSpecs ?? [],
     renderSettings: project.renderSettings,
   };
   const sceneFiles = realScenes.map((scene) => ({ path: sceneFile(scene.id), scene }));
@@ -90,6 +92,7 @@ export function joinProject(manifest: ProjectManifest, scenes: Scene[]): NodeFor
     graphs: manifest.graphs,
     prefabs: manifest.prefabs ?? [],
     treeSpecs: manifest.treeSpecs ?? [],
+    modelSpecs: manifest.modelSpecs ?? [],
     renderSettings: manifest.renderSettings,
   };
 }
@@ -134,6 +137,7 @@ export function migrateLoaded(raw: unknown): NodeForgeProject {
       graphs: (data.graphs as NodeForgeProject['graphs']) ?? [],
       prefabs: (data.prefabs as NodeForgeProject['prefabs']) ?? [],
       treeSpecs: (data.treeSpecs as NodeForgeProject['treeSpecs']) ?? [],
+      modelSpecs: (data.modelSpecs as NodeForgeProject['modelSpecs']) ?? [],
       renderSettings: data.renderSettings as NodeForgeProject['renderSettings'],
     };
   }
@@ -175,6 +179,7 @@ export function migrateLoaded(raw: unknown): NodeForgeProject {
       graphs: (data.graphs as NodeForgeProject['graphs']) ?? [],
       prefabs: (data.prefabs as NodeForgeProject['prefabs']) ?? [],
       treeSpecs: (data.treeSpecs as NodeForgeProject['treeSpecs']) ?? [],
+      modelSpecs: (data.modelSpecs as NodeForgeProject['modelSpecs']) ?? [],
       renderSettings: data.renderSettings as NodeForgeProject['renderSettings'],
     };
   }
@@ -230,5 +235,6 @@ export function blankProject(name: string): NodeForgeProject {
     graphs: [],
     prefabs: [],
     treeSpecs: defaultTreeLibrary(),
+    modelSpecs: defaultModelLibrary(),
   };
 }

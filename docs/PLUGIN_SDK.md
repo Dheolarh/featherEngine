@@ -19,7 +19,7 @@ runtime. The current API version is `0.2.0`.
 > a manifest-only `.nfpack` whose `meta.pluginId` names the module. The install persists (localStorage
 > via `src/store/pluginStore.ts`) and re-activates on every boot; removing it from the store card
 > deactivates it immediately. Since the package carries no code, everything that can run still
-> shipped with the engine. The bundled `Arbor Forge` plugin is the worked example of the whole path.
+> shipped with the engine. The `Arbor Forge` and `Model Forge` gallery plugins are the worked examples of the whole path.
 
 ## What works now
 
@@ -31,8 +31,9 @@ runtime. The current API version is `0.2.0`.
 | Group synchronous project edits | `api.project.transaction(...)` |
 | List, create, rename, remove, select, and transform scene objects | `api.objects.*` |
 | Read the tree library + stylized preset gallery; add/update assets; place trees; plant groves | `api.trees.*` |
+| Read the prototype-model library + starter kits; edit parts/palettes; place props; bake GLB assets | `api.models.*` |
 | Open built-in editor panels (`'trees'`, `'terrain'`, `'materials'`, …) as a fallback of | `api.panels.open(...)` |
-| Observe stable project, scene, selection, and Play-mode events | `api.events.on(...)` |
+| Observe stable project, scene, selection, model-library, and Play-mode events | `api.events.on(...)` |
 | Show editor notifications and namespaced logs | `api.ui.notify(...)`, `api.log.*` |
 | Clean up every registration on unload or failed activation | plugin lifecycle host |
 

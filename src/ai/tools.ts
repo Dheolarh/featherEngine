@@ -1484,6 +1484,164 @@ const rawEngineTools = {
     },
   }),
 
+  list_model_specs: tool({
+    description:
+      "List the project's prototype-model assets (Model Forge): kit-bashed primitive props with flat palette colors. Objects reference one by model.specId; editing an asset restyles every placed instance live.",
+    inputSchema: z.object({}),
+    execute: async () =>
+      JSON.stringify(
+        store().modelSpecs.map((spec) => ({
+          id: spec.id,
+          name: spec.name,
+          palette: spec.palette,
+          parts: spec.parts.map((part) => ({ id: part.id, name: part.name, shape: part.shape, position: part.position, size: part.scale, colorSlot: part.colorSlot })),
+        })),
+      ),
+  }),
+
+  create_model_spec: tool({
+    description:
+      'Add a prototype-model asset (Model Forge) to the library from a starter kit: blank (one box), crate, fence, barrel, tile, arch. Then shape it with add_model_part/update_model_part, paint it with paint_model_part, and place it with place_model. For a prop the user describes, start from blank and kit-bash a FEW chunky parts.',
+    inputSchema: z.object({
+      starter: z.enum(['blank', 'crate', 'fence', 'barrel', 'tile', 'arch']).optional().describe('Defaults to blank.'),
+      name: z.string().optional(),
+    }),
+    execute: async ({ starter, name }) => {
+      const id = store().createModelSpec(starter ?? 'blank', name);
+      return id ? `Created model asset ${id}.` : 'Unknown starter kit.';
+    },
+  }),
+
+  add_model_part: tool({
+    description:
+      'Add one primitive part to a model asset. Shapes: box, cylinder, sphere, cone, wedge (a ramp, slope facing +Z). scale IS the part\'s world-unit size (e.g. [1.9, 0.1, 0.07] for a fence rail); colorSlot indexes the asset palette. Model origin sits on the ground, so a 1-unit-tall part centred at y=0.5 rests on it.',
+    inputSchema: z.object({
+      specId: z.string(),
+      shape: z.enum(['box', 'cylinder', 'sphere', 'cone', 'wedge']),
+      name: z.string().optional(),
+      position: vec3.optional(),
+      rotationDeg: vec3.optional().describe('Euler rotation in degrees.'),
+      scale: vec3.optional(),
+      colorSlot: z.number().optional(),
+    }),
+    execute: async ({ specId, shape, name, position, rotationDeg, scale, colorSlot }) => {
+      const partId = store().addModelPart(specId, shape, {
+        name,
+        position: position ? asVec3(position) : undefined,
+        rotation: rotationDeg ? (asVec3(rotationDeg).map((v) => (v * Math.PI) / 180) as Vector3Tuple) : undefined,
+        scale: scale ? asVec3(scale) : undefined,
+        colorSlot,
+      });
+      return partId ? `Added ${shape} part ${partId} to ${specId}.` : `No model asset with id ${specId}.`;
+    },
+  }),
+
+  update_model_part: tool({
+    description: 'Move, resize, rotate, rename, reshape or recolor one part of a model asset. Every placed instance updates live.',
+    inputSchema: z.object({
+      specId: z.string(),
+      partId: z.string(),
+      name: z.string().optional(),
+      shape: z.enum(['box', 'cylinder', 'sphere', 'cone', 'wedge']).optional(),
+      position: vec3.optional(),
+      rotationDeg: vec3.optional(),
+      scale: vec3.optional(),
+      colorSlot: z.number().optional(),
+    }),
+    execute: async ({ specId, partId, name, shape, position, rotationDeg, scale, colorSlot }) => {
+      const ok = store().updateModelPart(specId, partId, {
+        name,
+        shape,
+        position: position ? asVec3(position) : undefined,
+        rotation: rotationDeg ? (asVec3(rotationDeg).map((v) => (v * Math.PI) / 180) as Vector3Tuple) : undefined,
+        scale: scale ? asVec3(scale) : undefined,
+        colorSlot,
+      });
+      return ok ? `Updated part ${partId}.` : `No such model part (${specId} / ${partId}).`;
+    },
+  }),
+
+  remove_model_part: tool({
+    description: 'Remove one part from a model asset.',
+    inputSchema: z.object({ specId: z.string(), partId: z.string() }),
+    execute: async ({ specId, partId }) =>
+      store().removeModelPart(specId, partId) ? `Removed part ${partId}.` : `No such model part (${specId} / ${partId}).`,
+  }),
+
+  paint_model_part: tool({
+    description:
+      'Paint a model part from the asset palette. Omit faceGroup to paint the whole part (clears per-face paint). Face groups: box 0 right / 1 left / 2 top / 3 bottom / 4 front / 5 back; cylinder 0 side / 1 top / 2 bottom; cone 0 side / 2 bottom; wedge 0 slope / 1 bottom / 2 back / 3 left / 4 right; sphere has one surface.',
+    inputSchema: z.object({
+      specId: z.string(),
+      partId: z.string(),
+      colorSlot: z.number().describe('Palette slot index (see list_model_specs / set_model_palette).'),
+      faceGroup: z.number().optional(),
+    }),
+    execute: async ({ specId, partId, colorSlot, faceGroup }) =>
+      store().paintModelPart(specId, partId, colorSlot, faceGroup)
+        ? `Painted ${faceGroup === undefined ? 'part' : `face ${faceGroup} of part`} ${partId} with slot ${colorSlot}.`
+        : `No such model part (${specId} / ${partId}).`,
+  }),
+
+  set_model_palette: tool({
+    description: "Replace a model asset's flat-color palette (1-16 hex colors). Parts keep their slot indexes, so swapping the palette recolors the whole prop family at once.",
+    inputSchema: z.object({ specId: z.string(), palette: z.array(z.string()).min(1).max(16) }),
+    execute: async ({ specId, palette }) =>
+      store().setModelPalette(specId, palette) ? `Palette of ${specId} set (${palette.length} colors).` : `No model asset with id ${specId}.`,
+  }),
+
+  set_model_style: tool({
+    description:
+      "Switch a model asset's finish: 'smooth' (the Spline look — rounded box corners via bevel, smooth shading, subtle satin sheen; the default) or 'flat' (the crisp faceted Meshy look). bevel = world-unit corner radius on box parts (0-0.25, smooth only); roughness 0.05-1 (lower = glossier). Every placed instance restyles live.",
+    inputSchema: z.object({
+      specId: z.string(),
+      finish: z.enum(['smooth', 'flat']).optional(),
+      bevel: z.number().optional(),
+      roughness: z.number().optional(),
+    }),
+    execute: async ({ specId, finish, bevel, roughness }) => {
+      const spec = store().modelSpecs.find((entry) => entry.id === specId);
+      if (!spec) return `No model asset with id ${specId}.`;
+      store().updateModelSpec(specId, {
+        style: {
+          finish: finish ?? spec.style?.finish ?? 'smooth',
+          bevel: bevel ?? spec.style?.bevel ?? 0.02,
+          roughness: roughness ?? spec.style?.roughness ?? 0.55,
+        },
+      });
+      const next = store().modelSpecs.find((entry) => entry.id === specId)?.style;
+      return `Styled ${specId}: ${next?.finish} finish, bevel ${next?.bevel}, roughness ${next?.roughness}.`;
+    },
+  }),
+
+  place_model: tool({
+    description:
+      'Place a prototype model in the scene, linked to its library asset (list_model_specs) and snapped to the terrain under it. Editing the asset afterwards restyles every placed copy live.',
+    inputSchema: z.object({
+      specId: z.string(),
+      position: vec3.optional().describe('Defaults to the origin; y snaps to the terrain.'),
+      name: z.string().optional(),
+    }),
+    execute: async ({ specId, position, name }) => {
+      const id = store().createModelFromSpec(specId, { position: position ? asVec3(position) : undefined, name });
+      return id ? `Placed model ${id} (linked to asset ${specId}).` : `No model asset with id ${specId}.`;
+    },
+  }),
+
+  bake_model_asset: tool({
+    description:
+      'Bake a prototype model into a real GLB model asset in the project (Assets panel) — a first-class import usable on any renderer, in prefabs, and in exports. The library spec stays editable; the bake is a snapshot.',
+    inputSchema: z.object({ specId: z.string() }),
+    execute: async ({ specId }) => {
+      const spec = store().modelSpecs.find((entry) => entry.id === specId);
+      if (!spec) return `No model asset with id ${specId}.`;
+      const { modelSpecToGlbFile } = await import('../model/exportModelGlb');
+      const file = await modelSpecToGlbFile(spec);
+      store().addAssets([file]);
+      return `Baked "${spec.name}" to ${file.name} — it is in the Assets panel now.`;
+    },
+  }),
+
   set_grass_look: tool({
     description:
       'Apply a one-click stylized grass look to a terrain (switches it to the painted-clump grass). Use this when the user asks for a grass mood/style ("lusher grass", "dry savanna", "dark forest floor") instead of hand-setting colors. Follow up with update_terrain foliage.stylizedGrass to fine-tune.',

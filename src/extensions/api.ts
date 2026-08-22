@@ -9,11 +9,14 @@ import {
 import type { SceneObject, SceneObjectKind, TransformComponent, TreeArchetype, Vector3Tuple } from '../types';
 import { TREE_ARCHETYPES } from '../tree/treeSpec';
 import { STYLIZED_TREE_PRESETS, getStylizedPreset } from '../tree/stylizedPresets';
+import { MODEL_STARTERS } from '../model/modelSpec';
+import { modelSpecToGlbFile } from '../model/exportModelGlb';
 import { FeatherEventBus } from './events';
 import type { ExtensionRegistry } from './registry';
 import {
   FEATHER_EXTENSION_API_VERSION,
   type FeatherDispose,
+  type FeatherModelStarterInfo,
   type FeatherObjectCreateOptions,
   type FeatherPluginAPI,
 } from './types';
@@ -194,6 +197,88 @@ export function createFeatherPluginAPI(
     },
   };
 
+  const requireModelSpec = (specId: string) => {
+    const spec = useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId);
+    if (!spec) throw new Error(`No prototype-model asset with id ${specId}.`);
+    return spec;
+  };
+  const starterInfos: readonly FeatherModelStarterInfo[] = Object.freeze(
+    MODEL_STARTERS.map(({ id, name, tagline }) => Object.freeze({ id, name, tagline })),
+  );
+
+  const models: FeatherPluginAPI['models'] = {
+    library: () => clone(useEditorStore.getState().modelSpecs),
+    starters: () => starterInfos,
+    createFromStarter: (starterId, name) => {
+      requireEditableProject();
+      const id = useEditorStore.getState().createModelSpec(starterId, name);
+      if (!id) throw new Error(`Unknown model starter kit: ${starterId}`);
+      return id;
+    },
+    updateSpec: (specId, patch) => {
+      requireEditableProject();
+      if (!useEditorStore.getState().modelSpecs.some((entry) => entry.id === specId)) return false;
+      useEditorStore.getState().updateModelSpec(specId, patch);
+      return true;
+    },
+    duplicateSpec: (specId) => {
+      requireEditableProject();
+      requireModelSpec(specId);
+      return useEditorStore.getState().duplicateModelSpec(specId);
+    },
+    deleteSpec: (specId) => {
+      requireEditableProject();
+      if (!useEditorStore.getState().modelSpecs.some((entry) => entry.id === specId)) return false;
+      useEditorStore.getState().deleteModelSpec(specId);
+      return true;
+    },
+    addPart: (specId, shape, init) => {
+      requireEditableProject();
+      requireModelSpec(specId);
+      const partId = useEditorStore.getState().addModelPart(specId, shape, init);
+      if (!partId) throw new Error(`No prototype-model asset with id ${specId}.`);
+      return partId;
+    },
+    updatePart: (specId, partId, patch) => {
+      requireEditableProject();
+      return useEditorStore.getState().updateModelPart(specId, partId, patch);
+    },
+    removePart: (specId, partId) => {
+      requireEditableProject();
+      return useEditorStore.getState().removeModelPart(specId, partId);
+    },
+    duplicatePart: (specId, partId) => {
+      requireEditableProject();
+      const copyId = useEditorStore.getState().duplicateModelPart(specId, partId);
+      if (!copyId) throw new Error(`No such model part (${specId} / ${partId}).`);
+      return copyId;
+    },
+    paintPart: (specId, partId, colorSlot, faceGroup) => {
+      requireEditableProject();
+      return useEditorStore.getState().paintModelPart(specId, partId, colorSlot, faceGroup);
+    },
+    setPalette: (specId, palette) => {
+      requireEditableProject();
+      return useEditorStore.getState().setModelPalette(specId, palette);
+    },
+    place: (specId, options = {}) => {
+      requireEditableProject();
+      if (options.position && !validVector(options.position)) {
+        throw new Error('Model position must contain three finite numbers.');
+      }
+      const id = useEditorStore.getState().createModelFromSpec(specId, options);
+      if (!id) throw new Error(`No prototype-model asset with id ${specId}.`);
+      return id;
+    },
+    bakeToAsset: async (specId) => {
+      requireEditableProject();
+      const spec = requireModelSpec(specId);
+      const file = await modelSpecToGlbFile(spec);
+      useEditorStore.getState().addAssets([file]);
+      return { fileName: file.name };
+    },
+  };
+
   const commands: FeatherPluginAPI['commands'] = Object.freeze({
     register: (definition) => {
       requireOwnedId(pluginId, definition.id, 'Command');
@@ -266,6 +351,7 @@ export function createFeatherPluginAPI(
     project,
     objects: Object.freeze(objects),
     trees: Object.freeze(trees),
+    models: Object.freeze(models),
     ui,
     log,
   });

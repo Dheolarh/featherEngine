@@ -11187,3 +11187,216 @@ body.is-scrubbing * {
   opacity: 0.4;
   cursor: default;
 }
+
+/* ---------- Model Forge ---------- */
+/* Panel columns ease in with a short stagger (mount only). Exits are handled by Dockview. */
+.model-forge-panel .terrain-toolbox,
+.model-forge-panel .terrain-preview-column,
+.model-forge-panel .terrain-controls {
+  animation: model-forge-in 240ms cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+.model-forge-panel .terrain-preview-column { animation-delay: 50ms; }
+.model-forge-panel .terrain-controls { animation-delay: 100ms; }
+@keyframes model-forge-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+/* Part/placed counters update live — tabular digits stop the row from shimmying. */
+.model-forge-panel .tree-preview-meta {
+  font-variant-numeric: tabular-nums;
+}
+.model-forge-canvas {
+  min-height: 240px;
+}
+.model-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.model-toolbar-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px; /* concentric: inner 5px + 2px padding */
+  background: var(--panel-soft);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.model-toolbar-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted, #9aa3b2);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  transition-property: background-color, color, transform;
+  transition-duration: 140ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.model-toolbar-seg button:hover {
+  color: var(--text, #dfe5ee);
+}
+.model-toolbar-seg button:active {
+  transform: scale(0.96);
+}
+.model-toolbar-seg button.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.model-snap-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted, #9aa3b2);
+  cursor: pointer;
+}
+.model-starter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.model-starter-grid button {
+  padding: 7px 6px;
+  border: none;
+  border-radius: 7px;
+  background: var(--panel-soft);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  transition-property: box-shadow, background-color, transform;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.model-starter-grid button:hover {
+  box-shadow: inset 0 0 0 1px var(--accent), 0 3px 10px rgba(0, 0, 0, 0.25);
+  transform: translateY(-1px);
+}
+.model-starter-grid button:active {
+  transform: scale(0.96);
+}
+.model-palette-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.model-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: none;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  padding: 0;
+  transition-property: transform, box-shadow;
+  transition-duration: 140ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.model-swatch:hover {
+  transform: scale(1.08);
+}
+.model-swatch:active {
+  transform: scale(0.96);
+}
+.model-swatch.active {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 0 0 2px var(--background, #10141b),
+    0 0 0 4px var(--accent);
+}
+.model-palette-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.model-palette-edit input[type='color'] {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+.model-shape-row {
+  display: flex;
+  gap: 6px;
+}
+.model-shape-row button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  border: none;
+  border-radius: 7px;
+  background: var(--panel-soft);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+  transition-property: box-shadow, color, transform;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.model-shape-row button:hover {
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent-strong);
+}
+.model-shape-row button:active {
+  transform: scale(0.96);
+}
+.model-vec-field .model-vec-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+}
+.model-vec-field input[type='number'] {
+  width: 100%;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.model-face-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.model-face-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 999px;
+  background: var(--panel-soft);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-size: var(--text-3xs);
+  cursor: pointer;
+  transition-property: box-shadow, transform;
+  transition-duration: 140ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.model-face-chips button:hover {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.model-face-chips button:active {
+  transform: scale(0.96);
+}
+.model-face-chip-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.model-part-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}

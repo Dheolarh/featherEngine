@@ -47,6 +47,7 @@ import { qualityProfile } from '../three/quality';
 import { SceneEnvironment } from '../three/SceneEnvironment';
 import { Terrain } from '../three/Terrain';
 import { TreeMesh } from '../three/TreeMesh';
+import { ModelMesh } from '../three/ModelMesh';
 import { ClothSim } from '../three/ClothSim';
 import { CableSim } from '../three/CableSim';
 import { WaterSurface } from '../three/WaterSurface';
@@ -84,6 +85,8 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
   if (object.projectile) return <ProjectileVisual object={object} />;
   if (object.terrain?.enabled) return <Terrain object={object} />;
   if (object.tree?.enabled) return <TreeMesh object={object} />;
+  // Prototype models (Model Forge) — same early-return placement as the editor viewport.
+  if (object.model?.enabled) return <ModelMesh object={object} />;
   // Soft-body visuals replace the object's regular mesh, matching editor Play. Keep these before
   // hooks so enabling either component never changes this component's hook count.
   if (object.cloth?.enabled) return <ClothSim object={object} selected={false} />;
@@ -352,6 +355,7 @@ function sameRenderObject(prev: SceneObject, next: SceneObject) {
     prev.animator === next.animator &&
     prev.vehicle === next.vehicle &&
     prev.tree === next.tree &&
+    prev.model === next.model &&
     prev.cloth === next.cloth &&
     prev.cable === next.cable &&
     prev.water === next.water &&

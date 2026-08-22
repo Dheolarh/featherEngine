@@ -1098,6 +1098,28 @@ const ARBOR_FORGE_PLUGIN = {
   content: {},
 };
 
+/**
+ * Model Forge, the second gallery plugin — same manifest-only shape as Arbor Forge above. The model
+ * DATA layer (specs, rendering, serialization, AI tools) is engine code and always on; this package
+ * activates the visual studio panel.
+ */
+const MODEL_FORGE_PLUGIN = {
+  slug: 'model-forge',
+  kind: 'plugin',
+  meta: {
+    id: 'pkg-feather-plugin-model-forge',
+    pluginId: 'feather.model-forge',
+    name: 'Model Forge — Prototype Modeler',
+    description:
+      'Prototype props without leaving the engine: kit-bash five primitives (box, cylinder, sphere, cone, wedge) into fences, crates, tiles and arches, paint faces from a stylized palette, and pick the finish — smooth Spline-style rounded corners with a satin sheen, or crisp flat-shaded Meshy facets. Placed copies stay live-linked and restyle as you edit the asset; when a prop graduates, bake it into a real GLB model asset — thumbnailed, placeable anywhere, shipped in exports, and openable in Blender.',
+    author: 'Feather',
+    version: '1.0.0',
+    tags: ['plugin', 'modeling', 'props', 'stylized', 'prototyping'],
+    thumbnail: thumbnail('#E9A13B', '#4A2508', '\u{1F528}'),
+  },
+  content: {},
+};
+
 /** Card art for the browser-exported starter templates, which carry no thumbnail of their own. */
 const TEMPLATE_THUMBNAILS = {
   'template-third-person': ['#5B8CFF', '#1B2C63', '\u{1F3C3}'],
@@ -1185,7 +1207,7 @@ async function main() {
   // whatever bucket this is eventually mirrored into.
   for (const dir of Object.values(KIND_DIRS)) await mkdir(join(PACKAGES_DIR, dir), { recursive: true });
 
-  const packs = [...PACKS, await buildWeaponPack(), SANDBOX_TEMPLATE, ARBOR_FORGE_PLUGIN];
+  const packs = [...PACKS, await buildWeaponPack(), SANDBOX_TEMPLATE, ARBOR_FORGE_PLUGIN, MODEL_FORGE_PLUGIN];
   const entries = [];
   for (const pack of packs) {
     const kind = pack.kind ?? 'asset';

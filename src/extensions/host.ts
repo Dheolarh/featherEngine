@@ -100,6 +100,9 @@ export function startExtensionHost(): void {
           objectCount: selectActiveObjects(state).length,
         });
       }
+      if (state.modelSpecs !== previous.modelSpecs) {
+        extensionEventBus.emit('models:changed', { specCount: state.modelSpecs.length });
+      }
     }),
   );
 

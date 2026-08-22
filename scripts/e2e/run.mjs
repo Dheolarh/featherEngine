@@ -41,6 +41,26 @@ async function clickViewMenuEntry(app, title) {
   })()`);
 }
 
+/** A genuine pointer drag via CDP — presses, sweeps in steps, releases. from===to acts as a click. */
+async function dragOn(app, from, to, steps = 6) {
+  await app.page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y, button: 'none', buttons: 0 });
+  await delay(40);
+  await app.page.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: from.x, y: from.y, button: 'left', buttons: 1, clickCount: 1 });
+  await delay(40);
+  for (let i = 1; i <= steps; i += 1) {
+    await app.page.call('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: from.x + ((to.x - from.x) * i) / steps,
+      y: from.y + ((to.y - from.y) * i) / steps,
+      button: 'left',
+      buttons: 1,
+    });
+    await delay(25);
+  }
+  await app.page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', buttons: 0 });
+  await delay(150);
+}
+
 spec('asset store installs the Arbor Forge plugin and its studio plants a grove', async () => {
   const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=store' });
   try {
@@ -789,6 +809,161 @@ spec('per-element CSS applies in the design canvas and in Play', async () => {
     })()`);
     assert.equal(playStyle.background, 'rgb(9, 200, 77)', 'element CSS should apply in Play');
     assert.equal(playStyle.padding, '11px', 'element CSS declarations should all apply in Play');
+  } finally {
+    await app.dispose();
+  }
+});
+
+spec('model forge installs from the store, builds, paints, places and bakes a prop', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=store' });
+  try {
+    // Start from OFF so this covers the real install path (a previous run persisted the install).
+    await app.evaluate(`localStorage.removeItem('nodeforge.plugins')`);
+    await app.evaluate(`location.reload()`);
+    await app.waitFor(`document.querySelector('.toolbar')`, { label: 'editor reloaded' });
+
+    // Install the Model Forge plugin from its Asset Store card.
+    await clickViewMenuEntry(app, 'Store');
+    await app.waitFor(`document.querySelector('.store-card')`, { label: 'catalog loaded' });
+    await app.evaluate(`(() => {
+      const card = [...document.querySelectorAll('.store-card')].find((c) => c.textContent.includes('Model Forge'));
+      card?.querySelector('.store-install-button')?.click();
+    })()`);
+    await app.waitFor(
+      `(JSON.parse(localStorage.getItem('nodeforge.plugins') ?? '{}').state?.enabledIds ?? []).includes('feather.model-forge')`,
+      { label: 'plugin persisted' },
+    );
+
+    // The activated plugin's studio is reachable from the View menu like any extension panel.
+    await clickViewMenuEntry(app, 'Model Forge');
+    await app.waitFor(`document.querySelector('.model-toolbar')`, { label: 'model forge open' });
+    await app.waitFor(`document.querySelector('.model-forge-canvas canvas')`, { label: 'live preview canvas' });
+    await app.waitFor(`document.querySelectorAll('.model-swatch').length >= 10`, { label: 'palette rendered' });
+
+    // --- Real-pointer gizmo coverage: the bugs here only ever reproduced with a live mouse. ---
+    // A genuine click on the crate in the 3D preview selects that part.
+    // The preview canvas resizes a beat after the panel mounts — interact only once it is real.
+    await app.waitFor(
+      `(() => { const c = document.querySelector('.model-forge-canvas canvas'); return !!c && c.getBoundingClientRect().width > 350; })()`,
+      { label: 'preview canvas sized' },
+    );
+    await app.realClick('.model-forge-canvas canvas');
+    await app.realClick('.model-forge-canvas canvas');
+    await app.waitFor(`document.querySelector('.model-part-actions')`, { label: 'canvas click selects a part' });
+
+    const canvasBox = await app.evaluate(`(() => {
+      const r = document.querySelector('.model-forge-canvas canvas').getBoundingClientRect();
+      return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+    })()`);
+    const POSITIONS = `JSON.stringify((window.__featherStore.modelSpecs.find((s) => s.id === 'model-starter-crate') ?? {parts:[]}).parts.map((p) => p.position))`;
+    const positionsBefore = await app.evaluate(POSITIONS);
+
+    // Find the translate gizmo's red X arrow BY PIXEL (the capture is CSS-pixel 1:1, same as
+    // pixelStats) and drag straight along it: the grab must survive the whole drag (regression:
+    // per-tick commits detached the controls and killed it after one tick), commit a new transform
+    // on release, and keep the part selected (regression: a handle grab read as a "missed" click
+    // and deselected, unmounting the gizmo mid-use).
+    const shot = await app.page.call('Page.captureScreenshot', { format: 'png' });
+    const arrow = await app.evaluate(`(async () => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,${shot.data}';
+      await img.decode();
+      const r = ${JSON.stringify({ x: canvasBox.x, y: canvasBox.y, w: canvasBox.w, h: canvasBox.h })};
+      const c = document.createElement('canvas');
+      c.width = r.w; c.height = r.h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+      const data = ctx.getImageData(0, 0, r.w, r.h).data;
+      const pts = [];
+      for (let y = 0; y < r.h; y += 2) {
+        for (let x = 0; x < r.w; x += 2) {
+          const i = (y * r.w + x) * 4;
+          const R = data[i], G = data[i + 1], B = data[i + 2];
+          // Red-dominant = the X axis; nothing else in the preview palette qualifies.
+          if (R > 140 && R - G > 70 && R - B > 60) pts.push([x, y]);
+        }
+      }
+      if (pts.length < 8) return null;
+      let sx = 0, sy = 0;
+      for (const [x, y] of pts) { sx += x; sy += y; }
+      const cx = sx / pts.length, cy = sy / pts.length;
+      // The farthest red pixel from the centroid fixes the arrow's screen direction.
+      let best = pts[0], bd = -1;
+      for (const p of pts) { const d = (p[0] - cx) ** 2 + (p[1] - cy) ** 2; if (d > bd) { bd = d; best = p; } }
+      const len = Math.hypot(best[0] - cx, best[1] - cy) || 1;
+      return { x: r.x + cx, y: r.y + cy, dx: (best[0] - cx) / len, dy: (best[1] - cy) / len };
+    })()`);
+    assert.ok(arrow, 'the translate gizmo X arrow should be visible in the preview');
+    await dragOn(app, { x: arrow.x, y: arrow.y }, { x: arrow.x + arrow.dx * 60, y: arrow.y + arrow.dy * 60 });
+    assert.notEqual(await app.evaluate(POSITIONS), positionsBefore, 'dragging the gizmo arrow should commit a new part transform');
+    assert.ok(await app.evaluate(`!!document.querySelector('.model-part-actions')`), 'part stays selected through a gizmo drag');
+
+    // Orbiting the camera must not clear the selection (regression: every orbit ended in a
+    // "missed" click that deselected) — while a STATIONARY background click still deselects.
+    const corner = {
+      x: canvasBox.cx - Math.min(200, canvasBox.w * 0.4),
+      y: canvasBox.cy - Math.min(130, canvasBox.h * 0.35),
+    };
+    await dragOn(app, corner, { x: corner.x + 90, y: corner.y + 55 });
+    assert.ok(await app.evaluate(`!!document.querySelector('.model-part-actions')`), 'orbiting kept the part selected');
+    await dragOn(app, corner, corner);
+    await app.waitFor(`!document.querySelector('.model-part-actions')`, { label: 'stationary background click deselects' });
+
+    // A starter kit lands in the library and becomes the active model.
+    await app.evaluate(`(() => {
+      const buttons = [...document.querySelectorAll('.model-starter-grid button')];
+      buttons.find((b) => b.textContent.trim() === 'Fence Segment')?.click();
+    })()`);
+    await app.waitFor(`window.__featherStore.modelSpecs.some((s) => s.name === 'Fence Segment')`, {
+      label: 'fence starter in library',
+    });
+
+    // Place in Scene drops an object LINKED to the asset (model.specId), not a copy.
+    const before = await app.evaluate(
+      `(() => { const s = window.__featherStore; return s.scenes.find((x) => x.id === s.activeSceneId).objects.length; })()`,
+    );
+    await app.evaluate(`(() => {
+      const buttons = [...document.querySelectorAll('button')];
+      buttons.find((b) => b.textContent.trim() === 'Place in Scene')?.click();
+    })()`);
+    await app.waitFor(
+      `(() => {
+        const s = window.__featherStore;
+        const scene = s.scenes.find((x) => x.id === s.activeSceneId);
+        const placed = scene.objects[scene.objects.length - 1];
+        const spec = s.modelSpecs.find((x) => x.name === 'Fence Segment');
+        return scene.objects.length === ${before} + 1 && placed.model?.enabled === true && placed.model?.specId === spec.id;
+      })()`,
+      { label: 'placed prop linked to the asset' },
+    );
+
+    // Face painting writes into the shared asset — the live-restyle link the whole feature rests on.
+    await app.evaluate(`(() => {
+      const s = window.__featherStore;
+      const spec = s.modelSpecs.find((x) => x.name === 'Fence Segment');
+      s.paintModelPart(spec.id, spec.parts[0].id, 5, 2);
+    })()`);
+    await app.waitFor(
+      `(() => {
+        const spec = window.__featherStore.modelSpecs.find((x) => x.name === 'Fence Segment');
+        return spec.parts[0].faceColors && spec.parts[0].faceColors[2] === 5;
+      })()`,
+      { label: 'face paint landed on the asset' },
+    );
+
+    // Bake runs GLTFExporter in the real browser and lands a first-class .glb asset in the project.
+    const assetsBefore = await app.evaluate(`window.__featherStore.assets.length`);
+    await app.evaluate(`(() => {
+      const buttons = [...document.querySelectorAll('button')];
+      buttons.find((b) => b.textContent.includes('Bake to GLB'))?.click();
+    })()`);
+    await app.waitFor(
+      `(() => {
+        const assets = window.__featherStore.assets;
+        return assets.length === ${assetsBefore} + 1 && assets[assets.length - 1].name.endsWith('.glb');
+      })()`,
+      { label: 'baked GLB asset in the project', timeout: 20000 },
+    );
   } finally {
     await app.dispose();
   }

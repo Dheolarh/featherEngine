@@ -1,0 +1,126 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { selectActiveObjects, useEditorStore } from '../editorStore';
+import { MODEL_FACE_GROUPS, MODEL_STARTERS } from '../../model/modelSpec';
+
+/**
+ * The store actions behind the Model Forge panel and the AI's model tools. What matters: starters
+ * land as normalized library assets, placed props stay LINKED to their asset (that link is what
+ * makes "edit the asset, every placed copy restyles" work), and deleting an asset stamps an inline
+ * copy into placed props so they never lose geometry.
+ */
+describe('Model Forge store actions', () => {
+  beforeEach(() => {
+    // Snapshot-free isolation: drop everything a previous test placed or created.
+    const state = useEditorStore.getState();
+    for (const object of selectActiveObjects(state).filter((entry) => entry.model)) state.deleteObject(object.id);
+    for (const spec of useEditorStore.getState().modelSpecs.filter((entry) => entry.id !== 'model-starter-crate')) {
+      useEditorStore.getState().deleteModelSpec(spec.id);
+    }
+  });
+
+  it('createModelSpec from a starter lands a normalized library asset', () => {
+    const before = useEditorStore.getState().modelSpecs.length;
+    const specId = useEditorStore.getState().createModelSpec('fence', 'Garden Fence');
+    expect(specId).toBeTruthy();
+    const spec = useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!;
+    expect(spec.name).toBe('Garden Fence');
+    // Compare against the starter data, not a literal, so retuning the kit doesn't break the test.
+    expect(spec.parts).toHaveLength(MODEL_STARTERS.find((starter) => starter.id === 'fence')!.build().length);
+    expect(spec.palette.length).toBeGreaterThan(0);
+    expect(useEditorStore.getState().modelSpecs).toHaveLength(before + 1);
+    expect(useEditorStore.getState().activeModelSpecId).toBe(specId);
+    // Unknown starters refuse loudly-but-safely instead of adding a mystery asset.
+    expect(useEditorStore.getState().createModelSpec('not-a-starter')).toBeNull();
+  });
+
+  it('parts round-trip: add, update, duplicate, remove', () => {
+    const specId = useEditorStore.getState().createModelSpec('blank')!;
+    const partId = useEditorStore.getState().addModelPart(specId, 'cylinder', { name: 'Post', scale: [0.2, 2, 0.2] })!;
+    expect(partId).toBeTruthy();
+
+    const spec = () => useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!;
+    expect(spec().parts.map((part) => part.shape)).toEqual(['box', 'cylinder']);
+
+    expect(useEditorStore.getState().updateModelPart(specId, partId, { position: [0, 1, 0], colorSlot: 3 })).toBe(true);
+    const updated = spec().parts.find((part) => part.id === partId)!;
+    expect(updated.position).toEqual([0, 1, 0]);
+    expect(updated.colorSlot).toBe(3);
+    expect(updated.scale).toEqual([0.2, 2, 0.2]);
+
+    const copyId = useEditorStore.getState().duplicateModelPart(specId, partId)!;
+    expect(copyId).toBeTruthy();
+    expect(spec().parts).toHaveLength(3);
+
+    expect(useEditorStore.getState().removeModelPart(specId, copyId)).toBe(true);
+    expect(spec().parts).toHaveLength(2);
+    expect(useEditorStore.getState().updateModelPart(specId, 'missing-part', { colorSlot: 1 })).toBe(false);
+  });
+
+  it('paintModelPart paints face groups; whole-part paint clears the overrides', () => {
+    const specId = useEditorStore.getState().createModelSpec('blank')!;
+    const partId = useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!.parts[0].id;
+    const part = () => useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!.parts[0];
+
+    // Paint the top face (box group 2 per MODEL_FACE_GROUPS).
+    expect(MODEL_FACE_GROUPS.box[2]).toBe('Top');
+    expect(useEditorStore.getState().paintModelPart(specId, partId, 5, 2)).toBe(true);
+    expect(part().faceColors).toEqual({ 2: 5 });
+
+    // Whole-part paint resets the per-face map.
+    expect(useEditorStore.getState().paintModelPart(specId, partId, 7)).toBe(true);
+    expect(part().colorSlot).toBe(7);
+    expect(part().faceColors).toBeUndefined();
+
+    // Slots clamp into the palette instead of pointing at nothing.
+    const paletteSize = useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!.palette.length;
+    expect(useEditorStore.getState().paintModelPart(specId, partId, 999)).toBe(true);
+    expect(part().colorSlot).toBe(paletteSize - 1);
+  });
+
+  it('placed props link to the asset, and deleting the asset stamps an inline keep-alive copy', () => {
+    const specId = useEditorStore.getState().createModelSpec('barrel')!;
+    const objectId = useEditorStore.getState().createModelFromSpec(specId, { position: [4, 0, -3] })!;
+    const object = () => selectActiveObjects(useEditorStore.getState()).find((entry) => entry.id === objectId)!;
+
+    expect(object().kind).toBe('empty');
+    expect(object().model?.enabled).toBe(true);
+    expect(object().model?.specId).toBe(specId);
+    expect(object().model?.spec).toBeUndefined();
+    expect(object().transform.position[0]).toBe(4);
+    expect(useEditorStore.getState().createModelFromSpec('missing-spec')).toBeNull();
+
+    const partCount = useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!.parts.length;
+    useEditorStore.getState().deleteModelSpec(specId);
+    expect(useEditorStore.getState().modelSpecs.some((entry) => entry.id === specId)).toBe(false);
+    // The placed prop keeps its geometry via the stamped inline spec.
+    expect(object().model?.specId).toBeUndefined();
+    expect(object().model?.spec?.parts).toHaveLength(partCount);
+  });
+
+  it('style: starters default to the smooth Spline finish; updates normalize and clamp', () => {
+    const specId = useEditorStore.getState().createModelSpec('crate')!;
+    const spec = () => useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!;
+    expect(spec().style?.finish).toBe('smooth');
+    expect(spec().style?.bevel).toBeGreaterThan(0);
+
+    // Switching to flat keeps the spec valid; garbage values clamp instead of leaking through.
+    useEditorStore.getState().updateModelSpec(specId, { style: { finish: 'flat', bevel: 9, roughness: -3 } });
+    expect(spec().style).toEqual({ finish: 'flat', bevel: 0.25, roughness: 0.05 });
+
+    // Unknown finishes fall back to smooth rather than breaking rendering.
+    useEditorStore.getState().updateModelSpec(specId, { style: { finish: 'chrome' } as never });
+    expect(spec().style?.finish).toBe('smooth');
+  });
+
+  it('setModelPalette recolors the family and exportProject carries the library', () => {
+    const specId = useEditorStore.getState().createModelSpec('tile')!;
+    expect(useEditorStore.getState().setModelPalette(specId, ['#ff0000', '#00ff00'])).toBe(true);
+    const spec = useEditorStore.getState().modelSpecs.find((entry) => entry.id === specId)!;
+    expect(spec.palette).toEqual(['#ff0000', '#00ff00']);
+    // Slots beyond the shrunk palette clamp back into range.
+    expect(spec.parts.every((part) => part.colorSlot < 2)).toBe(true);
+
+    const exported = useEditorStore.getState().exportProject();
+    expect(exported.modelSpecs?.some((entry) => entry.id === specId)).toBe(true);
+  });
+});

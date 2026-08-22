@@ -127,6 +127,8 @@ import { isRollInvulnerable, meleeComboDamage } from '../runtime/combatFeel';
 import { wrapDayCycleTime } from '../three/dayCycle';
 import { DEFAULT_TREE_IDS, defaultTreeLibrary, normalizeTreeSpec, treeRng, treeSpecFromArchetype } from '../tree/treeSpec';
 import { getStylizedPreset, stylizedTreeSpec } from '../tree/stylizedPresets';
+import { defaultModelLibrary, makeModelPart, modelSpecFromStarter, normalizeModelSpec } from '../model/modelSpec';
+import type { ModelPart, ModelPartShape, ModelSpec } from '../types';
 
 /** How a grove picks its tree asset: an explicit library spec, a stylized preset, or an archetype. */
 export interface PlantGroveOptions {
@@ -392,6 +394,9 @@ interface EditorState {
   /** Project-owned production profiles; credentials remain outside the project file. */
   exportSettings: ExportSettings;
   activeTreeSpecId: string;
+  /** Reusable prototype-model assets (Model Forge). Objects reference one by model.specId. */
+  modelSpecs: ModelSpec[];
+  activeModelSpecId: string;
   /** Id of the prefab currently open in the prefab editor, or null when editing a normal scene. */
   editingPrefabId: string | null;
   /** While editing a prefab, the scene to return to when the editor closes. */
@@ -721,6 +726,28 @@ interface EditorState {
   plantGrove: (options?: PlantGroveOptions) => { groupId: string; treeIds: string[] } | null;
   /** Land one axe hit on a tree. Severs it (spawning the felled log) once that break point runs out of hits. */
   chopTreeAt: (objectId: string, worldPoint: Vector3Tuple, direction?: Vector3Tuple) => string;
+  /** Add a prototype model asset to the library from a starter kit (src/model/modelSpec.ts). Returns its id; null = unknown starter. */
+  createModelSpec: (starterId?: string, name?: string) => string | null;
+  /** Patch a library model asset (normalized). Every placed instance referencing it updates live. */
+  updateModelSpec: (specId: string, patch: Partial<ModelSpec>) => void;
+  /** Duplicate a library model asset (parts get fresh ids). */
+  duplicateModelSpec: (specId: string) => string;
+  /** Remove a library model asset. Placed instances (in every scene) keep an inline copy of the spec. */
+  deleteModelSpec: (specId: string) => void;
+  setActiveModelSpec: (specId: string) => void;
+  /** Add one primitive part to a model asset. Returns the part id; null = unknown spec. */
+  addModelPart: (specId: string, shape: ModelPartShape, init?: Partial<Omit<ModelPart, 'id' | 'shape'>>) => string | null;
+  /** Patch one part (name, shape, transform, colorSlot, faceColors). */
+  updateModelPart: (specId: string, partId: string, patch: Partial<Omit<ModelPart, 'id'>>) => boolean;
+  removeModelPart: (specId: string, partId: string) => boolean;
+  /** Copy one part in place. Returns the new part id; null = unknown spec/part. */
+  duplicateModelPart: (specId: string, partId: string) => string | null;
+  /** Paint a part from the palette: the whole part when faceGroup is omitted (clearing face overrides), else one face group. */
+  paintModelPart: (specId: string, partId: string, colorSlot: number, faceGroup?: number) => boolean;
+  /** Replace a model asset's flat-color palette (1-16 hex colors). */
+  setModelPalette: (specId: string, palette: string[]) => boolean;
+  /** Place a prototype model object linked to a library asset (terrain-snapped). Returns the object id; null = unknown spec. */
+  createModelFromSpec: (specId: string, options?: { position?: Vector3Tuple; name?: string }) => string | null;
   /** Apply a one-click grass look (switches the terrain to stylized clump grass). Returns the preset label. */
   applyGrassPreset: (id: string, presetId: GrassPresetId) => string | null;
   setTerrainBrush: (patch: Partial<TerrainBrushSettings>) => void;
@@ -1394,6 +1421,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   treeSpecs: defaultTreeLibrary(),
   exportSettings: createDefaultExportSettings('Untitled Project', starterSceneId),
   activeTreeSpecId: DEFAULT_TREE_IDS.oak,
+  modelSpecs: defaultModelLibrary(),
+  activeModelSpecId: 'model-starter-crate',
   editingPrefabId: null,
   prefabReturnSceneId: null,
   prefabThumbnailQueue: [],
@@ -2417,6 +2446,127 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const logs = result.logs ?? [];
     if (logs.length) set((state) => mapActiveSceneObjects(state, (objects) => [...objects, ...logs]));
     return `Felled ${object.name} at break point ${result.breakPointIndex}.`;
+  },
+  createModelSpec: (starterId = 'blank', name) => {
+    const id = makeId('model');
+    const spec = modelSpecFromStarter(starterId, id, name);
+    if (!spec) return null;
+    set((state) => ({ modelSpecs: [...state.modelSpecs, spec], activeModelSpecId: id, isDirty: true }));
+    return id;
+  },
+  updateModelSpec: (specId, patch) =>
+    set((state) => ({
+      modelSpecs: state.modelSpecs.map((spec) =>
+        spec.id === specId ? normalizeModelSpec({ ...spec, ...stripUndefined(patch), id: specId }) : spec,
+      ),
+      isDirty: true,
+    })),
+  duplicateModelSpec: (specId) => {
+    const id = makeId('model');
+    set((state) => {
+      const source = state.modelSpecs.find((spec) => spec.id === specId);
+      if (!source) return state;
+      const copy = normalizeModelSpec({
+        ...source,
+        id,
+        name: `${source.name} Copy`,
+        parts: source.parts.map((part) => ({ ...part, id: makeId('part') })),
+      });
+      return { modelSpecs: [...state.modelSpecs, copy], activeModelSpecId: id, isDirty: true };
+    });
+    return id;
+  },
+  deleteModelSpec: (specId) =>
+    set((state) => {
+      const source = state.modelSpecs.find((spec) => spec.id === specId);
+      const stamp = (object: SceneObject): SceneObject =>
+        object.model?.specId === specId
+          ? { ...object, model: { ...object.model, specId: undefined, spec: object.model.spec ?? source } }
+          : object;
+      return {
+        modelSpecs: state.modelSpecs.filter((spec) => spec.id !== specId),
+        activeModelSpecId:
+          state.activeModelSpecId === specId
+            ? state.modelSpecs.find((spec) => spec.id !== specId)?.id ?? ''
+            : state.activeModelSpecId,
+        // Placed props in EVERY scene keep an inline copy — deleting the asset never deletes their geometry.
+        scenes: state.scenes.map((scene) => ({ ...scene, objects: scene.objects.map(stamp) })),
+        isDirty: true,
+      };
+    }),
+  setActiveModelSpec: (specId) => set({ activeModelSpecId: specId }),
+  addModelPart: (specId, shape, init = {}) => {
+    const spec = get().modelSpecs.find((entry) => entry.id === specId);
+    if (!spec) return null;
+    const part = makeModelPart(shape, init);
+    get().updateModelSpec(specId, { parts: [...spec.parts, part] });
+    return part.id;
+  },
+  updateModelPart: (specId, partId, patch) => {
+    const spec = get().modelSpecs.find((entry) => entry.id === specId);
+    if (!spec || !spec.parts.some((part) => part.id === partId)) return false;
+    get().updateModelSpec(specId, {
+      parts: spec.parts.map((part) => (part.id === partId ? { ...part, ...stripUndefined(patch), id: partId } : part)),
+    });
+    return true;
+  },
+  removeModelPart: (specId, partId) => {
+    const spec = get().modelSpecs.find((entry) => entry.id === specId);
+    if (!spec || !spec.parts.some((part) => part.id === partId)) return false;
+    get().updateModelSpec(specId, { parts: spec.parts.filter((part) => part.id !== partId) });
+    return true;
+  },
+  duplicateModelPart: (specId, partId) => {
+    const spec = get().modelSpecs.find((entry) => entry.id === specId);
+    const source = spec?.parts.find((part) => part.id === partId);
+    if (!spec || !source) return null;
+    const copy: ModelPart = {
+      ...source,
+      id: makeId('part'),
+      name: `${source.name} Copy`,
+      ...(source.faceColors ? { faceColors: { ...source.faceColors } } : {}),
+    };
+    get().updateModelSpec(specId, { parts: [...spec.parts, copy] });
+    return copy.id;
+  },
+  paintModelPart: (specId, partId, colorSlot, faceGroup) => {
+    const spec = get().modelSpecs.find((entry) => entry.id === specId);
+    const target = spec?.parts.find((part) => part.id === partId);
+    if (!spec || !target) return false;
+    const slot = Math.min(Math.max(Math.trunc(colorSlot), 0), spec.palette.length - 1);
+    // Whole-part paint resets face overrides; painting one face keeps the rest as they were.
+    const next: ModelPart =
+      faceGroup === undefined
+        ? { ...target, colorSlot: slot, faceColors: undefined }
+        : { ...target, faceColors: { ...target.faceColors, [Math.trunc(faceGroup)]: slot } };
+    get().updateModelSpec(specId, { parts: spec.parts.map((part) => (part.id === partId ? next : part)) });
+    return true;
+  },
+  setModelPalette: (specId, palette) => {
+    const spec = get().modelSpecs.find((entry) => entry.id === specId);
+    if (!spec) return false;
+    const cleaned = palette.filter((color) => typeof color === 'string' && !!color.trim()).slice(0, 16);
+    if (!cleaned.length) return false;
+    get().updateModelSpec(specId, { palette: cleaned });
+    return true;
+  },
+  createModelFromSpec: (specId, options = {}) => {
+    const library = get().modelSpecs.find((entry) => entry.id === specId);
+    if (!library) return null;
+    const id = makeId('obj');
+    set((state) => {
+      const requested = options.position ?? [0, 0, 0];
+      const groundY = highestTerrainWorldHeight(selectActiveObjects(state), requested[0], requested[2]);
+      const next: SceneObject = {
+        id,
+        name: options.name ?? library.name,
+        kind: 'empty',
+        transform: defaultTransform([requested[0], groundY ?? requested[1], requested[2]]),
+        model: { enabled: true, specId },
+      } as SceneObject;
+      return { ...mapActiveSceneObjects(state, (objects) => [...objects, next]), selectedObjectId: id };
+    });
+    return id;
   },
   applyGrassPreset: (id, presetId) => {
     const preset = GRASS_PRESETS[presetId];
@@ -12873,6 +13023,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       graphs: state.graphs,
       prefabs: state.prefabs ?? [],
       treeSpecs: state.treeSpecs ?? [],
+      modelSpecs: state.modelSpecs ?? [],
       renderSettings: state.renderSettings,
     };
   },
@@ -12890,6 +13041,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         cloth: object.cloth ? { ...defaultCloth(), ...object.cloth } : object.cloth,
         cable: object.cable ? { ...defaultCable(), ...object.cable } : object.cable,
         tree: object.tree ? { ...object.tree, spec: normalizeTreeSpec(object.tree.spec) } : object.tree,
+        model: object.model?.spec ? { ...object.model, spec: normalizeModelSpec(object.model.spec) } : object.model,
       });
       const scenes = rawScenes.map((scene) => ({
         ...scene,
@@ -12905,6 +13057,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // never empty and the foliage scatter always has something to reference.
       const treeSpecs = (project.treeSpecs?.length ? project.treeSpecs : defaultTreeLibrary()).map((spec) =>
         normalizeTreeSpec(spec),
+      );
+      // Same backfill for the model library, so the Model Forge never opens empty on older saves.
+      const modelSpecs = (project.modelSpecs?.length ? project.modelSpecs : defaultModelLibrary()).map((spec) =>
+        normalizeModelSpec(spec),
       );
       const activeSceneId = scenes.some((scene) => scene.id === project.activeSceneId)
         ? project.activeSceneId
@@ -12962,6 +13118,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         prefabs,
         treeSpecs,
         activeTreeSpecId: treeSpecs[0]?.id ?? '',
+        modelSpecs,
+        activeModelSpecId: modelSpecs[0]?.id ?? '',
         editingPrefabId: null,
         prefabReturnSceneId: null,
         // Regenerate thumbnails for any prefabs that were saved without one.

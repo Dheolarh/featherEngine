@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react';
 import type {
+  ModelPart,
+  ModelPartShape,
+  ModelSpec,
   NodeForgeProject,
   SceneObject,
   SceneObjectKind,
@@ -66,6 +69,20 @@ export interface FeatherEventMap {
   'scene:changed': { activeSceneId: string; objectCount: number };
   'selection:changed': { objectId: string };
   'runtime:play-changed': { isPlaying: boolean };
+  /** The prototype-model library changed (asset added/edited/removed) — re-read models.library(). */
+  'models:changed': { specCount: number };
+}
+
+/** Starter-kit descriptor exposed to plugins (the buildable parts stay engine-side). */
+export interface FeatherModelStarterInfo {
+  id: string;
+  name: string;
+  tagline: string;
+}
+
+export interface FeatherModelPlaceOptions {
+  position?: Vector3Tuple;
+  name?: string;
 }
 
 export interface FeatherPluginAPI {
@@ -126,6 +143,37 @@ export interface FeatherPluginAPI {
     place(options?: FeatherTreePlaceOptions): string;
     /** Plant a grouped grove of trees linked to one library asset. */
     plantGrove(options?: PlantGroveOptions): { groupId: string; treeIds: string[] };
+  };
+
+  /** Prototype-model access (Model Forge): the project's model library plus part-level editing. */
+  readonly models: {
+    /** Detached copies of the project's prototype-model assets. */
+    library(): ReadonlyArray<Readonly<ModelSpec>>;
+    /** The engine's starter kits (blank, crate, fence, barrel, tile, arch) — static data. */
+    starters(): ReadonlyArray<Readonly<FeatherModelStarterInfo>>;
+    /** Add a starter kit to the library. Returns the new asset's id. */
+    createFromStarter(starterId: string, name?: string): string;
+    /** Patch a library asset — every placed instance referencing it updates live. */
+    updateSpec(specId: string, patch: Partial<ModelSpec>): boolean;
+    /** Duplicate a library asset (parts get fresh ids). Returns the new asset's id. */
+    duplicateSpec(specId: string): string;
+    /** Remove a library asset. Placed instances keep an inline copy of the spec. */
+    deleteSpec(specId: string): boolean;
+    /** Add one primitive part. Returns the part id. */
+    addPart(specId: string, shape: ModelPartShape, init?: Partial<Omit<ModelPart, 'id' | 'shape'>>): string;
+    /** Patch one part (name, shape, transform, colorSlot, faceColors). */
+    updatePart(specId: string, partId: string, patch: Partial<Omit<ModelPart, 'id'>>): boolean;
+    removePart(specId: string, partId: string): boolean;
+    /** Copy one part in place. Returns the new part id. */
+    duplicatePart(specId: string, partId: string): string;
+    /** Paint from the palette: the whole part when faceGroup is omitted, else one face group. */
+    paintPart(specId: string, partId: string, colorSlot: number, faceGroup?: number): boolean;
+    /** Replace the asset's flat-color palette (1-16 hex colors). */
+    setPalette(specId: string, palette: string[]): boolean;
+    /** Place a linked, terrain-snapped instance in the scene. Returns the object id. */
+    place(specId: string, options?: FeatherModelPlaceOptions): string;
+    /** Bake the spec into a real GLB model asset via the ordinary import pipeline. */
+    bakeToAsset(specId: string): Promise<{ fileName: string }>;
   };
 
   readonly ui: {

@@ -97,6 +97,26 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return `Applied ${input.presetId} tree preset`;
     case 'plant_grove':
       return `Planted a grove${input.presetId ? ` of ${input.presetId}` : ''}`;
+    case 'list_model_specs':
+      return 'Listed model assets';
+    case 'create_model_spec':
+      return `Created ${input.starter ?? 'blank'} model asset`;
+    case 'add_model_part':
+      return `Added ${input.shape} part`;
+    case 'update_model_part':
+      return 'Updated model part';
+    case 'remove_model_part':
+      return 'Removed model part';
+    case 'paint_model_part':
+      return 'Painted model part';
+    case 'set_model_palette':
+      return 'Updated model palette';
+    case 'set_model_style':
+      return input.finish ? `Model style: ${input.finish}` : 'Updated model style';
+    case 'place_model':
+      return 'Placed model in scene';
+    case 'bake_model_asset':
+      return 'Baked model to GLB asset';
     case 'list_plugins':
       return 'Listed plugins';
     case 'set_plugin_enabled':

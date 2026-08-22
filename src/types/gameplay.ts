@@ -5,6 +5,7 @@ import type { CableComponent, ClothComponent, JointComponent, PhysicsComponent, 
 import type { AttachmentComponent, LightComponent, ReflectionProbeComponent, ScriptGraphComponent, UIComponent, ViewModelComponent } from './environment';
 import type { VehicleComponent } from './vehicle';
 import type { TreeComponent } from './tree';
+import type { ModelComponent } from './model';
 
 export interface SceneObject {
   id: string;
@@ -32,6 +33,8 @@ export interface SceneObject {
   terrain?: TerrainComponent;
   /** Parametric tree — geometry is regenerated from its spec + seed, never stored. See {@link TreeComponent}. */
   tree?: TreeComponent;
+  /** Prototype model (Model Forge) — kit-bashed primitives + flat palette, resolved from the model library. See {@link ModelComponent}. */
+  model?: ModelComponent;
   /** Unreal-style water/physics volume: swim mode for characters plus buoyancy/drag/waves for dynamic bodies. */
   water?: WaterVolumeComponent;
   /** Per-instance data (e.g. this enemy's `health`), read/written by scripts and world UI bindings via `self.*`. */

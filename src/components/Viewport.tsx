@@ -66,6 +66,7 @@ import { ReflectionProbeApply, ReflectionProbeCapture } from '../three/Reflectio
 import { UnderwaterOverlay } from '../three/UnderwaterOverlay';
 import { Terrain, TerrainBrushCursor } from '../three/Terrain';
 import { TreeMesh } from '../three/TreeMesh';
+import { ModelMesh } from '../three/ModelMesh';
 import { highestTerrainWorldHeight } from '../terrain/terrain';
 import type { MaterialOverrides, SceneObject } from '../types';
 import { GameView } from '../player/GameView';
@@ -158,6 +159,8 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
   if (object.projectile) return <ProjectileVisual object={object} />;
   if (object.terrain?.enabled) return <Terrain object={object} />;
   if (object.tree?.enabled) return <TreeMesh object={object} />;
+  // Prototype models (Model Forge) draw their own part meshes; same pre-hooks early-return rule as cloth.
+  if (object.model?.enabled) return <ModelMesh object={object} />;
   // Cloth replaces the object's normal mesh with a deforming Verlet sheet (separate from Rapier). Placed
   // among the top early-returns (before any hooks) so toggling cloth never changes this component's hook
   // count — ClothSim owns its own hooks. It resolves its material from the object's renderer internally.
@@ -668,7 +671,7 @@ function renderObjectTree(objects: SceneObject[], opts: TreeRenderOpts): ReactNo
     // (and authored particle/effect empties) still position correctly.
     // Trees are 'empty' objects carrying a tree component, so they must be exempted here too — otherwise
     // every tree in the scene stops drawing the moment you press Play.
-    const drawSelf = !(opts.isPlaying && object.kind === 'empty' && !object.effect && !object.particles && !object.tree);
+    const drawSelf = !(opts.isPlaying && object.kind === 'empty' && !object.effect && !object.particles && !object.tree && !object.model);
     const kids = childrenByParent.get(object.id);
     return (
       <SceneObjectView

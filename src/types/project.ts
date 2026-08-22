@@ -1,4 +1,5 @@
 import type { TreeSpec } from './tree';
+import type { ModelSpec } from './model';
 import type { Edge } from '@xyflow/react';
 import type { AssetType, GraphValue, GraphValueType } from './common';
 import type { MaterialDefinition } from './geometry';
@@ -434,6 +435,9 @@ export interface NodeForgeProject {
   uiDocuments: UIDocument[];
   /** Reusable parametric tree assets. Objects reference one by `tree.specId`; editing it restyles them all. */
   treeSpecs: TreeSpec[];
+  /** Reusable prototype-model assets (Model Forge). Objects reference one by `model.specId`. Optional so
+   *  projects written before the Model Forge existed keep loading (loaders backfill the default library). */
+  modelSpecs?: ModelSpec[];
   /** Reusable object templates. See `Prefab`. */
   prefabs: Prefab[];
   /** Project-wide render / post-processing settings (bloom, vignette). */
@@ -465,6 +469,9 @@ export interface ProjectManifest {
   uiDocuments: UIDocument[];
   /** Reusable parametric tree assets. Objects reference one by `tree.specId`; editing it restyles them all. */
   treeSpecs: TreeSpec[];
+  /** Reusable prototype-model assets (Model Forge). Objects reference one by `model.specId`. Optional so
+   *  projects written before the Model Forge existed keep loading (loaders backfill the default library). */
+  modelSpecs?: ModelSpec[];
   /** Reusable object templates. See `Prefab`. */
   prefabs: Prefab[];
   /** Project-wide render / post-processing settings (bloom, vignette). */

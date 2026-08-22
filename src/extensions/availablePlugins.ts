@@ -1,5 +1,6 @@
 import type { FeatherPluginDefinition } from './types';
 import { arborForgePlugin } from './arborForge';
+import { modelForgePlugin } from './modelForge';
 
 /**
  * The plugin GALLERY: store-installable plugins compiled into this build but dormant until the
@@ -11,7 +12,7 @@ import { arborForgePlugin } from './arborForge';
  * persists the choice (src/store/pluginStore.ts); a manifest naming a module this build doesn't
  * include fails with a clear "needs a newer Feather" message instead of appearing to work.
  */
-export const AVAILABLE_PLUGINS: readonly FeatherPluginDefinition[] = [arborForgePlugin];
+export const AVAILABLE_PLUGINS: readonly FeatherPluginDefinition[] = [arborForgePlugin, modelForgePlugin];
 
 export const getAvailablePlugin = (pluginId: string): FeatherPluginDefinition | undefined =>
   AVAILABLE_PLUGINS.find((plugin) => plugin.id === pluginId);
