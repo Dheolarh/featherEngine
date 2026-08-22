@@ -42,12 +42,18 @@ export function resolveAssetItemUrl(asset: AssetItem | undefined, projectDir: st
   return convertFileSrc(absolutePath);
 }
 
+export type TextureSemantic = 'color' | 'data';
+
 /**
- * Refcounted, (url+flipY)-keyed texture cache. Without it, every object that references the same
+ * Refcounted, (url+flipY+semantic)-keyed texture cache. Without it, every object that references the same
  * image map loaded its OWN THREE.Texture and uploaded it to the GPU separately — 100 crates sharing
  * one texture meant 100 GPU uploads. Now the texture is loaded/uploaded once and shared; it's disposed
  * only when the last consumer unmounts. `TextureLoader.load` returns the Texture synchronously (the
  * image fills in asynchronously and triggers an upload), so acquire can hand it back immediately.
+ *
+ * The semantic belongs in the key because one image may legitimately be reused as both a visible color
+ * map and a data map. Color maps decode sRGB; normal maps must stay linear (`NoColorSpace`) or their
+ * vectors are warped before lighting, flattening the small surface detail studio highlights depend on.
  */
 interface TextureCacheEntry {
   texture: THREE.Texture;
@@ -56,8 +62,14 @@ interface TextureCacheEntry {
 }
 const textureCache = new Map<string, TextureCacheEntry>();
 
-function acquireTexture(url: string, flipY: boolean): THREE.Texture {
-  const key = `${url}|${flipY ? 1 : 0}`;
+export const textureColorSpaceForSemantic = (semantic: TextureSemantic): THREE.ColorSpace =>
+  semantic === 'color' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+
+const textureCacheKey = (url: string, flipY: boolean, semantic: TextureSemantic) =>
+  JSON.stringify([url, flipY, semantic]);
+
+function acquireTexture(url: string, flipY: boolean, semantic: TextureSemantic): THREE.Texture {
+  const key = textureCacheKey(url, flipY, semantic);
   const existing = textureCache.get(key);
   if (existing) {
     existing.refs += 1;
@@ -65,7 +77,7 @@ function acquireTexture(url: string, flipY: boolean): THREE.Texture {
   }
   const anisotropy = currentAnisotropy();
   const applyTextureSettings = (loaded: THREE.Texture) => {
-    loaded.colorSpace = THREE.SRGBColorSpace;
+    loaded.colorSpace = textureColorSpaceForSemantic(semantic);
     loaded.flipY = flipY;
     loaded.anisotropy = anisotropy;
     loaded.needsUpdate = true;
@@ -94,15 +106,15 @@ function acquireTexture(url: string, flipY: boolean): THREE.Texture {
     }
   });
   // Set the UV/color/filtering conventions up front too, so the first GPU upload uses them.
-  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.colorSpace = textureColorSpaceForSemantic(semantic);
   texture.flipY = flipY;
   texture.anisotropy = anisotropy;
   textureCache.set(key, { texture, refs: 1 });
   return texture;
 }
 
-function releaseTexture(url: string, flipY: boolean) {
-  const key = `${url}|${flipY ? 1 : 0}`;
+function releaseTexture(url: string, flipY: boolean, semantic: TextureSemantic) {
+  const key = textureCacheKey(url, flipY, semantic);
   const entry = textureCache.get(key);
   if (!entry) return;
   entry.refs -= 1;
@@ -118,19 +130,23 @@ function releaseTexture(url: string, flipY: boolean) {
  * convention: glTF/GLB models expect `false`, three.js built-in geometries expect `true`.
  * Backed by the shared refcounted cache above, so identical maps are uploaded once.
  */
-export function useAssetTexture(url: string | undefined, flipY = false): THREE.Texture | undefined {
+export function useAssetTexture(
+  url: string | undefined,
+  flipY = false,
+  semantic: TextureSemantic = 'color',
+): THREE.Texture | undefined {
   const [texture, setTexture] = useState<THREE.Texture>();
   useEffect(() => {
     if (!url) {
       setTexture(undefined);
       return;
     }
-    setTexture(acquireTexture(url, flipY));
+    setTexture(acquireTexture(url, flipY, semantic));
     return () => {
       setTexture(undefined);
-      releaseTexture(url, flipY);
+      releaseTexture(url, flipY, semantic);
     };
-  }, [url, flipY]);
+  }, [url, flipY, semantic]);
   return texture;
 }
 
@@ -202,6 +218,11 @@ export function ModelAsset({
     root.traverse((node) => {
       const mesh = node as THREE.Mesh;
       if (!mesh.isMesh || !mesh.material) return;
+      // Imported models should sit in the same lighting world as built-in primitives. Without these
+      // flags GLTF props floated above the contact plane and never contributed to directional shadows.
+      // ShadowLOD still culls distant casters during Play according to the active quality tier.
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       const cloneMat = (mat: THREE.Material) => {
         let slot = slotByMaterial.get(mat);
         if (slot === undefined) {
@@ -271,23 +292,33 @@ export function ModelAsset({
   // can't scale to an unknown number of slots; driving acquire/release directly does. The acquired
   // Texture is returned synchronously (its image fills in async and uploads itself), so we can assign it
   // to the material right away. The set of live URLs is reconciled each run; leftovers free on unmount.
-  const textureMapRef = useRef(new Map<string, THREE.Texture>());
+  const textureMapRef = useRef(
+    new Map<string, { url: string; semantic: TextureSemantic; texture: THREE.Texture }>(),
+  );
   useEffect(() => {
     const textures = textureMapRef.current;
-    const needed = new Set<string>();
+    const needed = new Map<string, { url: string; semantic: TextureSemantic }>();
+    const need = (url: string, semantic: TextureSemantic) => {
+      needed.set(textureCacheKey(url, false, semantic), { url, semantic });
+    };
     const consider = (m?: ModelMaterial) => {
-      if (m?.baseColorUrl) needed.add(m.baseColorUrl);
-      if (m?.normalUrl) needed.add(m.normalUrl);
+      if (m?.baseColorUrl) need(m.baseColorUrl, 'color');
+      if (m?.normalUrl) need(m.normalUrl, 'data');
     };
     consider(material);
     slotMaterials?.forEach(consider);
-    for (const u of needed) if (!textures.has(u)) textures.set(u, acquireTexture(u, false));
-    for (const u of [...textures.keys()])
-      if (!needed.has(u)) {
-        releaseTexture(u, false);
-        textures.delete(u);
+    for (const [key, wanted] of needed) {
+      if (!textures.has(key)) {
+        textures.set(key, { ...wanted, texture: acquireTexture(wanted.url, false, wanted.semantic) });
       }
-    const tex = (u?: string) => (u ? textures.get(u) : undefined);
+    }
+    for (const [key, lease] of [...textures.entries()])
+      if (!needed.has(key)) {
+        releaseTexture(lease.url, false, lease.semantic);
+        textures.delete(key);
+      }
+    const tex = (url: string | undefined, semantic: TextureSemantic) =>
+      url ? textures.get(textureCacheKey(url, false, semantic))?.texture : undefined;
 
     clone.traverse((node) => {
       const mesh = node as THREE.Mesh;
@@ -301,8 +332,8 @@ export function ModelAsset({
         const chosen = (slot !== undefined ? slotMaterials?.[slot] : undefined) ?? material;
 
         // Texture maps: a chosen map overrides the imported one; clearing it restores the original.
-        mat.map = chosen?.baseColorUrl ? tex(chosen.baseColorUrl) ?? original.map : original.map;
-        mat.normalMap = chosen?.normalUrl ? tex(chosen.normalUrl) ?? original.normalMap : original.normalMap;
+        mat.map = chosen?.baseColorUrl ? tex(chosen.baseColorUrl, 'color') ?? original.map : original.map;
+        mat.normalMap = chosen?.normalUrl ? tex(chosen.normalUrl, 'data') ?? original.normalMap : original.normalMap;
 
         // Material props: applied as a full override, or reverted to the imported values.
         if (chosen?.override) {
@@ -343,7 +374,7 @@ export function ModelAsset({
   useEffect(() => {
     const textures = textureMapRef.current;
     return () => {
-      for (const u of textures.keys()) releaseTexture(u, false);
+      for (const lease of textures.values()) releaseTexture(lease.url, false, lease.semantic);
       textures.clear();
     };
   }, []);

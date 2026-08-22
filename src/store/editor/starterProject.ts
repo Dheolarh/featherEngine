@@ -1,8 +1,9 @@
 import type { Edge } from '@xyflow/react';
-import type { DataAsset, NodeForgeNode, ProjectVariable, Scene, SceneObject, ScriptBlueprint } from '../../types';
+import type { DataAsset, NodeForgeNode, ProjectVariable, RenderSettings, Scene, SceneObject, ScriptBlueprint } from '../../types';
 
 import { defaultSceneEnvironment } from '../../three/environmentSettings';
-import { defaultPhysics, defaultRenderer, defaultTransform } from './defaults';
+import { DEFAULT_RENDER_PRESET, renderPresetEnvironmentPatch, renderPresetRenderPatch } from '../../three/presets';
+import { defaultPhysics, defaultRenderer, defaultRenderSettings, defaultTransform } from './defaults';
 import { makeNodeData } from './graph';
 
 export const blueprintId = 'blueprint-player-controller';
@@ -51,8 +52,19 @@ export const starterObjects: SceneObject[] = [
 export const starterSceneId = 'scene-main';
 
 export const starterScenes: Scene[] = [
-  { id: starterSceneId, name: 'Main', objects: starterObjects, environment: defaultSceneEnvironment() },
+  {
+    id: starterSceneId,
+    name: 'Main',
+    objects: starterObjects,
+    environment: { ...defaultSceneEnvironment(), ...renderPresetEnvironmentPatch(DEFAULT_RENDER_PRESET) },
+  },
 ];
+
+/** The unsaved welcome scene mirrors a newly-created project's render identity. */
+export const starterRenderSettings: RenderSettings = {
+  ...defaultRenderSettings(),
+  ...renderPresetRenderPatch(DEFAULT_RENDER_PRESET),
+};
 
 export const starterVariables: ProjectVariable[] = [
   {

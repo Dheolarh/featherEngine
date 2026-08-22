@@ -248,6 +248,7 @@ export function SceneEnvironment({
         shadow-mapSize-height={profile.shadowMapSize}
         shadow-bias={-0.0004}
         shadow-normalBias={0.02}
+        shadow-radius={profile.shadowMapSize >= 2048 ? 2.25 : 1.25}
         shadow-camera-near={0.5}
         shadow-camera-far={200}
         shadow-camera-left={-80}

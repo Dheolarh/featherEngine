@@ -28,10 +28,12 @@ import { initAutosave } from './store/autosave';
 import { initFeatherExternalSync } from './store/featherExternalStore';
 import { createMeadowTemplate } from './project/meadowTemplate';
 import { createTimelineShowcaseTemplate } from './project/timelineShowcaseTemplate';
+import { createSplineStudioTemplate } from './project/splineStudioTemplate';
 
 /** DEV-only headless screenshot QA hooks. No-op in production builds and for any other query.
  *  - `?demo=meadows` auto-builds the Meadows template and enters Play (vegetation look).
  *  - `?demo=timeline` builds the Timeline Mechanics gallery for interaction/rendering QA.
+ *  - `?demo=spline` builds the asset-free Spline Studio showcase for render QA.
  *  - `?demo=store` just opens a blank project, so the Asset Store has somewhere to install into.
  *  - `?demo=uikit` installs a UI Kit from the store and opens it in the UI panel — the exact
  *    journey where a CSS-driven kit used to preview as unstyled boxes while its page-level rules
@@ -42,7 +44,7 @@ function useDemoAutoload() {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const demo = new URLSearchParams(window.location.search).get('demo');
-    if (demo !== 'meadows' && demo !== 'timeline' && demo !== 'store' && demo !== 'script' && demo !== 'uikit') return;
+    if (demo !== 'meadows' && demo !== 'timeline' && demo !== 'spline' && demo !== 'store' && demo !== 'script' && demo !== 'uikit') return;
     // StrictMode double-invokes effects; for the multi-await demos that means two racing setups
     // (the second sees installingId already set and no-ops, then reads a project the first is
     // still building). Once is once.
@@ -60,6 +62,8 @@ function useDemoAutoload() {
               ? 'UI Kit Preview'
               : demo === 'timeline'
                 ? 'Timeline Mechanics Preview'
+                : demo === 'spline'
+                  ? 'Spline Studio Preview'
                 : 'Meadows Preview',
       );
       if (!useProjectStore.getState().hasProject) return;
@@ -106,6 +110,10 @@ function useDemoAutoload() {
       }
       if (demo === 'timeline') {
         await createTimelineShowcaseTemplate();
+        return;
+      }
+      if (demo === 'spline') {
+        await createSplineStudioTemplate();
         return;
       }
       await createMeadowTemplate();

@@ -7,6 +7,7 @@ import {
 } from '@react-three/drei';
 import { memo, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three-stdlib';
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { ModelAsset, useAssetTexture, useModelUrl } from '../three/ModelAsset';
 import { SkinnedModel, useResolvedAnimator } from '../three/SkinnedModel';
@@ -61,7 +62,8 @@ import type { SceneObject } from '../types';
 const hideInRuntime = (object: SceneObject) => object.renderer?.hideInPlay ?? Boolean(object.physics?.isTrigger);
 
 const SHARED_GEO = {
-  box: new THREE.BoxGeometry(1, 1, 1),
+  // Keep shipped games pixel-identical to the editor's tactile, studio-lit primitive language.
+  box: new RoundedBoxGeometry(1, 1, 1, 3, 0.08),
   sphere: new THREE.SphereGeometry(0.55, 32, 24),
   capsule: new THREE.CapsuleGeometry(0.34, 0.82, 8, 18),
   plane: new THREE.PlaneGeometry(1, 1, 12, 12),
@@ -134,6 +136,14 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
               override: hitFlash || focused ? true : slot.overrideModel,
               baseColorUrl: slot.baseColorUrl,
               normalUrl: slot.normalUrl,
+              clearcoat: slot.clearcoat,
+              clearcoatRoughness: slot.clearcoatRoughness,
+              sheen: slot.sheen,
+              sheenColor: slot.sheenColor,
+              transmission: slot.transmission,
+              ior: slot.ior,
+              thickness: slot.thickness,
+              iridescence: slot.iridescence,
             }
           : undefined,
       ),
@@ -165,7 +175,7 @@ function GameMesh({ object, focused = false }: { object: SceneObject; focused?: 
   const instanced = useIsInstanced(object.id);
   const resolvedAnimator = useResolvedAnimator(object);
   const builtinBaseTexture = useAssetTexture(usingModel ? undefined : resolved.baseColorUrl, true);
-  const builtinNormalTexture = useAssetTexture(usingModel ? undefined : resolved.normalUrl, true);
+  const builtinNormalTexture = useAssetTexture(usingModel ? undefined : resolved.normalUrl, true, 'data');
   // Cel-shaded surfaces render via MeshToonMaterial (null = normal PBR path). Must mirror Viewport so
   // the standalone player matches the editor. Hook is unconditional (before any early return below).
   const toonMaterial = useToonMaterial(resolved, builtinBaseTexture ?? null);
@@ -546,8 +556,9 @@ function GameScene() {
           position={[0, (sceneEnvironment?.contactShadowY ?? 0) - 0.01, 0]}
           opacity={sceneEnvironment?.contactShadowOpacity ?? 0.36}
           scale={sceneEnvironment?.contactShadowScale ?? 14}
-          blur={2.4}
-          far={6}
+          blur={sceneEnvironment?.contactShadowBlur ?? 2.4}
+          far={sceneEnvironment?.contactShadowFar ?? 6}
+          color={sceneEnvironment?.contactShadowColor ?? '#000000'}
         />
       )}
       <PostFx />

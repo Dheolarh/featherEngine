@@ -8882,6 +8882,11 @@ body.is-scrubbing * {
   border-radius: 50%;
 }
 
+.render-look-dot-spline-studio {
+  background: linear-gradient(135deg, #9b87ff, #ff78c6 52%, #5de4ff);
+  box-shadow: 0 0 8px rgba(155, 135, 255, 0.45);
+}
+
 .render-look-dot-stylized-nature {
   background: linear-gradient(135deg, #8fe36a, #2f8f3a);
 }

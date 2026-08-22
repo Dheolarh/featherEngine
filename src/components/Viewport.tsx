@@ -1,9 +1,10 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { ContactShadows, Edges, Grid, PerformanceMonitor, TransformControls } from '@react-three/drei';
-import { ArrowDownToLine, Aperture, Camera, Globe, Magnet, Maximize2, Minimize2, Move3D, Play, Rotate3D, Scaling, Square, View } from 'lucide-react';
+import { ArrowDownToLine, Aperture, Camera, Globe, Magnet, Maximize2, Minimize2, Move3D, Play, Rotate3D, Scaling, Sparkles, Square, View } from 'lucide-react';
 import { useViewportPrefs } from '../store/viewportPrefsStore';
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three-stdlib';
 import { useEditorPrefs } from '../store/editorPrefsStore';
 import { effectiveSelection, selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { isTransientVfx, nonVfxObjectsSignature, useVfxObjects } from '../store/stableSelectors';
@@ -135,7 +136,9 @@ class WebGLErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
  * per-kind JSX used before, so visuals are unchanged.
  */
 const SHARED_GEO = {
-  box: new THREE.BoxGeometry(1, 1, 1),
+  // Soft bevels catch the studio rig's highlights and give even basic blocks the tactile, Spline-like
+  // silhouette users expect. Physics stays an exact box; the small 8% visual radius keeps that match tight.
+  box: new RoundedBoxGeometry(1, 1, 1, 3, 0.08),
   sphere: new THREE.SphereGeometry(0.55, 32, 24),
   capsule: new THREE.CapsuleGeometry(0.34, 0.82, 8, 18),
   plane: new THREE.PlaneGeometry(1, 1, 12, 12),
@@ -207,6 +210,14 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
               override: hitFlash || focusGlow ? true : slot.overrideModel,
               baseColorUrl: slot.baseColorUrl,
               normalUrl: slot.normalUrl,
+              clearcoat: slot.clearcoat,
+              clearcoatRoughness: slot.clearcoatRoughness,
+              sheen: slot.sheen,
+              sheenColor: slot.sheenColor,
+              transmission: slot.transmission,
+              ior: slot.ior,
+              thickness: slot.thickness,
+              iridescence: slot.iridescence,
             }
           : undefined,
       ),
@@ -239,7 +250,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
   const resolvedAnimator = useResolvedAnimator(object);
   // Built-in geometries use the standard (flipped) UV convention; only load when not using a model.
   const builtinBaseTexture = useAssetTexture(usingModel ? undefined : resolved.baseColorUrl, true);
-  const builtinNormalTexture = useAssetTexture(usingModel ? undefined : resolved.normalUrl, true);
+  const builtinNormalTexture = useAssetTexture(usingModel ? undefined : resolved.normalUrl, true, 'data');
   // Cel-shaded surfaces render via MeshToonMaterial (null for the normal PBR path). Hook is called
   // unconditionally here — before any early return below — so it never violates rules-of-hooks.
   const toonMaterial = useToonMaterial(resolved, builtinBaseTexture ?? null);
@@ -893,6 +904,9 @@ function SceneContent({
   const recording = useEditorStore((state) => state.cinematicRecording);
   const editingKeyframe = useEditorStore((state) => Boolean(state.selectedCinematicKeyframe));
   const previewingCinematic = !isPlaying && Boolean(cinematicPreview);
+  const renderPreviewEnabled = useViewportPrefs((state) => state.renderPreviewEnabled);
+  const renderQuality = useEditorStore((state) => state.renderSettings.quality);
+  const previewSunShadows = renderPreviewEnabled && qualityProfile(renderQuality).shadows;
   // Volumetric fog (post-FX) renders in the editor viewport too, not just Play, so its look is
   // authorable live in Scene Settings. Mount PostFx whenever it's enabled on the active scene.
   const volumetricFogActive = useEditorStore(
@@ -1143,7 +1157,7 @@ function SceneContent({
 
   return (
     <>
-      <SceneEnvironment environment={sceneEnvironment} />
+      <SceneEnvironment environment={sceneEnvironment} shadows={previewSunShadows} />
       {/* Shared InstancedMesh batches for repeated static decoration models (Play-only; off unless toggled). */}
       <ModelInstances batches={instanceBatches} />
       <InstancedIdsContext.Provider value={instancedIds}>
@@ -1263,8 +1277,9 @@ function SceneContent({
           position={[0, (sceneEnvironment?.contactShadowY ?? 0) - 0.01, 0]}
           opacity={sceneEnvironment?.contactShadowOpacity ?? 0.36}
           scale={sceneEnvironment?.contactShadowScale ?? 14}
-          blur={2.4}
-          far={6}
+          blur={sceneEnvironment?.contactShadowBlur ?? 2.4}
+          far={sceneEnvironment?.contactShadowFar ?? 6}
+          color={sceneEnvironment?.contactShadowColor ?? '#000000'}
         />
       )}
       {/* During Play (or when previewing) a character's follow camera takes over the view; otherwise free-orbit.
@@ -1284,9 +1299,9 @@ function SceneContent({
       {isPlaying && <LockOnMarker />}
       {/* Rapier collider wireframe (F10) — the "why doesn't this collide?" view. Play-only. */}
       {isPlaying && <PhysicsDebugView />}
-      {/* Post-FX (bloom/vignette + cinematic grade/DoF) during Play so the editor matches the shipped
-          game look — and also while scrubbing a cinematic preview so grading/focus are visible there. */}
-      {(isPlaying || previewingCinematic || volumetricFogActive) && <PostFx />}
+      {/* Preview the same AO/bloom/grade/AA stack the shipped game uses while authoring. This is on by
+          default for visual parity, but remains a persisted toggle for slower GPUs or gizmo-heavy work. */}
+      {(renderPreviewEnabled || isPlaying || previewingCinematic || volumetricFogActive) && <PostFx />}
     </>
   );
 }
@@ -1513,6 +1528,8 @@ export function ViewportPanel() {
   const setAngleStepDeg = useViewportPrefs((state) => state.setAngleStepDeg);
   const scaleStep = useViewportPrefs((state) => state.scaleStep);
   const setScaleStep = useViewportPrefs((state) => state.setScaleStep);
+  const renderPreviewEnabled = useViewportPrefs((state) => state.renderPreviewEnabled);
+  const setRenderPreviewEnabled = useViewportPrefs((state) => state.setRenderPreviewEnabled);
   const [focusNonce, setFocusNonce] = useState(0);
   // Bumped to command the editor camera to a standard orientation (ViewCube / numpad presets).
   const [viewCommand, setViewCommand] = useState<{ view: ViewPreset; nonce: number }>({ view: 'persp', nonce: 0 });
@@ -1936,6 +1953,15 @@ export function ViewportPanel() {
             }
           >
             <Camera size={14} aria-hidden />
+          </button>
+          <button
+            className={renderPreviewEnabled ? 'active' : undefined}
+            disabled={isPlaying}
+            aria-pressed={renderPreviewEnabled}
+            title={renderPreviewEnabled ? 'Render Look preview is on (AO, bloom, color grade, anti-aliasing)' : 'Preview the shipped Render Look while editing'}
+            onClick={() => setRenderPreviewEnabled(!renderPreviewEnabled)}
+          >
+            <Sparkles size={14} aria-hidden />
           </button>
         </div>
         <div className="segmented" aria-label="Gizmo options">

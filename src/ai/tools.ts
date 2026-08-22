@@ -5,6 +5,7 @@ import { type UITemplateKind, type UIThemeKind } from '../store/editor/ui';
 import { inputTypeForHandle, outputTypeForHandle, valueTypesCompatible } from '../store/editor/wireTypes';
 import { undo as undoHistory, redo as redoHistory } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
+import { useViewportPrefs } from '../store/viewportPrefsStore';
 import { useMarketplaceStore } from '../store/marketplaceStore';
 import { usePluginStore } from '../store/pluginStore';
 import { AVAILABLE_PLUGINS } from '../extensions/availablePlugins';
@@ -48,6 +49,7 @@ import { createDrivingTemplate } from '../project/drivingTemplate';
 import { createPhysicsLabTemplate } from '../project/physicsLabTemplate';
 import { createTimelineShowcaseTemplate } from '../project/timelineShowcaseTemplate';
 import { createSimRacingTemplate } from '../project/simRacingTemplate';
+import { createSplineStudioTemplate } from '../project/splineStudioTemplate';
 import { createStoryboardCinematic, STORYBOARD_PRESETS } from '../project/cinematicStoryboard';
 import { addLibraryShot, SHOT_LIBRARY, type ShotLibraryType } from '../project/cinematicShotLibrary';
 import { findLightingPreset, findMaterialPreset, findRenderPreset, lightingPresetIds, materialPresetIds, materialPresetPatch, renderPresetIds } from '../three/presets';
@@ -191,6 +193,9 @@ const environmentPatchSchema = z.object({
   contactShadowY: z.number().optional().describe('World Y the contact-shadow plane sits at — match the ground height. Default 0.'),
   contactShadowScale: z.number().min(1).optional().describe('Footprint size of the contact-shadow plane in world units. Default 14; raise for big scenes.'),
   contactShadowOpacity: z.number().min(0).max(1).optional().describe('Contact shadow darkness 0–1. Default 0.36.'),
+  contactShadowBlur: z.number().min(0).optional().describe('Contact-shadow softness. Default 2.4; 3–4 gives broad studio-style edges.'),
+  contactShadowFar: z.number().min(0.1).optional().describe('Vertical capture distance for contact casters. Default 6 world units.'),
+  contactShadowColor: z.string().optional().describe('Contact-shadow tint as a hex color. Near-black scene hues integrate more softly than pure black.'),
   dayCycleEnabled: z
     .boolean()
     .optional()
@@ -1942,12 +1947,12 @@ const rawEngineTools = {
 
   apply_render_preset: tool({
     description:
-      'Apply a one-click art-direction "Render Look" — the top-level visual identity of the scene, layered ON TOP of the lighting. It sets the tonemapping curve + ambient fill (per scene) and the bloom shape + project color grade together, WITHOUT touching sky/sun/fog, so it combines with any lighting preset. Use this for style requests like "make it look like a stylized nature game", "anime look", "cinematic/moody", "photoreal", or "bright arcade".',
+      'Apply a one-click art-direction "Render Look" — the top-level visual identity of the scene. It sets tonemapping + ambient fill (per scene) and bloom + project color grade together. Most looks preserve authored sky/sun/fog; spline-studio intentionally supplies a complete graphite studio stage and soft key light. Use this for style requests like "make it look like Spline", "stylized nature", "anime", "cinematic/moody", "photoreal", or "bright arcade".',
     inputSchema: z.object({
       preset: z
         .enum(renderPresetIds)
         .describe(
-          'stylized-nature (default; lush painterly outdoors — neutral tonemap + hemisphere fill + soft bloom + saturated warm grade), realistic (ACES photoreal, flat ambient, tight bloom, neutral grade), soft-anime (bright cel look, dreamy bloom, high saturation — pair with toon materials), moody-cinematic (AgX, teal-orange, contrast + vignette), or vibrant-arcade (punchy high-saturation mobile/arcade pop).',
+          'spline-studio (default; graphite stage + soft studio lighting + glossy candy-color pop), stylized-nature (lush painterly outdoors), realistic (ACES photoreal), soft-anime (bright cel look — pair with toon materials), moody-cinematic (AgX teal-orange), or vibrant-arcade (punchy saturated pop).',
         ),
     }),
     execute: async ({ preset }) => {
@@ -2821,6 +2826,16 @@ const rawEngineTools = {
       return id
         ? `Created Timeline Mechanics — pawn objectId ${id}. Press Play, walk along the six bays, and press E near each mechanism. Open the Timeline Mechanics folder to inspect the curve graphs; drag another Interactive Vault Door prefab from the Project browser to reuse it.`
         : `Couldn't build the Timeline Mechanics showcase.`;
+    },
+  }),
+
+  create_spline_studio_template: tool({
+    description:
+      'Build the asset-free "Spline Studio" design showcase: a deep graphite product stage, rounded built-in primitives, violet/coral/aqua clear-coated candy materials, pearl framing, soft coloured contact shadows, two accent lights, an authored camera, and an editable Kinetic Sculpture Blueprint that slowly rotates and ping-pong floats. Use when the user wants a polished Spline-like 3D composition, material/lighting demo, product scene, or visual starting point. Returns the animated sculpture root objectId.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const id = await createSplineStudioTemplate();
+      return `Created Spline Studio — animated sculpture root objectId ${id}. Press Play to see the slow rotation and looping float; edit the candy materials, World Settings, or Kinetic Sculpture Blueprint to art-direct it.`;
     },
   }),
 
@@ -4412,6 +4427,16 @@ const rawEngineTools = {
     execute: async ({ bloomEnabled, bloomIntensity, bloomThreshold, bloomRadius, vignetteEnabled, minimapEnabled, minimapRotate, minimapRange, autoQuality, compressTextures }) => {
       store().updateRenderSettings({ bloomEnabled, bloomIntensity, bloomThreshold, bloomRadius, vignetteEnabled, minimapEnabled, minimapRotate, minimapRange, autoQuality, compressTextures });
       return 'Updated render/post-processing settings.';
+    },
+  }),
+
+  set_viewport_render_preview: tool({
+    description:
+      'Turn the editor viewport Render Look preview on/off. When on (the default), Edit mode shows the same ambient occlusion, bloom, color grade, and anti-aliasing stack as Play/export. Turn it off temporarily on a slow GPU or when the user asks for an unprocessed working view. This is an editor preference, not a project/export setting.',
+    inputSchema: z.object({ enabled: z.boolean() }),
+    execute: async ({ enabled }) => {
+      useViewportPrefs.getState().setRenderPreviewEnabled(enabled);
+      return `Editor Render Look preview ${enabled ? 'enabled' : 'disabled'}.`;
     },
   }),
 

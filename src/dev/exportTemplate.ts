@@ -27,7 +27,8 @@ type TemplateKey =
   | 'meadows'
   | 'cube-realm'
   | 'physics-lab'
-  | 'timeline-mechanics';
+  | 'timeline-mechanics'
+  | 'spline-studio';
 
 interface TemplateDef {
   slug: string;
@@ -95,6 +96,14 @@ const TEMPLATES: Record<TemplateKey, TemplateDef> = {
       'A walkable curve-animation gallery with an interactive Vault Door prefab, elevator, drawbridge, security gate, crusher and chest.',
     tags: ['template', 'world', 'timeline', 'animation', 'blueprint', 'prefab'],
     build: async () => (await import('../project/timelineShowcaseTemplate')).createTimelineShowcaseTemplate(),
+  },
+  'spline-studio': {
+    slug: 'template-spline-studio',
+    title: 'Spline Studio',
+    description:
+      'A polished interactive 3D design stage with soft candy-plastic materials, rounded primitives, studio lighting, broad contact shadows and editable kinetic motion.',
+    tags: ['template', 'world', 'design', 'spline', 'studio', 'animation'],
+    build: async () => (await import('../project/splineStudioTemplate')).createSplineStudioTemplate(),
   },
   'cube-realm': {
     slug: 'template-cube-realm',

@@ -65,7 +65,7 @@ function MaterialPreview({ material }: { material: MaterialDefinition }) {
   );
   const resolved = useResolvedMaterial(renderer);
   const baseTexture = useAssetTexture(resolved.baseColorUrl, true);
-  const normalTexture = useAssetTexture(resolved.normalUrl, true);
+  const normalTexture = useAssetTexture(resolved.normalUrl, true, 'data');
   const toonMaterial = useToonMaterial(resolved, baseTexture ?? null);
 
   return (

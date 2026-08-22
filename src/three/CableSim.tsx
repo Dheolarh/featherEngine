@@ -174,7 +174,7 @@ function CableBody({ object, topo, selected }: { object: SceneObject; topo: Cabl
   const cable = object.cable!;
   const material = useResolvedMaterial(object.renderer);
   const baseTexture = useAssetTexture(material.baseColorUrl, true);
-  const normalTexture = useAssetTexture(material.normalUrl, true);
+  const normalTexture = useAssetTexture(material.normalUrl, true, 'data');
   const env = useEditorStore(selectActiveSceneEnvironment);
   const meshRef = useRef<THREE.Mesh>(null);
   const geomRef = useRef<THREE.BufferGeometry>(null);

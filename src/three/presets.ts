@@ -70,8 +70,16 @@ export const MATERIAL_PRESETS: MaterialPreset[] = [
   {
     id: 'plastic',
     name: 'Plastic',
-    description: 'Clean colored prop surface with soft highlights.',
-    patch: { color: '#5B8CFF', metalness: 0, roughness: 0.46, emissiveColor: '#000000', emissiveIntensity: 0 },
+    description: 'Soft-coated colored plastic with broad studio highlights.',
+    patch: {
+      color: '#5B8CFF',
+      metalness: 0,
+      roughness: 0.36,
+      emissiveColor: '#000000',
+      emissiveIntensity: 0,
+      clearcoat: 0.46,
+      clearcoatRoughness: 0.24,
+    },
   },
   {
     id: 'metal',
@@ -540,28 +548,84 @@ export const LIGHTING_PRESETS: LightingPreset[] = [
 /**
  * An art-direction "Render Look" — the top-level visual identity of a scene. Where a LIGHTING preset
  * decides the *world* (sky/sun/fog), a RENDER preset decides the *camera + post*: the tonemapping curve
- * and ambient fill model (per scene) plus the bloom shape and color grade (project-wide). The two layer
- * independently, so any look drops on top of any lighting. Deliberately does NOT touch sky/sun/fog so a
- * user can pick "Stylized Nature" at noon or dusk and keep their authored world.
+ * and ambient fill model (per scene) plus the bloom shape and color grade (project-wide). Most looks layer
+ * independently on top of authored lighting. A complete studio identity may also include a curated stage
+ * and key light; Spline Studio does this intentionally so the reference look is genuinely one-click.
  */
 export interface RenderPreset {
   id: RenderPresetId;
   name: string;
   description: string;
-  /** Look-layer scene fields ONLY (tonemapping + ambient fill) — never sky/sun/fog. */
-  environment: Pick<SceneEnvironmentSettings, 'toneMapping' | 'toneMappingExposure' | 'ambientMode'>;
-  /** Bloom shape (project-wide RenderSettings). vignette/quality are left to the user/lighting preset. */
-  renderSettings: Pick<RenderSettings, 'bloomEnabled' | 'bloomIntensity' | 'bloomThreshold' | 'bloomRadius'>;
+  /** Every look sets tonemapping + ambient fill. A fully art-directed studio look may additionally
+   *  provide sky/sun/fog/contact-shadow values so the result is complete in one click. */
+  environment: Pick<SceneEnvironmentSettings, 'toneMapping' | 'toneMappingExposure' | 'ambientMode'> &
+    Partial<SceneEnvironmentSettings>;
+  /** Bloom shape (project-wide RenderSettings). Looks normally leave vignette/quality alone, though a
+   *  clean studio identity may explicitly disable vignette. */
+  renderSettings: Pick<RenderSettings, 'bloomEnabled' | 'bloomIntensity' | 'bloomThreshold' | 'bloomRadius'> &
+    Partial<Pick<RenderSettings, 'vignetteEnabled'>>;
   /** Project color grade (the same pipeline cinematic looks use). */
   colorGrade: CinematicLook;
 }
 
 export const RENDER_PRESETS: RenderPreset[] = [
   {
+    id: 'spline-studio',
+    name: 'Spline Studio',
+    description:
+      'Polished interactive-3D studio look — deep graphite stage, violet/cool ambient reflections, a warm soft key, glossy highlight roll-off, gentle bloom, saturated candy color, and broad contact grounding. Designed for rounded primitives, product scenes, characters, and playful 3D interfaces.',
+    environment: {
+      skyMode: 'color',
+      backgroundColor: '#0B0B12',
+      // The flat background stays dark while these colors drive the hemisphere fill.
+      skyTopColor: '#CCD3FF',
+      skyHorizonColor: '#8F7CFF',
+      skyGroundColor: '#241A38',
+      // Empty string intentionally clears a previously assigned HDRI through the store's patch merge.
+      environmentMapAssetId: '',
+      environmentIntensity: 1.28,
+      sunColor: '#FFF1E4',
+      sunIntensity: 1.35,
+      sunAzimuth: 34,
+      sunElevation: 56,
+      dayCycleEnabled: false,
+      fogEnabled: false,
+      atmosphericFog: false,
+      volumetricFogEnabled: false,
+      contactShadows: true,
+      contactShadowY: 0,
+      contactShadowScale: 18,
+      contactShadowOpacity: 0.3,
+      contactShadowBlur: 3.4,
+      contactShadowFar: 5,
+      contactShadowColor: '#120D20',
+      toneMapping: 'neutral',
+      toneMappingExposure: 1.08,
+      ambientMode: 'hemisphere',
+    },
+    renderSettings: {
+      bloomEnabled: true,
+      bloomIntensity: 0.52,
+      bloomThreshold: 0.74,
+      bloomRadius: 0.68,
+      vignetteEnabled: false,
+    },
+    colorGrade: {
+      grade: 'custom',
+      gradeIntensity: 1,
+      exposure: 0.02,
+      contrast: 0.05,
+      saturation: 0.18,
+      temperature: -0.025,
+      tint: '#9B87FF',
+      tintAmount: 0.025,
+    },
+  },
+  {
     id: 'stylized-nature',
     name: 'Stylized Nature',
     description:
-      'The default Feather look — lush painterly outdoors. Highlight-preserving Neutral tonemapping keeps greens saturated (ACES pushes them orange), a sky-lit hemisphere fill lifts undersides naturally, a soft wide bloom hazes the highlights, and a warm punchy grade pops the foliage. Preview foliage/materials under this.',
+      'The lush Feather nature look — painterly outdoors with highlight-preserving Neutral tonemapping, sky-lit hemisphere fill, soft wide bloom, and a restrained warm grade that keeps foliage vivid. Preview foliage/materials under this.',
     environment: { toneMapping: 'neutral', toneMappingExposure: 1.05, ambientMode: 'hemisphere' },
     renderSettings: { bloomEnabled: true, bloomIntensity: 0.5, bloomThreshold: 0.8, bloomRadius: 0.62 },
     // Restrained warmth: enough to pop the foliage, but low saturation/temperature so a full green field
@@ -606,8 +670,8 @@ export const RENDER_PRESETS: RenderPreset[] = [
   },
 ];
 
-/** The look every new project starts with — the signature lush outdoors identity. */
-export const DEFAULT_RENDER_PRESET: RenderPresetId = 'stylized-nature';
+/** The look every new project starts with — a polished, approachable interactive-3D studio. */
+export const DEFAULT_RENDER_PRESET: RenderPresetId = 'spline-studio';
 
 export const materialPresetIds = MATERIAL_PRESETS.map((preset) => preset.id) as [MaterialPresetId, ...MaterialPresetId[]];
 export const lightingPresetIds = LIGHTING_PRESETS.map((preset) => preset.id) as [LightingPresetId, ...LightingPresetId[]];
@@ -617,11 +681,11 @@ export const findMaterialPreset = (id: MaterialPresetId) => MATERIAL_PRESETS.fin
 export const findLightingPreset = (id: LightingPresetId) => LIGHTING_PRESETS.find((preset) => preset.id === id);
 export const findRenderPreset = (id: RenderPresetId) => RENDER_PRESETS.find((preset) => preset.id === id);
 
-/** The scene-environment fields a Render Look sets (tonemapping + ambient fill). `{}` for an unknown id. */
+/** The scene-environment patch a Render Look sets. `{}` for an unknown id. */
 export const renderPresetEnvironmentPatch = (id: RenderPresetId): Partial<SceneEnvironmentSettings> =>
   findRenderPreset(id)?.environment ?? {};
 
-/** The project render-settings fields a Render Look sets (bloom shape + grade + the selected id). `{}` for an unknown id. */
+/** The project render-settings fields a Render Look sets (post shape + grade + selected id). `{}` for an unknown id. */
 export const renderPresetRenderPatch = (id: RenderPresetId): Partial<RenderSettings> => {
   const preset = findRenderPreset(id);
   return preset ? { ...preset.renderSettings, colorGrade: preset.colorGrade, renderPreset: id } : {};

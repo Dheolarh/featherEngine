@@ -113,10 +113,16 @@ export interface RenderSettings {
 export type QualityLevel = 'Low' | 'Medium' | 'High' | 'Epic';
 
 /**
- * A named art-direction "Render Look" (see RENDER_PRESETS). `stylized-nature` is the Feather default —
- * the lush, painterly outdoors look. The others cover the common target aesthetics for a slice.
+ * A named art-direction "Render Look" (see RENDER_PRESETS). `spline-studio` is the Feather default —
+ * a polished, softly lit 3D-product look. The others cover common target aesthetics for a slice.
  */
-export type RenderPresetId = 'stylized-nature' | 'realistic' | 'soft-anime' | 'moody-cinematic' | 'vibrant-arcade';
+export type RenderPresetId =
+  | 'spline-studio'
+  | 'stylized-nature'
+  | 'realistic'
+  | 'soft-anime'
+  | 'moody-cinematic'
+  | 'vibrant-arcade';
 
 export type SkyMode = 'color' | 'procedural' | 'image';
 
@@ -257,6 +263,12 @@ export interface SceneEnvironmentSettings {
   contactShadowScale?: number;
   /** Darkness of the contact shadow, 0–1. Default 0.36. */
   contactShadowOpacity?: number;
+  /** Edge softness for the contact shadow. Default 2.4; larger values make a broader studio-style falloff. */
+  contactShadowBlur?: number;
+  /** Vertical capture distance for contact casters. Default 6 world units. */
+  contactShadowFar?: number;
+  /** Contact-shadow tint. Default black; a near-black scene hue gives softer color integration. */
+  contactShadowColor?: string;
 }
 
 /** Film/camera tonemapping operators. See `SceneEnvironmentSettings.toneMapping`. */
@@ -299,4 +311,3 @@ export interface UIComponent {
 export interface ViewModelComponent {
   ownerObjectId: string;
 }
-

@@ -14,8 +14,9 @@ import { qualityProfile } from './quality';
  * Project post-processing pass, driven by `renderSettings` and the live cinematic. Bloom makes
  * emissive surfaces glow; the cinematic camera adds depth-of-field (rack focus) and a color grade.
  * Reads the runtime cinematic during Play and falls back to the editor scrub preview so grading/DoF
- * show while scrubbing. Mounted inside the Canvas in the player (always) and the editor viewport
- * (during Play or cinematic preview). Renders nothing when all FX are off.
+ * show while scrubbing. Mounted inside the Canvas in the player (always) and in the editor whenever
+ * Render Look preview is enabled (the default), as well as during cinematic/fog previews. Renders
+ * nothing when all FX are off.
  */
 export function PostFx() {
   const rs = useEditorStore((state) => state.renderSettings);

@@ -18,7 +18,7 @@ import { useMarketplaceStore } from '../store/marketplaceStore';
 import { formatSize, type StoreListing } from '../marketplace/catalog';
 
 /** The starter world shown first. Everything else keeps the catalog's order. */
-const FEATURED_SLUG = 'template-third-person';
+const FEATURED_SLUG = 'template-spline-studio';
 
 /** Human-friendly "time ago" for the recovery banner. */
 function formatAgo(ms: number): string {

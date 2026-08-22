@@ -336,6 +336,34 @@ export function SceneSettingsBody() {
                 onChange={(event) => updateEnvironment({ contactShadowOpacity: Math.min(1, Math.max(0, num(event.target.value, environment.contactShadowOpacity ?? 0.36))) })}
               />
             </label>
+            <label className="field-row">
+              <span title="Higher values make the grounding shadow broader and softer.">Shadow Softness</span>
+              <input
+                type="number"
+                min={0}
+                step={0.2}
+                value={environment.contactShadowBlur ?? 2.4}
+                onChange={(event) => updateEnvironment({ contactShadowBlur: Math.max(0, num(event.target.value, environment.contactShadowBlur ?? 2.4)) })}
+              />
+            </label>
+            <label className="field-row">
+              <span title="How far above the plane objects can contribute to the contact shadow.">Shadow Reach</span>
+              <input
+                type="number"
+                min={0.1}
+                step={0.5}
+                value={environment.contactShadowFar ?? 6}
+                onChange={(event) => updateEnvironment({ contactShadowFar: Math.max(0.1, num(event.target.value, environment.contactShadowFar ?? 6)) })}
+              />
+            </label>
+            <label className="field-row">
+              <span title="A near-black hue blends grounding shadows into a coloured studio stage.">Shadow Tint</span>
+              <input
+                type="color"
+                value={environment.contactShadowColor ?? '#000000'}
+                onChange={(event) => updateEnvironment({ contactShadowColor: event.target.value })}
+              />
+            </label>
           </>
         )}
       </section>

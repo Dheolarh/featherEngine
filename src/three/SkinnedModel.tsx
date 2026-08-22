@@ -78,6 +78,10 @@ export function SkinnedModel({
     model.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh || !mesh.material) return;
+      // Match static imports and built-in primitives: characters cast onto the scene and receive the
+      // studio/sun shadows that visually ground them. ShadowLOD budgets distant casts during Play.
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       const own = (m: THREE.Material) => {
         const c = m.clone() as THREE.MeshStandardMaterial;
         mats.push({ mat: c, color: c.color?.clone(), emissive: c.emissive?.clone(), emissiveIntensity: c.emissiveIntensity ?? 1 });

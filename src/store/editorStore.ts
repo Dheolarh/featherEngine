@@ -239,6 +239,7 @@ import {
   starterNodes,
   starterSceneId,
   starterScenes,
+  starterRenderSettings,
   starterVariables,
 } from './editor/starterProject';
 import {
@@ -1405,7 +1406,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isDirty: false,
   assets: [],
   folders: [],
-  renderSettings: defaultRenderSettings(),
+  renderSettings: starterRenderSettings,
   variables: starterVariables,
   dataAssets: starterDataAssets,
   materials: [],

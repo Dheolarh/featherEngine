@@ -494,6 +494,37 @@
       }
     },
     {
+      "id": "pkg-feather-template-spline-studio",
+      "slug": "template-spline-studio",
+      "title": "Spline Studio",
+      "description": "A polished interactive 3D design stage with soft candy-plastic materials, rounded primitives, studio lighting, broad contact shadows and editable kinetic motion.",
+      "author": "Feather",
+      "version": "1.0.0",
+      "kind": "project",
+      "tags": [
+        "template",
+        "world",
+        "design",
+        "spline",
+        "studio",
+        "animation"
+      ],
+      "license": "CC0-1.0",
+      "priceCents": 0,
+      "thumbnail": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOUI3QkZGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjQxQTM4Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIxNiIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjY0IiB5PSI4MiIgZm9udC1mYW1pbHk9InN5c3RlbS11aSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuOTIiPuKcqDwvdGV4dD48L3N2Zz4=",
+      "sizeBytes": 5190,
+      "downloadUrl": "packages/projects/template-spline-studio.nfpack",
+      "engineVersion": "0.8.0",
+      "contents": {
+        "prefabs": 0,
+        "materials": 6,
+        "blueprints": 1,
+        "assets": 0,
+        "scenes": 1,
+        "uiDocuments": 0
+      }
+    },
+    {
       "id": "pkg-feather-template-third-person",
       "slug": "template-third-person",
       "title": "Third Person Starter",

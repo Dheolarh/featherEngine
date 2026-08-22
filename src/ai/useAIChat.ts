@@ -233,6 +233,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return 'Built "The Summit" cinematic template';
     case 'create_timeline_showcase_template':
       return 'Built Timeline Mechanics showcase';
+    case 'create_spline_studio_template':
+      return 'Built Spline Studio showcase';
     case 'create_cinematic':
       return `Created cinematic${input.name ? ` "${String(input.name)}"` : ''}`;
     case 'add_cinematic_action':
@@ -325,6 +327,8 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return input.compressTextures !== undefined
         ? `Texture compression ${input.compressTextures ? 'on' : 'off'}`
         : 'Updated post-processing';
+    case 'set_viewport_render_preview':
+      return `Render preview ${input.enabled === false ? 'off' : 'on'}`;
     case 'rename_object':
       return `Renamed to "${String(input.name ?? '')}"`;
     case 'undo':
