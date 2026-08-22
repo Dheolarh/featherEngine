@@ -92,6 +92,59 @@ spec('asset store installs the Arbor Forge plugin and its studio plants a grove'
   }
 });
 
+spec('preferences plugin manager installs, opens and removes Arbor Forge', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=store' });
+  try {
+    await app.evaluate(`localStorage.removeItem('nodeforge.plugins')`);
+    await app.evaluate(`location.reload()`);
+    await app.waitFor(`document.querySelector('.toolbar')`, { label: 'editor reloaded' });
+
+    // View → Preferences… → Plugins tab.
+    await clickViewMenuEntry(app, 'Preferences…');
+    await app.waitFor(`document.querySelector('.prefs-card')`, { label: 'preferences open' });
+    await app.evaluate(`(() => {
+      const tabs = [...document.querySelectorAll('.prefs-tab')];
+      tabs.find((b) => b.textContent.trim() === 'Plugins')?.click();
+    })()`);
+    await app.waitFor(`document.querySelector('.prefs-plugin-row')`, { label: 'plugin rows rendered' });
+
+    // The gallery plugin lists OFF, switches ON, and persists.
+    const arborSwitch = `[...document.querySelectorAll('.prefs-plugin-row')]
+      .find((r) => r.textContent.includes('Arbor Forge'))?.querySelector('input[role=switch]')`;
+    await app.waitFor(`(${arborSwitch})?.checked === false`, { label: 'Arbor Forge listed off' });
+    await app.evaluate(`(${arborSwitch})?.click()`);
+    await app.waitFor(
+      `(JSON.parse(localStorage.getItem('nodeforge.plugins') ?? '{}').state?.enabledIds ?? []).includes('feather.arbor-forge')`,
+      { label: 'manager persisted the install' },
+    );
+
+    // The row's Open panel button lands in the studio (and closes the modal).
+    await app.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.prefs-plugin-row')].find((r) => r.textContent.includes('Arbor Forge'));
+      [...row.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Open panel')?.click();
+    })()`);
+    await app.waitFor(`document.querySelectorAll('.arbor-preset-card').length >= 12`, { label: 'panel opened from manager' });
+    await app.waitFor(`!document.querySelector('.prefs-card')`, { label: 'modal closed' });
+
+    // Switching OFF deactivates live: the persisted id AND the open panel both go away.
+    await clickViewMenuEntry(app, 'Preferences…');
+    await app.waitFor(`document.querySelector('.prefs-card')`, { label: 'preferences reopened' });
+    await app.evaluate(`(() => {
+      const tabs = [...document.querySelectorAll('.prefs-tab')];
+      tabs.find((b) => b.textContent.trim() === 'Plugins')?.click();
+    })()`);
+    await app.waitFor(`(${arborSwitch})?.checked === true`, { label: 'switch reflects installed state' });
+    await app.evaluate(`(${arborSwitch})?.click()`);
+    await app.waitFor(
+      `!(JSON.parse(localStorage.getItem('nodeforge.plugins') ?? '{}').state?.enabledIds ?? []).includes('feather.arbor-forge')`,
+      { label: 'manager forgot the install' },
+    );
+    await app.waitFor(`!document.querySelector('.arbor-preset-card')`, { label: 'plugin panel closed on remove' });
+  } finally {
+    await app.dispose();
+  }
+});
+
 spec('production export exposes one profile and all six exact platform targets', async () => {
   const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=timeline' });
   try {

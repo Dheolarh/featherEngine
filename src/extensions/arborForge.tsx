@@ -205,6 +205,8 @@ export const arborForgePlugin = defineFeatherPlugin({
   id: PLUGIN_ID,
   name: 'Arbor Forge',
   version: '1.0.0',
+  description:
+    'Stylized tree studio: twelve hand-tuned presets with a live seed-explorer preview, one-click planting and natural grove scattering.',
   apiVersion: '0.2.0',
   activate(api) {
     api.panels.register({

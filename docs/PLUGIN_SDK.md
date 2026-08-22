@@ -130,7 +130,9 @@ The registry is the stable seam for future work. The next useful increments are:
 
 1. Expand capability services for assets, scenes, Blueprints, materials, importers, and build hooks.
 2. Add a manifest and local-folder loader that resolves compatibility before activation.
-3. Add development hot reload and an installed-plugin manager.
+3. Add development hot reload. (The installed-plugin manager exists: **Preferences → Plugins** lists
+   gallery plugins with an on/off switch, always-on bundled plugins, and installs waiting on a newer
+   build.)
 4. Add permissions, signing, process isolation, and downloaded-code loading only after the API is mature.
 
 New engine access should be added as a typed capability on `FeatherPluginAPI`, rather than exposing

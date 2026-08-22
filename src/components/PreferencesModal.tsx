@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Layout, Palette, Settings2, Trash2, X } from 'lucide-react';
+import { Layout, Palette, Puzzle, Settings2, Store, Trash2, X } from 'lucide-react';
 import {
   useEditorPrefs,
   type Density,
   type FontScale,
   type ThemeMode,
 } from '../store/editorPrefsStore';
+import { usePluginStore } from '../store/pluginStore';
+import { AVAILABLE_PLUGINS } from '../extensions/availablePlugins';
+import { bundledPlugins } from '../extensions/bundledPlugins';
+import { useExtensionSnapshot } from '../extensions/react';
 import {
   WORKSPACE_LAYOUTS,
   applyCustomLayout,
@@ -15,12 +19,14 @@ import {
   snapshotWorkspaceLayout,
   type WorkspaceLayoutId,
 } from './Workspace';
+import { focusWorkspacePanel, openWorkspacePanel } from './workspacePanels';
 
-type Tab = 'appearance' | 'workspace';
+type Tab = 'appearance' | 'workspace' | 'plugins';
 
 const TABS: Array<{ id: Tab; label: string; icon: typeof Palette }> = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'workspace', label: 'Workspace', icon: Layout },
+  { id: 'plugins', label: 'Plugins', icon: Puzzle },
 ];
 
 const THEME_OPTIONS: Array<{ id: ThemeMode; label: string; hint: string }> = [
@@ -108,6 +114,7 @@ export function PreferencesModal({ open, onClose }: { open: boolean; onClose: ()
               <div className="prefs-panel">
                 {tab === 'appearance' && <AppearancePanel />}
                 {tab === 'workspace' && <WorkspacePanel onClose={onClose} />}
+                {tab === 'plugins' && <PluginsPanel onClose={onClose} />}
               </div>
             </div>
           </motion.div>
@@ -296,6 +303,124 @@ function WorkspacePanel({ onClose }: { onClose: () => void }) {
           </ul>
         </PrefRow>
       )}
+    </div>
+  );
+}
+
+/**
+ * Every plugin this build knows about, in one place: store-installable gallery plugins with a
+ * working on/off switch, always-on bundled plugins for completeness, and any persisted install
+ * this build can't satisfy — so "what is running in my editor?" never requires hunting store cards.
+ */
+function PluginsPanel({ onClose }: { onClose: () => void }) {
+  const enabledIds = usePluginStore((s) => s.enabledIds);
+  const enable = usePluginStore((s) => s.enable);
+  const disable = usePluginStore((s) => s.disable);
+  const snapshot = useExtensionSnapshot();
+  // enable() reports failures as a return value (not a toast the modal would cover), keyed by
+  // plugin so an error under one row never blames another.
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const orphanedIds = enabledIds.filter((id) => !AVAILABLE_PLUGINS.some((plugin) => plugin.id === id));
+
+  const toggle = (pluginId: string, next: boolean) => {
+    setErrors((current) => ({ ...current, [pluginId]: '' }));
+    if (next) {
+      const failure = enable(pluginId);
+      if (failure) setErrors((current) => ({ ...current, [pluginId]: failure }));
+    } else {
+      disable(pluginId);
+    }
+  };
+
+  return (
+    <div className="prefs-section">
+      <PrefRow label="Installed plugins" hint="From the Asset Store. Changes apply instantly and persist.">
+        <ul className="prefs-plugin-list">
+          {AVAILABLE_PLUGINS.map((plugin) => {
+            const active = enabledIds.includes(plugin.id);
+            const panels = snapshot.panels.filter((panel) => panel.pluginId === plugin.id);
+            return (
+              <li key={plugin.id} className="prefs-plugin-row">
+                <div className="prefs-plugin-info">
+                  <strong>
+                    {plugin.name} <em>v{plugin.version}</em>
+                  </strong>
+                  {plugin.description && <span>{plugin.description}</span>}
+                  {errors[plugin.id] && <span className="prefs-plugin-error">{errors[plugin.id]}</span>}
+                </div>
+                {active && panels.length > 0 && (
+                  <button
+                    className="prefs-link-button"
+                    onClick={() => {
+                      if (openWorkspacePanel(panels[0])) onClose();
+                    }}
+                  >
+                    Open panel
+                  </button>
+                )}
+                <label className="prefs-plugin-switch" title={active ? `Remove ${plugin.name}` : `Install ${plugin.name}`}>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={active}
+                    onChange={(event) => toggle(plugin.id, event.target.checked)}
+                    aria-label={`${plugin.name} installed`}
+                  />
+                  <span>{active ? 'On' : 'Off'}</span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      </PrefRow>
+
+      {orphanedIds.length > 0 && (
+        <PrefRow
+          label="Needs a newer build"
+          hint="Installed on another Feather version; kept so upgrading re-enables them."
+        >
+          <ul className="prefs-plugin-list">
+            {orphanedIds.map((id) => (
+              <li key={id} className="prefs-plugin-row is-orphan">
+                <div className="prefs-plugin-info">
+                  <strong>{id}</strong>
+                </div>
+                <button className="prefs-link-button" onClick={() => disable(id)}>
+                  Forget
+                </button>
+              </li>
+            ))}
+          </ul>
+        </PrefRow>
+      )}
+
+      <PrefRow label="Built-in" hint="Part of the editor — always on.">
+        <ul className="prefs-plugin-list">
+          {bundledPlugins.map((plugin) => (
+            <li key={plugin.id} className="prefs-plugin-row is-builtin">
+              <div className="prefs-plugin-info">
+                <strong>
+                  {plugin.name} <em>v{plugin.version}</em>
+                </strong>
+                {plugin.description && <span>{plugin.description}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </PrefRow>
+
+      <div className="prefs-footer">
+        <button
+          className="prefs-primary-button prefs-store-button"
+          onClick={() => {
+            focusWorkspacePanel('store');
+            onClose();
+          }}
+        >
+          <Store size={14} aria-hidden /> Browse plugins in the Asset Store
+        </button>
+      </div>
     </div>
   );
 }

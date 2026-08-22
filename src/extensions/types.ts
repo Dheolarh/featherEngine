@@ -143,6 +143,8 @@ export interface FeatherPluginDefinition {
   id: string;
   name: string;
   version: string;
+  /** One or two sentences for management surfaces (the Preferences → Plugins list). */
+  description?: string;
   /** SDK version this plugin was authored against. */
   apiVersion?: typeof FEATHER_EXTENSION_API_VERSION;
   activate(api: FeatherPluginAPI): void | FeatherDispose;
