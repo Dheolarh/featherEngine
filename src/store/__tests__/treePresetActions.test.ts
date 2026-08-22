@@ -22,7 +22,9 @@ describe('tree preset + grove store actions', () => {
     expect(specId).toBeTruthy();
     const spec = useEditorStore.getState().treeSpecs.find((entry) => entry.id === specId)!;
     expect(spec.name).toBe(getStylizedPreset('sakura')!.name);
-    expect(spec.look.foliageRamp[0]).toBe('#e88fb4');
+    // The preset's art direction must land verbatim — compare against the data, not a literal,
+    // so tuning a colour doesn't break the test.
+    expect(spec.look.foliageRamp[0]).toBe(getStylizedPreset('sakura')!.patch.look?.foliageRamp?.[0]);
     expect(useEditorStore.getState().treeSpecs).toHaveLength(before + 1);
     expect(useEditorStore.getState().activeTreeSpecId).toBe(specId);
     // Unknown presets refuse loudly-but-safely instead of adding a mystery asset.

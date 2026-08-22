@@ -35,10 +35,12 @@ export const STYLIZED_TREE_PRESETS: readonly StylizedTreePreset[] = [
     patch: {
       trunk: { height: 6, baseRadius: 0.42, curl: 0.38, gnarl: 0.34, flare: 0.4 },
       branches: { levels: 3, countPerLevel: [5, 3, 2], angle: 52, angleVariance: 20, gravity: -0.05, lengthRatio: 0.6 },
-      foliage: { density: 3.5, size: 1.1, sizeVariance: 0.4, droop: 0.18, crownRadius: 0.62, crownFill: 0.62 },
+      // Lifted, moderately dense lobes — enough gaps that the black branches show through the
+      // blossom, which is what makes a cherry read as a tree and not a candy-floss ball.
+      foliage: { density: 2.2, size: 1.25, sizeVariance: 0.42, droop: 0.14, crownRadius: 0.5, crownLift: 0.76, crownFill: 0.55 },
       look: {
         barkRamp: ['#43303c', '#66494f'],
-        foliageRamp: ['#e88fb4', '#ffd9e8'],
+        foliageRamp: ['#d76d9e', '#ffd9e8'],
         // Petals glow warm pink with the sun behind them, not leaf-green.
         translucency: { color: '#ffc2d9', scale: 0.7, power: 2.0 },
         aoStrength: 0.35,
@@ -89,8 +91,10 @@ export const STYLIZED_TREE_PRESETS: readonly StylizedTreePreset[] = [
     art: { from: '#24461f', to: '#5f8f3a' },
     patch: {
       trunk: { height: 11, baseRadius: 0.95, taper: 0.68, curl: 0.32, flare: 0.8, gnarl: 0.62, radialSegments: 10 },
-      branches: { levels: 3, countPerLevel: [6, 4, 2], angle: 56, angleVariance: 24, gravity: 0.18, lengthRatio: 0.66 },
-      foliage: { density: 3.5, size: 1.9, crownRadius: 0.72, crownFill: 0.85, droop: 0.3 },
+      branches: { levels: 3, countPerLevel: [5, 3, 2], angle: 56, angleVariance: 24, gravity: 0.18, lengthRatio: 0.66 },
+      // Wide but LIFTED: the crown must ride the branches, leaving trunk visible beneath — a huge
+      // radius with high density previously buried the whole tree in a ground-level lobe pile.
+      foliage: { density: 2.2, size: 1.6, crownRadius: 0.58, crownLift: 0.74, crownFill: 0.8, droop: 0.24 },
       look: { barkRamp: ['#3d2f22', '#5c4936'], foliageRamp: ['#24461f', '#5f8f3a'], aoStrength: 0.62 },
     },
   },
@@ -136,7 +140,7 @@ export const STYLIZED_TREE_PRESETS: readonly StylizedTreePreset[] = [
     patch: {
       trunk: { height: 7.5, baseRadius: 0.4, curl: 0.3, gnarl: 0.2 },
       branches: { levels: 3, countPerLevel: [5, 3, 2], angle: 48, gravity: 0.05, lengthRatio: 0.66 },
-      foliage: { density: 2.8, size: 1.35, sizeVariance: 0.45, droop: 0.2, crownRadius: 0.66, crownFill: 0.55 },
+      foliage: { density: 2.1, size: 1.35, sizeVariance: 0.45, droop: 0.2, crownRadius: 0.56, crownLift: 0.75, crownFill: 0.55 },
       look: {
         barkRamp: ['#4a4038', '#6e6152'],
         foliageRamp: ['#7a5fd0', '#c4a6ff'],

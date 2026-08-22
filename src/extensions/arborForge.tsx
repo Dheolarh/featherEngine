@@ -39,9 +39,11 @@ function previewObject(spec: TreeSpec, seed: number): SceneObject {
 function PresetPreview({ spec, seed }: { spec: TreeSpec; seed: number }) {
   const object = useMemo(() => previewObject(spec, seed), [spec, seed]);
   // Frame off generated bounds, not trunk height — a canopy is usually wider than the trunk is tall.
+  // Averaging the axes (instead of taking the max) stops one stray limb from shrinking the whole
+  // tree to a miniature; a slightly clipped outlier branch beats a postage-stamp preview.
   const bounds = useMemo(() => generateTree(spec, seed).bounds, [spec, seed]);
   const size = bounds.getSize(new THREE.Vector3());
-  const radius = Math.max(1.5, Math.max(size.x, size.y, size.z) * 0.85);
+  const radius = Math.max(1.5, Math.max(size.y, (size.x + size.z) * 0.5) * 0.62);
   const height = Math.max(1.5, size.y);
   return (
     <Canvas

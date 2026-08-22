@@ -80,9 +80,13 @@ class MeshBuilder {
   /**
    * Bake an existing geometry under a transform.
    *
-   * `normalOverride` replaces every vertex normal with one shared direction. Leaf cards need this:
-   * independent face normals shade each quad separately and the canopy reads as confetti; a shared
-   * outward normal makes the cluster light as one soft volume.
+   * `shading` replaces the source normals, which is what makes a canopy read as leaves instead of
+   * polygons:
+   *   - a Vector3 gives every vertex ONE shared direction (leaf cards — independent face normals
+   *     shade each quad separately and the canopy reads as confetti);
+   *   - `{ radialCenter }` points normals away from a cluster's centre so the lobe lights as one
+   *     soft ball, and the optional `canopyCenter` blend tilts them toward the whole-crown normal
+   *     so neighbouring lobes merge into one painted volume instead of a bag of spheres.
    */
   addGeometry(
     geo: THREE.BufferGeometry,
@@ -90,7 +94,7 @@ class MeshBuilder {
     color: THREE.Color,
     wind: number,
     trunkT: number,
-    normalOverride?: THREE.Vector3,
+    shading?: THREE.Vector3 | { radialCenter: THREE.Vector3; canopyCenter?: THREE.Vector3; canopyBlend?: number },
   ): void {
     const pos = geo.getAttribute('position');
     const nor = geo.getAttribute('normal');
@@ -99,10 +103,21 @@ class MeshBuilder {
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(matrix);
     const p = new THREE.Vector3();
     const n = new THREE.Vector3();
+    const toward = new THREE.Vector3();
     for (let i = 0; i < pos.count; i += 1) {
       p.fromBufferAttribute(pos, i).applyMatrix4(matrix);
-      if (normalOverride) n.copy(normalOverride);
-      else n.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+      if (shading instanceof THREE.Vector3) {
+        n.copy(shading);
+      } else if (shading) {
+        n.copy(p).sub(shading.radialCenter).normalize();
+        if (!Number.isFinite(n.x) || n.lengthSq() < 1e-6) n.copy(UP);
+        if (shading.canopyCenter) {
+          toward.copy(p).sub(shading.canopyCenter).normalize();
+          if (Number.isFinite(toward.x)) n.lerp(toward, shading.canopyBlend ?? 0.35).normalize();
+        }
+      } else {
+        n.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+      }
       this.vertex(p, n, uv ? uv.getX(i) : 0, uv ? uv.getY(i) : 0, color, wind, trunkT);
     }
     const idx = geo.getIndex();
@@ -311,6 +326,57 @@ const BLOB_GEO = new THREE.IcosahedronGeometry(1, 1);
 const CLUSTER_GEO = new THREE.IcosahedronGeometry(1, 0); // chunkier, reads more stylized at distance
 const CARD_GEO = new THREE.PlaneGeometry(1, 1);
 
+/**
+ * Radially lump a unit-sphere geometry so no two lobes share the same perfect-ball silhouette.
+ * Icosahedra are NON-indexed (co-located vertices duplicated per face), so the displacement is
+ * keyed off a quantized position hash — co-located verts move identically and the surface never
+ * tears. Deterministic: driven only by the tree's own rng.
+ */
+function lumpGeometry(source: THREE.BufferGeometry, rand: () => number, amount: number): THREE.BufferGeometry {
+  const geo = source.clone();
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  const ox = rand() * 97;
+  const oy = rand() * 61;
+  const oz = rand() * 43;
+  for (let i = 0; i < pos.count; i += 1) {
+    v.fromBufferAttribute(pos, i);
+    const h =
+      Math.sin((Math.round(v.x * 37) + ox) * 12.9898 + (Math.round(v.y * 37) + oy) * 78.233 + (Math.round(v.z * 37) + oz) * 37.719) *
+      43758.5453;
+    const k = 1 + (h - Math.floor(h) - 0.5) * 2 * amount;
+    pos.setXYZ(i, v.x * k, v.y * k, v.z * k);
+  }
+  return geo;
+}
+
+/** Small deterministic hue/value wobble so a canopy is a family of greens, not one flat paint. */
+function jitterColor(color: THREE.Color, rand: () => number): THREE.Color {
+  return color.offsetHSL((rand() - 0.5) * 0.045, (rand() - 0.5) * 0.1, (rand() - 0.5) * 0.09);
+}
+
+/**
+ * A 3-level tree has dozens of tips; per-anchor cluster counts then explode the canopy into a
+ * shapeless pile (and the triangle budget with it). Stride-sample the anchors instead — even
+ * coverage over the crown, no rng consumed, so the same seed keeps the same tree.
+ */
+function capAnchors(anchors: TreeBranch[], cap: number): TreeBranch[] {
+  if (anchors.length <= cap) return anchors;
+  const stride = anchors.length / cap;
+  const out: TreeBranch[] = [];
+  for (let i = 0; i < cap; i += 1) out.push(anchors[Math.floor(i * stride)]);
+  return out;
+}
+
+/**
+ * Lowest y foliage may occupy. Canopies previously sagged below the ground plane (an 11-unit oak's
+ * crown reached y = −2) and swallowed the trunk; a tree reads as a tree because bark shows beneath
+ * the crown. Derived from where branches START, so bushes (startHeight 0) stay ground-hugging.
+ */
+function canopyFloor(spec: TreeSpec): number {
+  return Math.max(0.12, spec.trunk.height * Math.max(0.06, spec.branches.startHeight * 0.7));
+}
+
 /** Tips plus near-tips (parents of tips) so the canopy fills instead of floating above bare limbs. */
 function foliageAnchors(branches: TreeBranch[]): TreeBranch[] {
   const tips = branches.filter((b) => b.children.length === 0);
@@ -377,6 +443,10 @@ function emitFoliage(branches: TreeBranch[], spec: TreeSpec, maxDist: number, ra
     const ao = THREE.MathUtils.lerp(1 - spec.look.aoStrength, 1, THREE.MathUtils.smoothstep(d + edgeBias, 0.15, 0.9));
     rampColor(spec.look.foliageRamp, THREE.MathUtils.clamp(d, 0, 1), color);
     color.multiplyScalar(ao);
+    // Sun-from-above: the crown's upper lobes run brighter than its underside. Baked, so it holds
+    // in any lighting rig and costs nothing at runtime.
+    const lift = THREE.MathUtils.clamp((position.y - centroid.y) / Math.max(0.001, canopyRadius), -1, 1);
+    color.multiplyScalar(1 + lift * 0.12);
     return color;
   };
 
@@ -442,12 +512,15 @@ function emitSkirt(trunk: TreeBranch, spec: TreeSpec, maxDist: number, rand: () 
     cone.computeVertexNormals();
     // Pull each ring down slightly over the one below for a continuous skirt.
     const nest = height * 0.28;
-    matrix.compose(
-      center.clone().setY(center.y + height * 0.22 - nest * (1 - shrink)),
-      quat.setFromAxisAngle(UP, THREE.MathUtils.degToRad(37 * i + rand() * 8)),
-      scale,
-    );
-    builder.addGeometry(cone, matrix, shade(center, 0.35), windWeight(spec, 1, trunk.length * t, maxDist), t);
+    const at = center.clone().setY(center.y + height * 0.22 - nest * (1 - shrink));
+    matrix.compose(at, quat.setFromAxisAngle(UP, THREE.MathUtils.degToRad(37 * i + rand() * 8)), scale);
+    // Radial normals melt the stacked cones into one soft conifer body instead of hard lampshades;
+    // the ring's own centre keeps a hint of tier separation.
+    builder.addGeometry(cone, matrix, jitterColor(shade(center, 0.35), rand), windWeight(spec, 1, trunk.length * t, maxDist), t, {
+      radialCenter: at.clone().setY(at.y - height * 0.25),
+      canopyCenter: trunk.path.getPoint(0.55),
+      canopyBlend: 0.3,
+    });
     cone.dispose();
   }
 }
@@ -475,7 +548,7 @@ function emitFronds(
     const geo = buildFrond(f.size, f.droop, rand);
     quat.setFromEuler(new THREE.Euler(pitch, yaw, (rand() - 0.5) * 0.2));
     matrix.compose(crown, quat, scale.set(1, 1, 1));
-    builder.addGeometry(geo, matrix, shade(crown), windWeight(spec, 1, branch.distFromRoot + branch.length, maxDist), tipTrunkT);
+    builder.addGeometry(geo, matrix, jitterColor(shade(crown), rand), windWeight(spec, 1, branch.distFromRoot + branch.length, maxDist), tipTrunkT);
     geo.dispose();
   }
 }
@@ -490,7 +563,9 @@ function emitStrands(anchors: TreeBranch[], spec: TreeSpec, maxDist: number, ran
       anchor.x += (rand() - 0.5) * 0.6;
       anchor.z += (rand() - 0.5) * 0.6;
       const dist = branch.distFromRoot + branch.length * t;
-      emitStrand(builder, spec, anchor, f.strandLength ?? 3.2, shade(anchor), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT, rand);
+      // A strand may sweep low, but never through the ground it stands on.
+      const length = Math.min(f.strandLength ?? 3.2, Math.max(0.3, anchor.y - 0.12));
+      emitStrand(builder, spec, anchor, length, jitterColor(shade(anchor), rand), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT, rand);
     }
   }
 }
@@ -531,24 +606,39 @@ function emitBlobs(
 ): void {
   const f = spec.foliage;
   const fill = f.crownFill;
-  for (const branch of anchors) {
+  const floorY = canopyFloor(spec);
+  const centroid = volume.center;
+  for (const branch of capAnchors(anchors, 32)) {
     const tipTrunkT = branch.level === 0 ? 1 : branch.trunkT;
     for (let i = 0; i < Math.round(f.density); i += 1) {
       const { center, t } = placeFromCrownOrTip(rand() < fill, branch, volume, f, rand, scratch);
       const s = f.size * (1 + (rand() - 0.5) * 2 * f.sizeVariance);
+      center.y = Math.max(center.y, floorY + s * 0.5);
       matrix.compose(center, quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(s, s * 0.82, s));
       const dist = branch.distFromRoot + branch.length * t;
-      builder.addGeometry(BLOB_GEO, matrix, shade(center), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT);
+      const lump = lumpGeometry(BLOB_GEO, rand, 0.16);
+      builder.addGeometry(lump, matrix, jitterColor(shade(center), rand), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT, {
+        radialCenter: center,
+        canopyCenter: centroid,
+      });
+      lump.dispose();
     }
   }
   // Pure crown fill when density is low but fill is high — keeps a solid silhouette.
-  const extra = Math.round(f.density * fill * anchors.length * 0.35);
+  const extra = Math.round(f.density * fill * Math.min(anchors.length, 32) * 0.35);
   for (let i = 0; i < extra; i += 1) {
     sampleCrown(volume, rand, scratch);
     scratch.y -= f.droop * f.size * 0.15;
     const s = f.size * (0.85 + rand() * 0.4);
-    matrix.compose(scratch.clone(), quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(s, s * 0.8, s));
-    builder.addGeometry(BLOB_GEO, matrix, shade(scratch), windWeight(spec, 2, maxDist * 0.7, maxDist), f.crownLift);
+    scratch.y = Math.max(scratch.y, floorY + s * 0.5);
+    const at = scratch.clone();
+    matrix.compose(at, quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(s, s * 0.8, s));
+    const lump = lumpGeometry(BLOB_GEO, rand, 0.16);
+    builder.addGeometry(lump, matrix, jitterColor(shade(at), rand), windWeight(spec, 2, maxDist * 0.7, maxDist), f.crownLift, {
+      radialCenter: at,
+      canopyCenter: centroid,
+    });
+    lump.dispose();
   }
 }
 
@@ -570,18 +660,27 @@ function emitClusters(
   scratch: THREE.Vector3,
 ): void {
   const f = spec.foliage;
-  const tipCount = Math.max(2, Math.round(f.density * anchors.length * (1 - f.crownFill * 0.5)));
-  const crownCount = Math.max(3, Math.round(4 + f.density * 3 * f.crownFill + anchors.length * f.crownFill));
+  const floorY = canopyFloor(spec);
+  const centroid = volume.center;
+  const capped = capAnchors(anchors, 32);
+  const tipCount = Math.max(2, Math.round(f.density * capped.length * (1 - f.crownFill * 0.5)));
+  const crownCount = Math.max(3, Math.round(4 + f.density * 3 * f.crownFill + capped.length * f.crownFill));
 
   // Structural lobes near branch tips.
   for (let i = 0; i < tipCount; i += 1) {
-    const branch = anchors[i % anchors.length];
+    const branch = capped[i % capped.length];
     const tipTrunkT = branch.level === 0 ? 1 : branch.trunkT;
     const { center, t } = placeFromCrownOrTip(false, branch, volume, f, rand, scratch);
     const s = f.size * (1.05 + (rand() - 0.5) * 2 * f.sizeVariance);
+    center.y = Math.max(center.y, floorY + s * 0.45);
     matrix.compose(center, quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(s * 1.05, s * 0.78, s * 1.05));
     const dist = branch.distFromRoot + branch.length * t;
-    builder.addGeometry(CLUSTER_GEO, matrix, shade(center), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT);
+    const lump = lumpGeometry(CLUSTER_GEO, rand, 0.2);
+    builder.addGeometry(lump, matrix, jitterColor(shade(center), rand), windWeight(spec, branch.level + 1, dist, maxDist), tipTrunkT, {
+      radialCenter: center,
+      canopyCenter: centroid,
+    });
+    lump.dispose();
   }
 
   // Crown volume fill — the Unreal "paint the canopy" pass.
@@ -593,8 +692,15 @@ function emitClusters(
     const sx = s * (0.95 + rand() * 0.2);
     const sy = s * (0.7 + rand() * 0.25);
     const sz = s * (0.95 + rand() * 0.2);
-    matrix.compose(scratch.clone(), quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(sx, sy, sz));
-    builder.addGeometry(CLUSTER_GEO, matrix, shade(scratch), windWeight(spec, 2, maxDist * (0.55 + rand() * 0.35), maxDist), f.crownLift);
+    scratch.y = Math.max(scratch.y, floorY + sy * 0.6);
+    const at = scratch.clone();
+    matrix.compose(at, quat.setFromAxisAngle(UP, rand() * Math.PI * 2), scale.set(sx, sy, sz));
+    const lump = lumpGeometry(CLUSTER_GEO, rand, 0.2);
+    builder.addGeometry(lump, matrix, jitterColor(shade(at), rand), windWeight(spec, 2, maxDist * (0.55 + rand() * 0.35), maxDist), f.crownLift, {
+      radialCenter: at,
+      canopyCenter: centroid,
+    });
+    lump.dispose();
   }
 }
 
@@ -614,7 +720,8 @@ function emitCards(
 ): void {
   const f = spec.foliage;
   const fill = f.crownFill;
-  for (const branch of anchors) {
+  const floorY = canopyFloor(spec);
+  for (const branch of capAnchors(anchors, 32)) {
     const tipTrunkT = branch.level === 0 ? 1 : branch.trunkT;
     for (let i = 0; i < Math.round(f.density); i += 1) {
       const useCrown = rand() < fill;
@@ -626,13 +733,14 @@ function emitCards(
         center.x += (rand() - 0.5) * f.size * 1.4;
         center.z += (rand() - 0.5) * f.size * 1.4;
         center.y += (rand() - 0.5) * f.size - f.droop * f.size * 0.45;
+        center.y = Math.max(center.y, floorY);
         const s = f.size * (1 + (rand() - 0.5) * 2 * f.sizeVariance);
         quat.setFromEuler(new THREE.Euler(rand() * Math.PI, rand() * Math.PI * 2, rand() * Math.PI));
         matrix.compose(center, quat, scale.set(s, s, s));
         const outward = center.clone().sub(centroid);
         outward.setLength(1);
         if (!Number.isFinite(outward.x)) outward.copy(UP);
-        builder.addGeometry(CARD_GEO, matrix, shade(center), wind, tipTrunkT, outward);
+        builder.addGeometry(CARD_GEO, matrix, jitterColor(shade(center), rand), wind, tipTrunkT, outward);
       }
     }
   }

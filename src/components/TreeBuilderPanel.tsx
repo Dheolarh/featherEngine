@@ -49,7 +49,8 @@ function TreePreview({ spec, seed }: { spec: TreeSpec; seed: number }) {
   // trunk is tall, and trunk-height framing parks the camera inside the leaves.
   const bounds = useMemo(() => generateTree(spec, seed).bounds, [spec, seed]);
   const size = bounds.getSize(new THREE.Vector3());
-  const radius = Math.max(1.5, Math.max(size.x, size.y, size.z) * 0.85);
+  // Average the axes so one stray limb doesn't shrink the tree to a miniature.
+  const radius = Math.max(1.5, Math.max(size.y, (size.x + size.z) * 0.5) * 0.62);
   const height = Math.max(1.5, size.y);
   return (
     <Canvas
