@@ -7,6 +7,7 @@ import {
   type StoreListing,
 } from '../marketplace/catalog';
 import { useProjectStore } from './projectStore';
+import { usePluginStore } from './pluginStore';
 
 /**
  * State behind the Asset Store panel: the catalog index, the browse filters, and the install call.
@@ -90,9 +91,9 @@ export const useMarketplaceStore = create<MarketplaceState>()((set, get) => ({
   install: async (listing) => {
     if (get().installingId) return;
     const project = useProjectStore.getState();
-    // A project package is a whole world: it creates its own new project rather than merging, so
-    // unlike a module it does NOT require (or use) an already-open project.
-    if (listing.kind !== 'project' && !project.hasProject) {
+    // A project package is a whole world (its own new project) and a plugin is editor-level, so
+    // only an asset merge requires — or uses — an already-open project.
+    if (listing.kind === 'asset' && !project.hasProject) {
       useProjectStore.setState({
         toast: { kind: 'error', message: 'Open or create a project before installing from the store.' },
       });
@@ -101,9 +102,11 @@ export const useMarketplaceStore = create<MarketplaceState>()((set, get) => ({
     set({ installingId: listing.id });
     try {
       const installed =
-        listing.kind === 'project'
-          ? await project.newProjectFromPackageUrl(listing.downloadUrl, listing.title)
-          : await project.importPackageFromUrl(listing.downloadUrl);
+        listing.kind === 'plugin'
+          ? await usePluginStore.getState().installFromUrl(listing.downloadUrl)
+          : listing.kind === 'project'
+            ? await project.newProjectFromPackageUrl(listing.downloadUrl, listing.title)
+            : await project.importPackageFromUrl(listing.downloadUrl);
       if (installed) {
         set((state) => ({
           installedIds: state.installedIds.includes(listing.id)

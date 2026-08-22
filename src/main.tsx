@@ -7,6 +7,7 @@ import { initStoreSync } from './sync/storeSync';
 import { startMcpBridge } from './ai/mcpBridge';
 import { startExtensionHost } from './extensions/host';
 import { useEditorStore } from './store/editorStore';
+import { usePluginStore } from './store/pluginStore';
 import './styles.css';
 import '@xyflow/react/dist/style.css';
 
@@ -23,8 +24,10 @@ if (import.meta.env.DEV) {
 // panel and pull state from the main window. Otherwise render the full editor.
 const panelKind = new URLSearchParams(window.location.search).get('panel');
 
-// Register bundled extensions before React mounts so saved layouts can resolve their panels.
+// Register bundled extensions before React mounts so saved layouts can resolve their panels,
+// then re-activate whatever store plugins this user has installed (same reason, same timing).
 startExtensionHost();
+usePluginStore.getState().restore();
 
 if (!panelKind) {
   // Main editor window: keep sync alive so popped-out panels stay in lockstep.

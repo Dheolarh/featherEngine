@@ -8,13 +8,18 @@ Feather has two deliberately separate extension paths:
   logic built on the public Feather API.
 
 The Plugin SDK is additive. It does not replace Feather's stores, project format, asset importer, or
-runtime. The current API version is `0.1.0`.
+runtime. The current API version is `0.2.0`.
 
 > [!IMPORTANT]
-> This first version is an in-process developer SDK. Plugins are compiled into Feather and have the
-> same trust level as engine code. There is not yet a marketplace installer, package loader, signature
-> check, permissions dialog, or code sandbox. Those can be added later without replacing the registry
-> and lifecycle implemented here.
+> This is an in-process developer SDK. Plugins are compiled into Feather and have the same trust
+> level as engine code — there is no runtime code loader, signature check, permissions dialog, or
+> sandbox. What DOES exist now is the store install path for compiled-in plugins: a plugin can ship
+> in the **gallery** ([`src/extensions/availablePlugins.ts`](../src/extensions/availablePlugins.ts))
+> instead of `bundledPlugins`, stay dormant, and be activated by installing its Asset Store package —
+> a manifest-only `.nfpack` whose `meta.pluginId` names the module. The install persists (localStorage
+> via `src/store/pluginStore.ts`) and re-activates on every boot; removing it from the store card
+> deactivates it immediately. Since the package carries no code, everything that can run still
+> shipped with the engine. The bundled `Arbor Forge` plugin is the worked example of the whole path.
 
 ## What works now
 
@@ -25,6 +30,8 @@ runtime. The current API version is `0.1.0`.
 | Read a detached project snapshot | `api.project.read()` |
 | Group synchronous project edits | `api.project.transaction(...)` |
 | List, create, rename, remove, select, and transform scene objects | `api.objects.*` |
+| Read the tree library + stylized preset gallery; add/update assets; place trees; plant groves | `api.trees.*` |
+| Open built-in editor panels (`'trees'`, `'terrain'`, `'materials'`, …) as a fallback of | `api.panels.open(...)` |
 | Observe stable project, scene, selection, and Play-mode events | `api.events.on(...)` |
 | Show editor notifications and namespaced logs | `api.ui.notify(...)`, `api.log.*` |
 | Clean up every registration on unload or failed activation | plugin lifecycle host |
@@ -47,7 +54,7 @@ export const worldToolsPlugin = defineFeatherPlugin({
   id: pluginId,
   name: 'World Tools',
   version: '1.0.0',
-  apiVersion: '0.1.0',
+  apiVersion: '0.2.0',
   activate(api) {
     api.panels.register({
       id: panelId,
@@ -103,6 +110,20 @@ future hot reload, the host runs plugin cleanup and removes all tracked contribu
 panels are closed before their render functions are unregistered. Event handlers and panel rendering
 are error-isolated, so one faulty plugin does not take down unrelated plugins or the editor workspace.
 
+## Shipping a plugin through the Asset Store
+
+1. Author the plugin under `src/extensions/` against the public API (see
+   [`arborForge.tsx`](../src/extensions/arborForge.tsx) — it uses only `api.*`, never the raw stores).
+2. Register it in [`availablePlugins.ts`](../src/extensions/availablePlugins.ts) (NOT
+   `bundledPlugins.ts` — gallery plugins stay off until installed).
+3. Add a `kind: 'plugin'` pack to `scripts/build-store-catalog.mts` whose `meta.pluginId` is the
+   plugin's id, then run `npm run build:store`.
+
+Installing the package activates the module and persists the choice; the store card flips to
+**Remove**, which deactivates it (panels close, commands vanish) and forgets it. A catalog listing
+whose `pluginId` is not in the running build renders as "Needs newer build" instead of a broken
+install.
+
 ## Next layers
 
 The registry is the stable seam for future work. The next useful increments are:
@@ -110,7 +131,7 @@ The registry is the stable seam for future work. The next useful increments are:
 1. Expand capability services for assets, scenes, Blueprints, materials, importers, and build hooks.
 2. Add a manifest and local-folder loader that resolves compatibility before activation.
 3. Add development hot reload and an installed-plugin manager.
-4. Add permissions, signing, process isolation, and a marketplace only after the API is mature.
+4. Add permissions, signing, process isolation, and downloaded-code loading only after the API is mature.
 
 New engine access should be added as a typed capability on `FeatherPluginAPI`, rather than exposing
 the raw store. That keeps plugin code stable while Feather's internals continue to evolve.

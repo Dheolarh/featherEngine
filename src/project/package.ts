@@ -41,11 +41,11 @@ export const PACKAGE_EXT = 'nfpack';
  * - `project` — a complete, playable world. Installing creates a NEW project and opens it.
  * - `asset`   — reusable content (prefabs, materials, models…). Installing merges it additively
  *               into whatever project is open.
- * - `plugin`  — editor behaviour (commands, panels). NOT installable yet: plugins are compiled into
- *               the build (see src/extensions/bundledPlugins.ts and docs/PLUGIN_SDK.md), so there is
- *               no runtime loader, sandbox or permission model. The kind exists so the format and
- *               the store are already shaped for it, and so an installer can refuse one clearly
- *               instead of appearing to work.
+ * - `plugin`  — editor behaviour (commands, panels). There is still no runtime code loader or
+ *               sandbox: the package carries NO code, only a manifest whose `meta.pluginId` names a
+ *               plugin module compiled into this build (src/extensions/availablePlugins.ts).
+ *               Installing one activates that module and persists the choice — so "install" is
+ *               real, while every line that can run is still code that shipped with the engine.
  */
 export type PackageKind = 'project' | 'asset' | 'plugin';
 
@@ -73,6 +73,11 @@ export interface PackageMeta {
   thumbnail?: string;
   /** PROJECT_VERSION the package was authored against, for forward-compat checks. */
   engineVersion: string;
+  /**
+   * Only on `kind: 'plugin'` packages — the compiled-in plugin module this package activates
+   * (must match a FeatherPluginDefinition id in src/extensions/availablePlugins.ts).
+   */
+  pluginId?: string;
 }
 
 /** The transferable slice of a project. Only the entities the seed actually references are included. */

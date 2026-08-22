@@ -54,7 +54,7 @@ describe('Feather extension lifecycle', () => {
         id: 'test.lifecycle',
         name: 'Lifecycle Test',
         version: '1.0.0',
-        apiVersion: '0.1.0',
+        apiVersion: '0.2.0',
         activate(api) {
           api.commands.register({ id: 'test.lifecycle.command', title: 'Test', run: () => undefined });
           api.panels.register({ id: 'test.lifecycle.panel', title: 'Test', render: () => null });

@@ -1,7 +1,14 @@
 import { selectActiveObjects, useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
-import { closeWorkspacePanel, openWorkspacePanel } from '../components/workspacePanels';
-import type { SceneObject, SceneObjectKind, TransformComponent, Vector3Tuple } from '../types';
+import {
+  closeWorkspacePanel,
+  ensureWorkspacePanel,
+  focusWorkspacePanel,
+  openWorkspacePanel,
+} from '../components/workspacePanels';
+import type { SceneObject, SceneObjectKind, TransformComponent, TreeArchetype, Vector3Tuple } from '../types';
+import { TREE_ARCHETYPES } from '../tree/treeSpec';
+import { STYLIZED_TREE_PRESETS, getStylizedPreset } from '../tree/stylizedPresets';
 import { FeatherEventBus } from './events';
 import type { ExtensionRegistry } from './registry';
 import {
@@ -115,6 +122,78 @@ export function createFeatherPluginAPI(
     },
   };
 
+  const requireArchetype = (archetype: TreeArchetype): void => {
+    if (!TREE_ARCHETYPES[archetype]) throw new Error(`Unknown tree archetype: ${String(archetype)}`);
+  };
+  /**
+   * The library entry a preset maps to — reused by name+archetype so repeated placements from one
+   * preset share a single asset instead of filling the library with copies.
+   */
+  const resolvePresetSpecId = (presetId: string): string => {
+    const preset = getStylizedPreset(presetId);
+    if (!preset) throw new Error(`Unknown stylized tree preset: ${presetId}`);
+    const existing = useEditorStore
+      .getState()
+      .treeSpecs.find((entry) => entry.name === preset.name && entry.archetype === preset.archetype);
+    const id = existing?.id ?? useEditorStore.getState().createTreeSpecFromPreset(presetId);
+    if (!id) throw new Error(`Unknown stylized tree preset: ${presetId}`);
+    return id;
+  };
+
+  const trees: FeatherPluginAPI['trees'] = {
+    library: () => clone(useEditorStore.getState().treeSpecs),
+    presets: () => STYLIZED_TREE_PRESETS,
+    addPreset: (presetId, name) => {
+      requireEditableProject();
+      const id = useEditorStore.getState().createTreeSpecFromPreset(presetId, name);
+      if (!id) throw new Error(`Unknown stylized tree preset: ${presetId}`);
+      return id;
+    },
+    addArchetype: (archetype, name) => {
+      requireEditableProject();
+      requireArchetype(archetype);
+      return useEditorStore.getState().createTreeSpec(archetype, name);
+    },
+    updateSpec: (specId, patch) => {
+      requireEditableProject();
+      if (!useEditorStore.getState().treeSpecs.some((entry) => entry.id === specId)) return false;
+      useEditorStore.getState().updateTreeSpec(specId, patch);
+      return true;
+    },
+    place: (options = {}) => {
+      requireEditableProject();
+      if (options.position && !validVector(options.position)) {
+        throw new Error('Tree position must contain three finite numbers.');
+      }
+      const store = useEditorStore.getState();
+      const placement = { position: options.position, seed: options.seed, name: options.name };
+      if (options.specId) {
+        const id = store.createTreeFromSpec(options.specId, placement);
+        if (!id) throw new Error(`No tree asset with id ${options.specId}.`);
+        return id;
+      }
+      if (options.presetId) {
+        const id = useEditorStore.getState().createTreeFromSpec(resolvePresetSpecId(options.presetId), placement);
+        if (!id) throw new Error(`Unknown stylized tree preset: ${options.presetId}`);
+        return id;
+      }
+      if (options.archetype) {
+        requireArchetype(options.archetype);
+        return store.createTree(options.archetype, placement);
+      }
+      throw new Error('trees.place needs one of specId, presetId or archetype.');
+    },
+    plantGrove: (options = {}) => {
+      requireEditableProject();
+      if (options.position && !validVector(options.position)) {
+        throw new Error('Grove position must contain three finite numbers.');
+      }
+      const result = useEditorStore.getState().plantGrove(options);
+      if (!result) throw new Error('Could not plant the grove — no matching tree asset, preset or archetype.');
+      return result;
+    },
+  };
+
   const commands: FeatherPluginAPI['commands'] = Object.freeze({
     register: (definition) => {
       requireOwnedId(pluginId, definition.id, 'Command');
@@ -132,7 +211,12 @@ export function createFeatherPluginAPI(
     },
     open: (id) => {
       const panel = registry.getPanel(id);
-      return panel ? openWorkspacePanel(panel) : false;
+      if (panel) return openWorkspacePanel(panel);
+      // Not a plugin panel — try the editor's built-in workspace panels ('trees', 'terrain', …),
+      // so a plugin can hand the user over to a full editor it just prepared.
+      if (!ensureWorkspacePanel(id)) return false;
+      focusWorkspacePanel(id);
+      return true;
     },
   });
   const events: FeatherPluginAPI['events'] = Object.freeze({
@@ -181,6 +265,7 @@ export function createFeatherPluginAPI(
     events,
     project,
     objects: Object.freeze(objects),
+    trees: Object.freeze(trees),
     ui,
     log,
   });

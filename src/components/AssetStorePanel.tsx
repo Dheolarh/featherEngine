@@ -1,7 +1,9 @@
 import { useEffect, useMemo } from 'react';
-import { AlertTriangle, Check, Download, Loader2, PackageOpen, Puzzle, RefreshCw, Search, Sparkles, Store } from 'lucide-react';
+import { AlertTriangle, Check, Download, Loader2, PackageOpen, Puzzle, RefreshCw, Search, Sparkles, Store, Trash2 } from 'lucide-react';
 import { useMarketplaceStore } from '../store/marketplaceStore';
 import { useProjectStore } from '../store/projectStore';
+import { usePluginStore } from '../store/pluginStore';
+import { hasAvailablePlugin } from '../extensions/availablePlugins';
 import { confirmAction } from '../store/confirmStore';
 import { collectTags, formatSize, matchesQuery, type StoreListing } from '../marketplace/catalog';
 import { packageKindLabel } from '../project/package';
@@ -19,6 +21,9 @@ import { packageKindLabel } from '../project/package';
 
 /** Summarise what a package will add, so the cost of installing is visible before clicking. */
 function contentSummary(listing: StoreListing): string {
+  // A plugin adds editor behaviour, not project content — counting its (empty) entities would
+  // render the card as "Empty package".
+  if (listing.kind === 'plugin') return 'Editor plugin — panels + commands';
   const { prefabs, materials, blueprints, assets, scenes, uiDocuments } = listing.contents;
   const parts = [
     scenes && `${scenes} scene${scenes === 1 ? '' : 's'}`,
@@ -38,10 +43,29 @@ function StoreCard({ listing }: { listing: StoreListing }) {
   const busy = useMarketplaceStore((state) => !!state.installingId);
   const isTemplate = listing.kind === 'project';
   const isPlugin = listing.kind === 'plugin';
+  const pluginEnabled = usePluginStore(
+    (state) => !!listing.pluginId && state.enabledIds.includes(listing.pluginId),
+  );
+  const removePlugin = usePluginStore((state) => state.disable);
+  // A plugin card is only installable when its module shipped in THIS build — the manifest names
+  // compiled-in code, so an older engine can browse a newer catalog without a broken button.
+  const pluginSupported = !!listing.pluginId && hasAvailablePlugin(listing.pluginId);
 
   // A template starts a NEW project, so anything unsaved in the current one is left behind. Modules
-  // merge additively and need no warning.
+  // merge additively and need no warning; a plugin toggles editor behaviour and is fully reversible.
   const run = async () => {
+    if (isPlugin) {
+      if (pluginEnabled && listing.pluginId) {
+        if (removePlugin(listing.pluginId)) {
+          useProjectStore.setState({
+            toast: { kind: 'success', message: `Removed "${listing.title}" — reinstall it any time.` },
+          });
+        }
+        return;
+      }
+      void install(listing);
+      return;
+    }
     if (isTemplate) {
       const ok = await confirmAction({
         title: `Start "${listing.title}"?`,
@@ -89,14 +113,18 @@ function StoreCard({ listing }: { listing: StoreListing }) {
           <button
             className="full-button store-install-button"
             onClick={() => void run()}
-            // Plugins have no runtime loader yet, so the button is disabled rather than failing
+            // A plugin listing this build doesn't include stays disabled rather than failing
             // after a download.
-            disabled={busy || isPlugin}
-            // Re-installing is legitimate (it adds a second, independently editable copy), so the
-            // button stays live after a successful install — only the label changes.
+            disabled={busy || (isPlugin && !pluginSupported)}
+            // Re-installing an asset is legitimate (it adds a second, independently editable copy),
+            // so the button stays live after a successful install — only the label changes.
             title={
               isPlugin
-                ? 'Plugins are compiled into the editor build — not installable yet'
+                ? !pluginSupported
+                  ? 'This plugin needs a newer Feather build'
+                  : pluginEnabled
+                    ? `Remove ${listing.title} — its panels and commands deactivate immediately`
+                    : `Install ${listing.title} — activates instantly and stays on across sessions`
                 : isTemplate
                   ? `Create a new project from ${listing.title}`
                   : installed
@@ -104,14 +132,22 @@ function StoreCard({ listing }: { listing: StoreListing }) {
                     : `Install ${listing.title}`
             }
           >
-            {isPlugin ? (
+            {isPlugin && !pluginSupported ? (
               <>
-                <Puzzle size={14} aria-hidden /> Not installable yet
+                <Puzzle size={14} aria-hidden /> Needs newer build
               </>
             ) : installing ? (
               <>
                 <Loader2 size={14} className="spin" aria-hidden />
                 {isTemplate ? ' Creating…' : ' Installing…'}
+              </>
+            ) : isPlugin && pluginEnabled ? (
+              <>
+                <Trash2 size={14} aria-hidden /> Remove
+              </>
+            ) : isPlugin ? (
+              <>
+                <Puzzle size={14} aria-hidden /> Install plugin
               </>
             ) : installed && !isTemplate ? (
               <>

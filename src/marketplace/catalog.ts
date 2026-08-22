@@ -46,6 +46,8 @@ export interface StoreListing {
   /** Absolute after `fetchCatalog` resolves it against the catalog's own location. */
   downloadUrl: string;
   engineVersion?: string;
+  /** Only on `kind: 'plugin'` listings — the compiled-in plugin module installing it activates. */
+  pluginId?: string;
   contents: StoreListingContents;
 }
 
@@ -90,6 +92,7 @@ function parseListing(raw: unknown, baseUrl: string): StoreListing | null {
     // Resolved here so callers only ever handle absolute URLs — the store can move hosts freely.
     downloadUrl: new URL(downloadUrl, baseUrl).toString(),
     engineVersion: typeof raw.engineVersion === 'string' ? raw.engineVersion : undefined,
+    pluginId: typeof raw.pluginId === 'string' ? raw.pluginId : undefined,
     contents: {
       prefabs: num(contents.prefabs),
       materials: num(contents.materials),

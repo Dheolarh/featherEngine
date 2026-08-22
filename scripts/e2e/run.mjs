@@ -31,6 +31,67 @@ async function openScripting(app) {
   await app.waitFor(`document.querySelector('.nodeforge-node')`, { label: 'graph nodes rendered' });
 }
 
+/** Open a named entry in the View menu (built-in panels and plugin panels alike). */
+async function clickViewMenuEntry(app, title) {
+  await app.evaluate(`document.querySelector('[data-menu=view] .file-menu-trigger')?.click()`);
+  await app.waitFor(`document.querySelector('[data-menu=view] .file-menu-popover')`, { label: 'view menu open' });
+  await app.evaluate(`(() => {
+    const items = [...document.querySelectorAll('[data-menu=view] .file-menu-popover button')];
+    items.find((b) => b.textContent.trim() === ${JSON.stringify(title)})?.click();
+  })()`);
+}
+
+spec('asset store installs the Arbor Forge plugin and its studio plants a grove', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=store' });
+  try {
+    // A previous run persisted the install; start from OFF so this covers the real install path.
+    await app.evaluate(`localStorage.removeItem('nodeforge.plugins')`);
+    await app.evaluate(`location.reload()`);
+    await app.waitFor(`document.querySelector('.toolbar')`, { label: 'editor reloaded' });
+
+    await clickViewMenuEntry(app, 'Store');
+    await app.waitFor(`document.querySelector('.store-card')`, { label: 'catalog loaded' });
+    await app.evaluate(`(() => {
+      const card = [...document.querySelectorAll('.store-card')].find((c) => c.textContent.includes('Arbor Forge'));
+      card?.querySelector('.store-install-button')?.click();
+    })()`);
+    // Install persists the module id and the card flips to Remove.
+    await app.waitFor(
+      `(JSON.parse(localStorage.getItem('nodeforge.plugins') ?? '{}').state?.enabledIds ?? []).includes('feather.arbor-forge')`,
+      { label: 'plugin persisted' },
+    );
+    await app.waitFor(
+      `[...document.querySelectorAll('.store-card')].find((c) => c.textContent.includes('Arbor Forge'))?.textContent.includes('Remove')`,
+      { label: 'card shows Remove' },
+    );
+
+    // The activated plugin's panel is reachable from View → Extensions and renders its gallery.
+    await clickViewMenuEntry(app, 'Arbor Forge');
+    await app.waitFor(`document.querySelectorAll('.arbor-preset-card').length >= 12`, { label: 'preset gallery rendered' });
+    await app.waitFor(`document.querySelector('.tree-preview-canvas canvas')`, { label: 'live preview canvas' });
+
+    // Plant a grove and count what actually landed in the scene.
+    const before = await app.evaluate(
+      `(() => { const s = window.__featherStore; return s.scenes.find((x) => x.id === s.activeSceneId).objects.length; })()`,
+    );
+    await app.evaluate(`(() => {
+      const cards = [...document.querySelectorAll('.arbor-preset-card')];
+      cards.find((c) => c.textContent.includes('Baobab'))?.click();
+    })()`);
+    await app.evaluate(`(() => {
+      const buttons = [...document.querySelectorAll('button')];
+      buttons.find((b) => b.textContent.trim() === 'Plant Grove')?.click();
+    })()`);
+    // Default grove size is 14 trees + 1 group object.
+    await app.waitFor(
+      `(() => { const s = window.__featherStore; return s.scenes.find((x) => x.id === s.activeSceneId).objects.length === ${before} + 15; })()`,
+      { label: 'grove landed' },
+    );
+  } finally {
+    await app.dispose();
+  }
+});
+
 spec('production export exposes one profile and all six exact platform targets', async () => {
   const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=timeline' });
   try {

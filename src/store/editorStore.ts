@@ -125,7 +125,27 @@ import { defaultSceneEnvironment, withSceneEnvironmentDefaults } from '../three/
 import { chopTree, clearTreeChops } from '../runtime/treeChop';
 import { isRollInvulnerable, meleeComboDamage } from '../runtime/combatFeel';
 import { wrapDayCycleTime } from '../three/dayCycle';
-import { DEFAULT_TREE_IDS, defaultTreeLibrary, normalizeTreeSpec, treeSpecFromArchetype } from '../tree/treeSpec';
+import { DEFAULT_TREE_IDS, defaultTreeLibrary, normalizeTreeSpec, treeRng, treeSpecFromArchetype } from '../tree/treeSpec';
+import { getStylizedPreset, stylizedTreeSpec } from '../tree/stylizedPresets';
+
+/** How a grove picks its tree asset: an explicit library spec, a stylized preset, or an archetype. */
+export interface PlantGroveOptions {
+  /** Library asset to link every tree to. Takes precedence over presetId/archetype. */
+  specId?: string;
+  /** Stylized preset id — added to the library first (an existing same-named entry is reused). */
+  presetId?: string;
+  /** Fallback: the first library entry of this archetype (created if the library has none). */
+  archetype?: TreeArchetype;
+  /** Grove centre; y is only used where there is no terrain to snap to. */
+  position?: Vector3Tuple;
+  /** Trees to plant. Default 12, clamped to 1–80. */
+  count?: number;
+  /** Disc radius in world units. Default 12, clamped to 1–200. */
+  radius?: number;
+  /** Layout seed — the same seed replants the identical grove. Random when omitted. */
+  seed?: number;
+  name?: string;
+}
 
 /** Stable per-object tree seed derived from its id, so the same tree rebuilds identically on reload. */
 const seedFromId = (id: string): number => {
@@ -693,6 +713,12 @@ interface EditorState {
   createTree: (archetype: TreeArchetype, options?: { position?: Vector3Tuple; seed?: number; name?: string }) => string;
   /** Patch a tree object's component (spec, seed, choppable). The spec is re-normalized on every edit. */
   updateTree: (id: string, patch: Partial<TreeComponent>) => void;
+  /** Add a stylized preset (src/tree/stylizedPresets.ts) to the library. Returns its id; null = unknown preset. */
+  createTreeSpecFromPreset: (presetId: string, name?: string) => string | null;
+  /** Create a tree object linked to a SPECIFIC library asset (createTree only links by archetype). */
+  createTreeFromSpec: (specId: string, options?: { position?: Vector3Tuple; seed?: number; name?: string }) => string | null;
+  /** Plant a grove: one group empty + `count` linked trees on a jittered sunflower disc. Same seed = same grove. */
+  plantGrove: (options?: PlantGroveOptions) => { groupId: string; treeIds: string[] } | null;
   /** Land one axe hit on a tree. Severs it (spawning the felled log) once that break point runs out of hits. */
   chopTreeAt: (objectId: string, worldPoint: Vector3Tuple, direction?: Vector3Tuple) => string;
   /** Apply a one-click grass look (switches the terrain to stylized clump grass). Returns the preset label. */
@@ -2273,6 +2299,112 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }),
       ),
     ),
+  createTreeSpecFromPreset: (presetId, name) => {
+    const preset = getStylizedPreset(presetId);
+    if (!preset) return null;
+    const id = makeId('tree');
+    set((state) => ({
+      treeSpecs: [...state.treeSpecs, stylizedTreeSpec(preset, id, name)],
+      activeTreeSpecId: id,
+      isDirty: true,
+    }));
+    return id;
+  },
+  createTreeFromSpec: (specId, options = {}) => {
+    const library = get().treeSpecs.find((entry) => entry.id === specId);
+    if (!library) return null;
+    const id = makeId('obj');
+    set((state) => {
+      const requested = options.position ?? [0, 0, 0];
+      const groundY = highestTerrainWorldHeight(selectActiveObjects(state), requested[0], requested[2]);
+      const next: SceneObject = {
+        id,
+        name: options.name ?? library.name,
+        kind: 'empty',
+        transform: defaultTransform([requested[0], groundY ?? requested[1], requested[2]]),
+        tree: { enabled: true, spec: library, specId, seed: options.seed ?? seedFromId(id) },
+      } as SceneObject;
+      return { ...mapActiveSceneObjects(state, (objects) => [...objects, next]), selectedObjectId: id };
+    });
+    return id;
+  },
+  plantGrove: (options = {}) => {
+    // Resolve (or create) the ONE library asset every tree links to — a grove is an instance field
+    // of a single spec, so restyling that asset later restyles the whole grove at once.
+    let specId = options.specId;
+    if (specId && !get().treeSpecs.some((entry) => entry.id === specId)) return null;
+    if (!specId && options.presetId) {
+      const preset = getStylizedPreset(options.presetId);
+      if (!preset) return null;
+      // Reuse the entry a previous plant created, so planting twice never duplicates the library.
+      const existing = get().treeSpecs.find(
+        (entry) => entry.name === preset.name && entry.archetype === preset.archetype,
+      );
+      specId = existing?.id ?? get().createTreeSpecFromPreset(options.presetId) ?? undefined;
+    }
+    if (!specId && options.archetype) {
+      const existing = get().treeSpecs.find((entry) => entry.archetype === options.archetype);
+      specId = existing?.id ?? get().createTreeSpec(options.archetype);
+    }
+    const library = get().treeSpecs.find((entry) => entry.id === specId);
+    if (!library) return null;
+
+    const count = Math.min(80, Math.max(1, Math.trunc(options.count ?? 12)));
+    const radius = Math.min(200, Math.max(1, options.radius ?? 12));
+    const rng = treeRng(Math.trunc(options.seed ?? Math.random() * 0xfffffff));
+    const center = options.position ?? [0, 0, 0];
+    const groupId = makeId('obj');
+    const treeIds: string[] = [];
+    const GOLDEN_ANGLE = 2.399963229728653;
+    set((state) => {
+      const objects = selectActiveObjects(state);
+      const parentY = highestTerrainWorldHeight(objects, center[0], center[2]) ?? center[1];
+      const group: SceneObject = {
+        id: groupId,
+        name: options.name ?? `${library.name} Grove`,
+        kind: 'empty',
+        transform: defaultTransform([center[0], parentY, center[2]]),
+      } as SceneObject;
+      const children: SceneObject[] = [];
+      for (let i = 0; i < count; i += 1) {
+        // Sunflower disc: sqrt radius + golden angle covers the area evenly with no rows or rings;
+        // the jitter on both terms breaks the spiral so it reads as natural growth, not a pattern.
+        const r = radius * Math.sqrt((i + 0.55) / count) * (0.75 + rng() * 0.35);
+        const a = i * GOLDEN_ANGLE + rng() * 0.7;
+        const x = center[0] + Math.cos(a) * r;
+        const z = center[2] + Math.sin(a) * r;
+        // Each tree snaps to the ground under ITSELF; local y is relative to the (unrotated,
+        // unit-scale) group, so a grove follows a hillside instead of floating off it.
+        const ground = highestTerrainWorldHeight(objects, x, z);
+        const scale = 0.8 + rng() * 0.45;
+        const id = makeId('obj');
+        treeIds.push(id);
+        children.push({
+          id,
+          name: `${library.name} ${i + 1}`,
+          kind: 'empty',
+          parentId: groupId,
+          transform: {
+            position: [x - center[0], (ground ?? parentY) - parentY, z - center[2]],
+            rotation: [0, rng() * Math.PI * 2, 0],
+            scale: [scale, scale, scale],
+          },
+          tree: {
+            enabled: true,
+            spec: library,
+            specId: library.id,
+            seed: Math.trunc(rng() * 0xffffffff),
+            tintJitter: rng(),
+          },
+        } as SceneObject);
+      }
+      return {
+        ...mapActiveSceneObjects(state, (existing) => [...existing, group, ...children]),
+        selectedObjectId: groupId,
+      };
+    });
+    return { groupId, treeIds };
+  },
   chopTreeAt: (objectId, worldPoint, direction) => {
     const object = selectActiveObjects(get()).find((item) => item.id === objectId);
     if (!object) return `No object with id ${objectId}.`;

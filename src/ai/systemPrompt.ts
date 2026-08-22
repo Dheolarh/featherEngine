@@ -1,4 +1,5 @@
 import { useEditorStore } from '../store/editorStore';
+import { usePluginStore } from '../store/pluginStore';
 import { withSceneEnvironmentDefaults } from '../three/environmentSettings';
 import { getPerfSnapshot } from '../runtime/perfStats';
 
@@ -537,6 +538,8 @@ export function buildSceneSnapshot(options: SceneSnapshotOptions = {}) {
 
   return {
     activeSceneId: state.activeSceneId,
+    // Editor-level, not scene-level: which store plugins are installed (see list_plugins).
+    enabledPlugins: usePluginStore.getState().enabledIds,
     scenes: state.scenes.map((scene) => ({
       id: scene.id,
       name: scene.name,
@@ -954,7 +957,8 @@ Rules:
 - Scene polish: combine materials, lighting, render settings, layout, and UI; make a small complete improvement rather than only describing design ideas. Use apply_lighting_preset for quick sunny/overcast/night/cyberpunk/indoor/cinematic/godrays looks (godrays = low hazy sun + strong volumetric light shafts), apply_render_preset for the overall art style (stylized-nature/realistic/soft-anime/moody-cinematic/vibrant-arcade — layers on top of the lighting), and apply_material_preset for plastic/metal/wet-floor/glass/neon/rock/grass/skin/rubber/water/car-paint/velvet/gemstone surfaces. **Physical material layers** (update_material or a material's Advanced section): clearcoat (car paint, lacquer, varnish — a sharp clear coat over the base), sheen + sheenColor (velvet/satin/cloth — soft grazing-angle glow), transmission + ior + thickness (REAL refractive glass/water/gems — light passes through and bends; not just low opacity), and iridescence (soap-film/oil-slick/beetle sheen). The car-paint/velvet/glass/gemstone presets are ready-made combos. These shine at High/Epic quality; transmission/refraction is subtle on Low/Medium. **Toon / cel shading** (a stylized, non-PBR art style — cartoon/anime/Fall-Guys looks): apply_material_preset with toon-flat / toon-jelly / toon-metal / toon-rubber / toon-pearl / toon-hair / toon-cloth, or update_material with toon:true plus toonFinish, toonBands (2-6 tonal plateaus), and toonRimColor/toonRimStrength (the fresnel candy edge light). Toon is mutually exclusive with the physical layers above (they are ignored while toon is on) and applies to built-in primitive meshes, not imported GLB models. Use it when the user wants a cartoon/anime/stylized/hand-drawn look rather than realism.
 - Coin/score pickups: prefer create_collectible_counter. It creates the trigger pickup, counter variable, visible HUD text, and working blueprint in one reliable call. When binding UI manually, variable names with spaces must be referenced as vars['Gold Coins'] rather than bare text.
 - Packages: export_prefab_package(prefabId) bundles a prefab + its full dependency closure into a portable .nfpack file to share/sell; import_package() merges one in. Import is additive (all ids regenerated — never overwrites existing content); after import use instantiate_prefab. Suggest backing up first.
-- Asset Store: browse_asset_store(query?, tag?) lists free ready-made packages; install_store_package(packageId) installs one additively. Check the store before hand-building common props.
+- Asset Store: browse_asset_store(query?, tag?) lists free ready-made packages; install_store_package(packageId) installs one additively. Check the store before hand-building common props. PLUGIN packages (kind: plugin) add editor panels/commands rather than project content — installing one activates it instantly and persists across sessions; list_plugins / set_plugin_enabled manage them without the store UI. Notable plugin: "Arbor Forge — Stylized Tree Studio" (pkg-feather-plugin-arbor-forge), a preset gallery + grove-planting panel for the tree system.
+- Stylized trees & forests: for "beautiful/stylized/species" tree asks, prefer the preset gallery (list_tree_presets: Sakura, Autumn Maple, Ghost Willow, Ancient Oak, Baobab, Savanna Acacia, Frost Spruce, Jacaranda, Golden Birch, Emerald Cypress, Haunted Snag, Sunset Palm, Candy Gum) over hand-tuned specs — apply_tree_preset adds one to the library as an editable asset. For "a grove/forest/orchard of X" use plant_grove (grouped, terrain-snapped, jittered natural scatter, all trees linked to ONE library asset so one restyle updates the stand); for terrain-wide scatter set update_terrain foliage.treeSpecId instead.
 - Exporting the game (export_game/export_production) now opens a **Build Report** dialog first: total size, per-asset breakdown, unused-asset stripping, and blocking errors for broken references — the user confirms there. Tell the user to review it; errors must be fixed before export proceeds.
 - After tool changes, briefly say what changed and the next useful action.
 

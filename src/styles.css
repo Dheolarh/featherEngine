@@ -10565,6 +10565,47 @@ body.is-scrubbing * {
   grid-template-columns: minmax(168px, 210px) minmax(0, 1fr) minmax(220px, 290px);
 }
 
+/* Arbor Forge (store plugin): the preset gallery column. Cards are gradient swatches so twelve
+   looks read at a glance without spinning up twelve WebGL preview contexts. */
+.arbor-gallery {
+  overflow-y: auto;
+}
+.arbor-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.arbor-preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.arbor-preset-card:hover {
+  border-color: var(--border-strong);
+}
+.arbor-preset-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.arbor-preset-swatch {
+  display: block;
+  height: 34px;
+  border-radius: var(--radius-sm, 6px);
+}
+.arbor-preset-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* --- Asset Store -------------------------------------------------------------------------------
    Card grid for the marketplace catalog. Cards are fixed-width tracks so a 1-column popped-out
    window and a wide docked panel both stay readable without a media query. */

@@ -1075,6 +1075,29 @@ const SANDBOX_TEMPLATE = {
   },
 };
 
+/**
+ * A `kind: 'plugin'` package — it ships NO code. The archive is only a manifest whose
+ * `meta.pluginId` names a plugin module compiled into the engine
+ * (src/extensions/availablePlugins.ts); installing it activates that module and persists the
+ * choice. This is also the reference for publishing any future gallery plugin.
+ */
+const ARBOR_FORGE_PLUGIN = {
+  slug: 'arbor-forge',
+  kind: 'plugin',
+  meta: {
+    id: 'pkg-feather-plugin-arbor-forge',
+    pluginId: 'feather.arbor-forge',
+    name: 'Arbor Forge — Stylized Tree Studio',
+    description:
+      'Turn the parametric tree system into an art department: twelve hand-tuned stylized presets — Sakura, Autumn Maple, Ghost Willow, Ancient Oak, Baobab, Savanna Acacia, Frost Spruce and more — with a live 3D preview, a seed explorer, one-click planting and natural grove scattering. Everything it plants is an ordinary tree asset: terrain-snapped, wind-animated, choppable, and still editable in the Tree Builder afterwards.',
+    author: 'Feather',
+    version: '1.0.0',
+    tags: ['plugin', 'trees', 'nature', 'stylized', 'environment'],
+    thumbnail: thumbnail('#2FAE6B', '#0C3B24', '\u{1F333}'),
+  },
+  content: {},
+};
+
 /** Card art for the browser-exported starter templates, which carry no thumbnail of their own. */
 const TEMPLATE_THUMBNAILS = {
   'template-third-person': ['#5B8CFF', '#1B2C63', '\u{1F3C3}'],
@@ -1141,6 +1164,9 @@ function catalogEntry({ pkg, slug, file, archiveBytes, thumbnail }) {
     sizeBytes: installFootprint(archiveBytes),
     downloadUrl: `packages/${file}`,
     engineVersion: ENGINE_VERSION,
+    // The store card needs the module id up front (installed/removable state, build-support check)
+    // without downloading the archive first.
+    ...(pkg.meta.pluginId ? { pluginId: pkg.meta.pluginId } : {}),
     contents: {
       prefabs: pkg.content.prefabs.length,
       materials: pkg.content.materials.length,
@@ -1159,7 +1185,7 @@ async function main() {
   // whatever bucket this is eventually mirrored into.
   for (const dir of Object.values(KIND_DIRS)) await mkdir(join(PACKAGES_DIR, dir), { recursive: true });
 
-  const packs = [...PACKS, await buildWeaponPack(), SANDBOX_TEMPLATE];
+  const packs = [...PACKS, await buildWeaponPack(), SANDBOX_TEMPLATE, ARBOR_FORGE_PLUGIN];
   const entries = [];
   for (const pack of packs) {
     const kind = pack.kind ?? 'asset';

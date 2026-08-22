@@ -91,6 +91,16 @@ function describeToolCall(toolName: string, input: Record<string, unknown>): str
       return `Created ${input.archetype} tree`;
     case 'chop_tree':
       return 'Chopped tree';
+    case 'list_tree_presets':
+      return 'Listed tree presets';
+    case 'apply_tree_preset':
+      return `Applied ${input.presetId} tree preset`;
+    case 'plant_grove':
+      return `Planted a grove${input.presetId ? ` of ${input.presetId}` : ''}`;
+    case 'list_plugins':
+      return 'Listed plugins';
+    case 'set_plugin_enabled':
+      return input.enabled ? 'Installed plugin' : 'Removed plugin';
     case 'set_grass_look':
       return `Grass look: ${input.preset}`;
     case 'add_terrain_layer':

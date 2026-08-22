@@ -94,6 +94,9 @@ export function baseTreeSpec(): TreeSpec {
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
+/** A deep-partial spec override — the shape archetypes and stylized presets are written in. */
+export type TreeSpecPatch = DeepPartial<TreeSpec>;
+
 /** Partial overrides on {@link baseTreeSpec}. Values here are the ones that actually define the silhouette. */
 export const TREE_ARCHETYPES: Record<TreeArchetype, DeepPartial<TreeSpec>> = {
   conifer: {
@@ -225,6 +228,10 @@ export function treeSpecFromArchetype(archetype: TreeArchetype, id: string, name
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 
 /** Recursive merge that treats ARRAYS as leaves — countPerLevel must be replaced, never element-merged. */
+export function mergeTreeSpec<T>(base: T, patch: DeepPartial<T>): T {
+  return mergeSpec(base, patch);
+}
+
 function mergeSpec<T>(base: T, patch: DeepPartial<T>): T {
   const out = { ...base } as T;
   for (const key of Object.keys(patch) as (keyof T)[]) {

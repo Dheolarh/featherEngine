@@ -193,11 +193,12 @@ async function applyPackage(
   platform: Awaited<ReturnType<typeof getPlatform>>,
   merge: (content: PackageContent, assets: AssetItem[]) => void,
 ): Promise<InstallSummary> {
-  // Plugins are compiled into the build — there is no runtime loader, sandbox or permission model
-  // (docs/PLUGIN_SDK.md). Say so, rather than merging its (empty) content and reporting success.
+  // Plugins install through the Asset Store (src/store/pluginStore.ts), which activates the
+  // compiled-in module the manifest names — not through the project merge below, which would
+  // merge empty content and report success.
   if (pkg.kind === 'plugin') {
     throw new Error(
-      'Plugin packages cannot be installed yet — plugins are compiled into the editor build. This package needs a Feather release that supports plugin loading.',
+      `"${pkg.meta?.name ?? 'This package'}" is an editor plugin — install it from the Asset Store panel, not as project content.`,
     );
   }
   const editor = useEditorStore.getState();

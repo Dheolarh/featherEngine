@@ -75,7 +75,7 @@ export const exampleSceneToolsPlugin = defineFeatherPlugin({
   id: PLUGIN_ID,
   name: 'Scene Tools SDK Example',
   version: '1.0.0',
-  apiVersion: '0.1.0',
+  apiVersion: '0.2.0',
   activate(api) {
     api.panels.register({
       id: PANEL_ID,

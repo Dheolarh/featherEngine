@@ -6,6 +6,9 @@ import { inputTypeForHandle, outputTypeForHandle, valueTypesCompatible } from '.
 import { undo as undoHistory, redo as redoHistory } from '../store/history';
 import { useProjectStore } from '../store/projectStore';
 import { useMarketplaceStore } from '../store/marketplaceStore';
+import { usePluginStore } from '../store/pluginStore';
+import { AVAILABLE_PLUGINS } from '../extensions/availablePlugins';
+import { STYLIZED_TREE_PRESETS } from '../tree/stylizedPresets';
 import { getPlatform } from '../platform';
 import { captureViewportScreenshot } from '../runtime/viewportCaptureBridge';
 import type {
@@ -1420,6 +1423,65 @@ const rawEngineTools = {
     }),
     execute: async ({ objectId, worldPoint, direction }) =>
       store().chopTreeAt(objectId, asVec3(worldPoint), direction ? asVec3(direction) : undefined),
+  }),
+
+  list_tree_presets: tool({
+    description:
+      'List the stylized tree preset gallery — hand-tuned art-directed looks (Sakura, Autumn Maple, Ghost Willow, Ancient Oak, Baobab, Savanna Acacia, Frost Spruce, Jacaranda, Haunted Snag, …) layered over the parametric archetypes. Prefer these over hand-tuning specs when the user asks for a beautiful/stylized/specific-species tree. Use apply_tree_preset to add one to the library, or plant_grove to plant a stand.',
+    inputSchema: z.object({}),
+    execute: async () =>
+      JSON.stringify(
+        STYLIZED_TREE_PRESETS.map((preset) => ({
+          id: preset.id,
+          name: preset.name,
+          archetype: preset.archetype,
+          look: preset.tagline,
+        })),
+      ),
+  }),
+
+  apply_tree_preset: tool({
+    description:
+      'Add a stylized tree preset (see list_tree_presets) to the project tree library as a reusable asset, optionally planting one instance. The asset is an ordinary Tree Builder entry afterwards: editable with update_tree_spec, scatterable on terrain via update_terrain treeSpecId, wind-animated and choppable.',
+    inputSchema: z.object({
+      presetId: z.string().describe('From list_tree_presets, e.g. "sakura".'),
+      name: z.string().optional().describe('Library name; defaults to the preset name.'),
+      place: z.boolean().optional().describe('Also plant one tree in the scene.'),
+      position: vec3.optional().describe('Where to plant it (with place). Snaps to the terrain.'),
+      seed: z.number().optional(),
+    }),
+    execute: async ({ presetId, name, place, position, seed }) => {
+      const specId = store().createTreeSpecFromPreset(presetId, name);
+      if (!specId) return `Unknown tree preset ${presetId}. Use list_tree_presets for the gallery.`;
+      if (!place) return `Added tree asset ${specId} ("${presetId}") to the library.`;
+      const objectId = store().createTreeFromSpec(specId, {
+        position: position ? asVec3(position) : undefined,
+        seed,
+      });
+      return `Added tree asset ${specId} and planted tree ${objectId}.`;
+    },
+  }),
+
+  plant_grove: tool({
+    description:
+      'Plant a natural-looking grove in one call: a group object plus N trees on a jittered organic scatter disc, each snapped to the terrain under it, with varied seeds/rotation/scale — all linked to ONE library asset, so restyling that asset later restyles the whole grove. Pick the tree by stylized presetId (preferred; see list_tree_presets), an existing specId (list_tree_specs), or a plain archetype. This is THE tool for "add a forest/grove/orchard of X".',
+    inputSchema: z.object({
+      presetId: z.string().optional(),
+      specId: z.string().optional(),
+      archetype: z.enum(['conifer', 'broadleaf', 'birch', 'willow', 'palm', 'shrub', 'snag']).optional(),
+      position: vec3.optional().describe('Grove centre; defaults to the origin.'),
+      count: z.number().min(1).max(80).optional().describe('Trees to plant. Default 12.'),
+      radius: z.number().min(1).max(200).optional().describe('Scatter disc radius in units. Default 12.'),
+      seed: z.number().optional().describe('Same seed = identical layout.'),
+      name: z.string().optional().describe('Group object name.'),
+    }),
+    execute: async ({ position, ...rest }) => {
+      const result = store().plantGrove({ ...rest, position: position ? asVec3(position) : undefined });
+      if (!result) {
+        return 'Could not plant the grove — pass a valid presetId (list_tree_presets), specId (list_tree_specs) or archetype.';
+      }
+      return `Planted ${result.treeIds.length} trees, grouped under ${result.groupId} and linked to one shared tree asset.`;
+    },
   }),
 
   set_grass_look: tool({
@@ -3168,6 +3230,14 @@ const rawEngineTools = {
         .packages.find((entry) => entry.id === packageId || entry.slug === packageId);
       if (!listing) return `No store package with id ${packageId}. Use browse_asset_store to list them.`;
 
+      if (listing.kind === 'plugin') {
+        await useMarketplaceStore.getState().install(listing);
+        const active = !!listing.pluginId && usePluginStore.getState().enabledIds.includes(listing.pluginId);
+        return active
+          ? `Installed plugin "${listing.title}" — its panels and commands are active now and on every future editor start.`
+          : `Could not install plugin "${listing.title}" — this build may not include its module.`;
+      }
+
       if (listing.kind === 'project') {
         const created = await projectStore().newProjectFromPackageUrl(listing.downloadUrl, listing.title);
         if (!created) return `Could not start "${listing.title}": ${projectStore().error ?? 'unknown error'}.`;
@@ -3185,6 +3255,39 @@ const rawEngineTools = {
         .map((prefab) => `${prefab.name} (${prefab.id})`)
         .join(', ');
       return `Installed "${listing.title}" — ${added} new prefab(s): ${names}. Use instantiate_prefab to place one.`;
+    },
+  }),
+
+  list_plugins: tool({
+    description:
+      'List the editor plugins compiled into this build and whether each is installed (active). Plugins add editor panels and commands — e.g. Arbor Forge, the stylized-tree studio. Install/remove with set_plugin_enabled, or via their Asset Store card.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const enabled = new Set(usePluginStore.getState().enabledIds);
+      return JSON.stringify(
+        AVAILABLE_PLUGINS.map((plugin) => ({
+          pluginId: plugin.id,
+          name: plugin.name,
+          version: plugin.version,
+          installed: enabled.has(plugin.id),
+        })),
+      );
+    },
+  }),
+
+  set_plugin_enabled: tool({
+    description:
+      'Install (enable) or remove (disable) an editor plugin by pluginId (from list_plugins) — the same switch as its Asset Store card. Enabling activates its panels/commands immediately and persists across sessions; disabling removes them immediately.',
+    inputSchema: z.object({ pluginId: z.string(), enabled: z.boolean() }),
+    execute: async ({ pluginId, enabled }) => {
+      const plugins = usePluginStore.getState();
+      if (enabled) {
+        const failure = plugins.enable(pluginId);
+        return failure ?? `Plugin ${pluginId} is installed — its panels and commands are live.`;
+      }
+      return plugins.disable(pluginId)
+        ? `Plugin ${pluginId} removed — its panels and commands are gone (reinstall any time).`
+        : `Plugin ${pluginId} was not installed.`;
     },
   }),
 

@@ -79,6 +79,12 @@ describe('bundled asset store — catalog to installed content', () => {
     for (const listing of state.packages) {
       expect(listing.downloadUrl).toMatch(/^https?:/);
       expect(listing.title.length).toBeGreaterThan(0);
+      // A plugin installs editor behaviour, not project content — its listing must instead name
+      // the compiled-in module it activates.
+      if (listing.kind === 'plugin') {
+        expect(listing.pluginId, `${listing.slug} names no plugin module`).toBeTruthy();
+        continue;
+      }
       // Something must actually arrive on install. A template's content lives in its scenes, a
       // module's in prefabs/materials — so count them all rather than assuming a shape.
       const { scenes, prefabs, materials, blueprints, uiDocuments = 0 } = listing.contents;
