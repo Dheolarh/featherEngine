@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { ContactShadows, Grid, OrbitControls, TransformControls } from '@react-three/drei';
 import type { TransformControls as TransformControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 import {
-  Box, Cone, Copy, Cylinder, Globe, Hammer, Move3d, PackagePlus, Paintbrush, Pyramid, RotateCcw, Trash2,
+  Box, Cone, Copy, Cylinder, Focus, Globe, Hammer, Move3d, PackagePlus, Paintbrush, Pyramid, RotateCcw, Trash2,
 } from 'lucide-react';
 import type { ModelPart, ModelPartShape, ModelSpec, ModelStyle, Vector3Tuple } from '../types';
 import { DEFAULT_MODEL_STYLE, MODEL_FACE_GROUPS, MODEL_PART_SHAPES } from '../model/modelSpec';
 import { buildModelGroup, faceGroupForFaceIndex, getPartRenderEdges, getPartRenderGeometry } from '../model/modelGeometry';
 import { ModelPartMesh } from '../three/ModelMesh';
 import { RangeField } from '../components/InspectorPanel';
+import { useEditorStore } from '../store/editorStore';
 import { defineFeatherPlugin, type FeatherPluginAPI } from './types';
 
 /**
@@ -87,20 +88,35 @@ function CornerHandles({ part, snap, roundTo, selectedCorner, onSelectCorner, on
   gizmoActive: { current: boolean };
 }) {
   const controlsRef = useRef<TransformControlsImpl | null>(null);
-  const { inverse, worldCorners } = useMemo(() => {
+  const { inverse, worldCorners, cagePositions } = useMemo(() => {
     const matrix = new THREE.Matrix4().compose(
       new THREE.Vector3(...part.position),
       new THREE.Quaternion().setFromEuler(new THREE.Euler(...part.rotation)),
       new THREE.Vector3(...part.scale),
     );
+    const corners = Array.from({ length: 8 }, (_, index) => {
+      const local = cornerBase(index);
+      const offset = part.corners?.[index];
+      if (offset) local.add(new THREE.Vector3(...offset));
+      return local.applyMatrix4(matrix);
+    });
+    const edges: Array<[number, number]> = [
+      [0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7],
+    ];
+    const cage = new Float32Array(edges.length * 6);
+    edges.forEach(([a, b], edgeIndex) => {
+      const offset = edgeIndex * 6;
+      cage[offset] = corners[a].x;
+      cage[offset + 1] = corners[a].y;
+      cage[offset + 2] = corners[a].z;
+      cage[offset + 3] = corners[b].x;
+      cage[offset + 4] = corners[b].y;
+      cage[offset + 5] = corners[b].z;
+    });
     return {
       inverse: matrix.clone().invert(),
-      worldCorners: Array.from({ length: 8 }, (_, index) => {
-        const local = cornerBase(index);
-        const offset = part.corners?.[index];
-        if (offset) local.add(new THREE.Vector3(...offset));
-        return local.applyMatrix4(matrix);
-      }),
+      worldCorners: corners,
+      cagePositions: cage,
     };
   }, [part]);
 
@@ -117,13 +133,19 @@ function CornerHandles({ part, snap, roundTo, selectedCorner, onSelectCorner, on
 
   return (
     <>
+      <lineSegments raycast={ignoreOutlineRaycast}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[cagePositions, 3]} />
+        </bufferGeometry>
+        <lineBasicMaterial color={OUTLINE_ACCENT} transparent opacity={0.4} toneMapped={false} />
+      </lineSegments>
       {worldCorners.map((world, index) =>
         index === selectedCorner ? (
           <TransformControls
             key={index}
             ref={controlsRef}
             mode="translate"
-            size={0.65}
+            size={0.7}
             translationSnap={snap ? 0.05 : null}
             position={[world.x, world.y, world.z]}
             onMouseDown={() => {
@@ -137,7 +159,7 @@ function CornerHandles({ part, snap, roundTo, selectedCorner, onSelectCorner, on
             }}
           >
             <mesh>
-              <sphereGeometry args={[0.055, 12, 10]} />
+              <sphereGeometry args={[0.07, 14, 12]} />
               <meshBasicMaterial color={OUTLINE_ACCENT} toneMapped={false} />
             </mesh>
           </TransformControls>
@@ -150,14 +172,45 @@ function CornerHandles({ part, snap, roundTo, selectedCorner, onSelectCorner, on
               event.stopPropagation();
               onSelectCorner(index);
             }}
+            onPointerOver={(event) => {
+              event.stopPropagation();
+              document.body.style.cursor = 'pointer';
+            }}
+            onPointerOut={() => {
+              document.body.style.cursor = '';
+            }}
           >
-            <sphereGeometry args={[0.045, 12, 10]} />
-            <meshBasicMaterial color="#ffffff" transparent opacity={0.85} toneMapped={false} />
+            <sphereGeometry args={[0.055, 14, 12]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.92} toneMapped={false} />
           </mesh>
         ),
       )}
     </>
   );
+}
+
+/** Reset the studio camera to a comfortable framing of the current prop. */
+function FitCamera({
+  framing,
+  nonce,
+}: {
+  framing: { radius: number; height: number };
+  nonce: number;
+}) {
+  const { camera, controls } = useThree();
+  useEffect(() => {
+    if (nonce <= 0) return;
+    const targetY = framing.height * 0.45;
+    camera.position.set(framing.radius * 1.7, framing.height * 0.9 + 0.6, framing.radius * 1.7);
+    camera.lookAt(0, targetY, 0);
+    camera.updateProjectionMatrix();
+    const orbit = controls as { target?: THREE.Vector3; update?: () => void } | null;
+    if (orbit?.target && typeof orbit.update === 'function') {
+      orbit.target.set(0, targetY, 0);
+      orbit.update();
+    }
+  }, [nonce, framing.radius, framing.height, camera, controls]);
+  return null;
 }
 
 interface ForgePreviewProps {
@@ -166,13 +219,25 @@ interface ForgePreviewProps {
   gizmoMode: 'translate' | 'rotate' | 'scale';
   snap: boolean;
   selectedPartId: string;
+  fitNonce: number;
   onSelectPart: (partId: string) => void;
   onPaintFace: (partId: string, faceGroup: number) => void;
   onCommitPart: (partId: string, patch: Pick<ModelPart, 'position' | 'rotation' | 'scale'>) => void;
   onCommitCorners: (partId: string, corners: Record<number, Vector3Tuple> | null) => void;
 }
 
-function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPart, onPaintFace, onCommitPart, onCommitCorners }: ForgePreviewProps) {
+function ForgePreview({
+  spec,
+  mode,
+  gizmoMode,
+  snap,
+  selectedPartId,
+  fitNonce,
+  onSelectPart,
+  onPaintFace,
+  onCommitPart,
+  onCommitCorners,
+}: ForgePreviewProps) {
   const controlsRef = useRef<TransformControlsImpl | null>(null);
   // True from gizmo grab until just AFTER release: the gizmo raycasts through its own DOM
   // listeners, so r3f sees a handle grab as "missed everything" — without this guard the
@@ -249,9 +314,12 @@ function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPar
   return (
     <Canvas
       shadows
-      camera={{ position: [framing.radius * 1.7, framing.height * 0.9 + 0.6, framing.radius * 1.7], fov: 45 }}
-      onCreated={({ scene }) => {
-        scene.background = new THREE.Color('#1a1f27');
+      dpr={[1, 1.75]}
+      camera={{ position: [framing.radius * 1.7, framing.height * 0.9 + 0.6, framing.radius * 1.7], fov: 42 }}
+      onCreated={({ scene, gl }) => {
+        scene.background = new THREE.Color('#141820');
+        gl.toneMapping = THREE.ACESFilmicToneMapping;
+        gl.toneMappingExposure = 1.05;
       }}
       onPointerDown={(event) => {
         pointerDownAt.current = { x: event.clientX, y: event.clientY };
@@ -264,31 +332,39 @@ function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPar
         setSelectedCorner(-1);
         onSelectPart('');
       }}
-      style={{ cursor: mode === 'paint' ? 'crosshair' : hoveredPartId ? 'pointer' : 'default' }}
+      style={{ cursor: mode === 'paint' ? 'crosshair' : hoveredPartId ? 'pointer' : 'grab' }}
     >
-      <hemisphereLight args={['#cfe6ff', '#3d4438', 0.9]} />
-      <directionalLight position={[6, 12, 5]} intensity={2.0} castShadow />
+      <FitCamera framing={framing} nonce={fitNonce} />
+      <color attach="background" args={['#141820']} />
+      <hemisphereLight args={['#e8f0ff', '#2a2f38', 0.85]} />
+      <directionalLight position={[5, 10, 4]} intensity={1.55} castShadow shadow-mapSize={[1024, 1024]} />
+      <directionalLight position={[-4, 3, -5]} intensity={0.45} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
+        <circleGeometry args={[8, 48]} />
+        <meshStandardMaterial color="#1a1f28" roughness={0.92} metalness={0.05} />
+      </mesh>
       {/* Spline-style ground: a distance-faded grid plus a soft blurred contact shadow. */}
       <Grid
-        position={[0, -0.002, 0]}
+        position={[0, 0.001, 0]}
         args={[12, 12]}
         cellSize={0.25}
-        cellThickness={0.6}
-        cellColor="#232a36"
+        cellThickness={0.55}
+        cellColor="#2a3344"
         sectionSize={1}
-        sectionThickness={1}
-        sectionColor="#30394d"
-        fadeDistance={26}
-        fadeStrength={1.2}
+        sectionThickness={1.1}
+        sectionColor="#3a4660"
+        fadeDistance={22}
+        fadeStrength={1.35}
         infiniteGrid
       />
-      <ContactShadows position={[0, 0.004, 0]} opacity={0.42} scale={16} blur={2.6} far={7} resolution={256} />
+      <ContactShadows position={[0, 0.006, 0]} opacity={0.48} scale={14} blur={2.4} far={8} resolution={512} />
       {spec.parts.map((part) =>
         mode === 'build' && part.id === selectedPartId ? (
           <TransformControls
             key={part.id}
             ref={controlsRef}
             mode={gizmoMode}
+            size={0.9}
             translationSnap={snap ? 0.25 : null}
             rotationSnap={snap ? Math.PI / 12 : null}
             scaleSnap={snap ? 0.1 : null}
@@ -309,7 +385,7 @@ function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPar
                 onPartPointerOver={handlePartPointerOver}
                 onPartPointerOut={handlePartPointerOut}
               />
-              <PartOutline part={part} style={spec.style} color={OUTLINE_ACCENT} opacity={0.9} neutralTransform />
+              <PartOutline part={part} style={spec.style} color={OUTLINE_ACCENT} opacity={0.95} neutralTransform />
             </group>
           </TransformControls>
         ) : (
@@ -345,7 +421,7 @@ function ForgePreview({ spec, mode, gizmoMode, snap, selectedPartId, onSelectPar
       })()}
       {hoveredPartId && hoveredPartId !== selectedPartId && (() => {
         const hovered = spec.parts.find((part) => part.id === hoveredPartId);
-        return hovered ? <PartOutline part={hovered} style={spec.style} color="#ffffff" opacity={0.3} /> : null;
+        return hovered ? <PartOutline part={hovered} style={spec.style} color="#ffffff" opacity={0.35} /> : null;
       })()}
       {/* makeDefault lets the gizmo auto-pause orbiting while a handle is dragged; damping = the glide. */}
       <OrbitControls makeDefault enablePan enableDamping dampingFactor={0.08} target={[0, framing.height * 0.45, 0]} />
@@ -409,13 +485,14 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
   useEffect(() => api.events.on('models:changed', () => setLibrary(api.models.library())), [api]);
   useEffect(() => api.events.on('scene:changed', () => setPlacedRefresh((tick) => tick + 1)), [api]);
 
-  const [selectedSpecId, setSelectedSpecId] = useState('');
+  const [selectedSpecId, setSelectedSpecId] = useState(() => useEditorStore.getState().activeModelSpecId || '');
   const [mode, setMode] = useState<'build' | 'mesh' | 'paint'>('build');
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate' | 'scale'>('translate');
   const [snap, setSnap] = useState(true);
   const [selectedPartId, setSelectedPartId] = useState('');
   const [activeSlot, setActiveSlot] = useState(1);
   const [baking, setBaking] = useState(false);
+  const [fitNonce, setFitNonce] = useState(0);
   const [status, setStatus] = useState('Build with primitives, then switch to Paint and click faces.');
 
   const spec = library.find((entry) => entry.id === selectedSpecId) ?? library[0];
@@ -435,6 +512,32 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
       api.ui.notify(`${label}: ${message}`, 'error');
     }
   };
+
+  // Keep a part selected in Build/Mesh so the 3D gizmo is always ready.
+  useEffect(() => {
+    if ((mode !== 'build' && mode !== 'mesh') || !spec) return;
+    if (selectedPartId && spec.parts.some((part) => part.id === selectedPartId)) return;
+    if (spec.parts[0]) setSelectedPartId(spec.parts[0].id);
+  }, [mode, spec, selectedPartId]);
+
+  // W / E / R / F and 1–3 mode keys while the studio is open.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const key = event.key.toLowerCase();
+      if (key === 'w') setGizmoMode('translate');
+      else if (key === 'e') setGizmoMode('rotate');
+      else if (key === 'r') setGizmoMode('scale');
+      else if (key === 'f') setFitNonce((nonce) => nonce + 1);
+      else if (key === '1') setMode('build');
+      else if (key === '2') setMode('mesh');
+      else if (key === '3') setMode('paint');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   if (!spec) {
     return (
@@ -462,10 +565,14 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
 
   const addPart = (shape: ModelPartShape) =>
     attempt('Add part', () => {
-      const partId = api.models.addPart(spec.id, shape, { colorSlot: clampedActiveSlot });
+      const beside = spec.parts.find((part) => part.id === selectedPartId);
+      const position: Vector3Tuple = beside
+        ? [beside.position[0] + Math.max(beside.scale[0], 0.6), beside.position[1], beside.position[2]]
+        : [0, 0.5, 0];
+      const partId = api.models.addPart(spec.id, shape, { colorSlot: clampedActiveSlot, position });
       setSelectedPartId(partId);
       setMode('build');
-      return `Added a ${shape}.`;
+      return `Added a ${shape} beside the selection.`;
     });
 
   const placeInScene = () =>
@@ -580,6 +687,24 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
 
         <div className="terrain-preview-column">
           <div className="tree-preview-canvas model-forge-canvas">
+            <div className="model-forge-hud" aria-hidden={false}>
+              <span className={`model-forge-hud-mode is-${mode}`}>
+                {mode === 'build' ? 'Build' : mode === 'mesh' ? 'Mesh' : 'Paint'}
+              </span>
+              {selectedPart && (
+                <span className="model-forge-hud-part" title={selectedPart.name}>
+                  {selectedPart.name || selectedPart.shape}
+                </span>
+              )}
+              <button
+                type="button"
+                className="model-forge-hud-fit"
+                title="Fit view (F)"
+                onClick={() => setFitNonce((nonce) => nonce + 1)}
+              >
+                <Focus size={12} aria-hidden /> Fit
+              </button>
+            </div>
             <ForgePreview
               key={spec.id}
               spec={spec}
@@ -587,6 +712,7 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
               gizmoMode={gizmoMode}
               snap={snap}
               selectedPartId={selectedPartId}
+              fitNonce={fitNonce}
               onSelectPart={setSelectedPartId}
               onPaintFace={paintFace}
               onCommitPart={(partId, patch) => attempt('Move part', () => {
@@ -603,23 +729,45 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
             <span>{spec.name} · {spec.parts.length} parts</span>
             <span>{placedCount} placed</span>
           </div>
+          <div className="model-part-chips" role="listbox" aria-label="Parts">
+            {spec.parts.map((part) => (
+              <button
+                key={part.id}
+                type="button"
+                role="option"
+                aria-selected={part.id === selectedPartId}
+                className={part.id === selectedPartId ? 'active' : undefined}
+                onClick={() => {
+                  setSelectedPartId(part.id);
+                  if (mode === 'paint') return;
+                  setMode(mode === 'mesh' && part.shape !== 'box' ? 'build' : mode);
+                }}
+              >
+                <span
+                  className="model-part-chip-swatch"
+                  style={{ background: spec.palette[part.colorSlot] ?? '#888' }}
+                />
+                {part.name || part.shape}
+              </button>
+            ))}
+          </div>
           <div className="model-toolbar">
             <div className="model-toolbar-seg" role="tablist" aria-label="Mode">
-              <button className={mode === 'build' ? 'active' : ''} onClick={() => setMode('build')}>
+              <button className={mode === 'build' ? 'active' : ''} onClick={() => setMode('build')} title="1">
                 <Hammer size={12} aria-hidden /> Build
               </button>
-              <button className={mode === 'mesh' ? 'active' : ''} onClick={() => setMode('mesh')}>
+              <button className={mode === 'mesh' ? 'active' : ''} onClick={() => setMode('mesh')} title="2">
                 <Move3d size={12} aria-hidden /> Mesh
               </button>
-              <button className={mode === 'paint' ? 'active' : ''} onClick={() => setMode('paint')}>
+              <button className={mode === 'paint' ? 'active' : ''} onClick={() => setMode('paint')} title="3">
                 <Paintbrush size={12} aria-hidden /> Paint
               </button>
             </div>
             {mode === 'build' && (
               <div className="model-toolbar-seg" role="tablist" aria-label="Gizmo">
-                <button className={gizmoMode === 'translate' ? 'active' : ''} onClick={() => setGizmoMode('translate')}>Move</button>
-                <button className={gizmoMode === 'rotate' ? 'active' : ''} onClick={() => setGizmoMode('rotate')}>Rotate</button>
-                <button className={gizmoMode === 'scale' ? 'active' : ''} onClick={() => setGizmoMode('scale')}>Scale</button>
+                <button className={gizmoMode === 'translate' ? 'active' : ''} onClick={() => setGizmoMode('translate')} title="W">Move</button>
+                <button className={gizmoMode === 'rotate' ? 'active' : ''} onClick={() => setGizmoMode('rotate')} title="E">Rotate</button>
+                <button className={gizmoMode === 'scale' ? 'active' : ''} onClick={() => setGizmoMode('scale')} title="R">Scale</button>
               </div>
             )}
             <label className="model-snap-toggle">
@@ -628,12 +776,12 @@ function ModelForgePanel({ api }: { api: FeatherPluginAPI }) {
           </div>
           <p className="field-hint">
             {mode === 'paint'
-              ? 'Click a face in the preview to paint it with the selected palette color.'
+              ? 'Click a face to paint. Pick a swatch in the inspector first.'
               : mode === 'mesh'
-                ? 'Click a box part, then drag its corner vertices to sculpt the hull (bevel included). Other shapes edit via Build.'
-                : 'Click a part to select it, then drag the gizmo. Placed copies update live as you edit.'}
+                ? 'Select a box part, then drag white corner dots. Soft bevel stays live.'
+                : 'Click a part, drag the gizmo (W/E/R). New parts spawn beside the selection. F fits the view.'}
           </p>
-          <p className="field-hint">{status}</p>
+          <p className="field-hint model-forge-status">{status}</p>
         </div>
 
         <aside className="graph-inspector terrain-controls">

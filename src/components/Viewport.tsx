@@ -31,7 +31,17 @@ import { maximizeViewportLayout, restoreWorkspaceLayout, isViewportLayoutMaximiz
 import { BoneAttachment } from '../three/BoneAttachment';
 import { useResolvedMaterial, useResolvedMaterialSlots, hasPhysicalLayers } from '../three/resolveMaterial';
 import { useToonMaterial } from '../three/toonMaterial';
-import { assetDrag, isAssetDrag, isPrefabDrag, prefabDrag, readAssetDragId, readPrefabDragId } from './dragShared';
+import {
+  assetDrag,
+  isAssetDrag,
+  isMaterialDrag,
+  isPrefabDrag,
+  materialDrag,
+  prefabDrag,
+  readAssetDragId,
+  readMaterialDragId,
+  readPrefabDragId,
+} from './dragShared';
 import { WorldUIAnchor } from '../ui/WorldUIAnchor';
 import { WebGLScreenUILayer } from '../ui/WebGLScreenUILayer';
 import { ImpactParticles } from '../three/ImpactParticles';
@@ -68,8 +78,12 @@ import { UnderwaterOverlay } from '../three/UnderwaterOverlay';
 import { Terrain, TerrainBrushCursor } from '../three/Terrain';
 import { TreeMesh } from '../three/TreeMesh';
 import { ModelMesh } from '../three/ModelMesh';
+import { ViewportModelForgeBar } from './ViewportModelForgeBar';
+import { ensureModelForgeEnabled } from '../extensions/openModelForge';
+import { MODEL_STARTERS } from '../model/modelSpec';
+import { useModelForgeSession } from '../store/modelForgeSessionStore';
 import { highestTerrainWorldHeight } from '../terrain/terrain';
-import type { MaterialOverrides, SceneObject } from '../types';
+import type { MaterialOverrides, SceneObject, SceneObjectKind } from '../types';
 import { GameView } from '../player/GameView';
 import { RuntimeOverlays } from '../runtime/RuntimeOverlays';
 
@@ -981,9 +995,20 @@ function SceneContent({
   // belongs to the gizmo, not to editor selection.
   const controlsRef = useRef<{ axis: string | null; dragging: boolean } | null>(null);
   const isGizmoEngaged = useCallback(
-    () => Boolean(controlsRef.current && (controlsRef.current.axis || controlsRef.current.dragging)),
+    () =>
+      Boolean(controlsRef.current && (controlsRef.current.axis || controlsRef.current.dragging)) ||
+      useModelForgeSession.getState().partGizmoEngaged,
     [],
   );
+  // While a prototype part is selected in Build mode ON THE SELECTED PROP, the part gizmo owns W/E/R.
+  const forgeBuildPart = useModelForgeSession((state) => state.mode === 'build' && Boolean(state.partId));
+  const selectedIsForgeProp = useEditorStore((state) => {
+    const id = state.selectedObjectId;
+    if (!id || state.isPlaying) return false;
+    const object = selectActiveObjects(state).find((entry) => entry.id === id);
+    return Boolean(object?.model?.enabled);
+  });
+  const forgePartGizmo = forgeBuildPart && selectedIsForgeProp;
 
   const registerObject = useCallback(
     (id: string, object: THREE.Group | null) => {
@@ -1210,7 +1235,7 @@ function SceneContent({
       <UnderwaterOverlay />
       {/* WebGL HUD (uikit) for renderMode:'webgl' screen docs — lives in-canvas so PostFx bloom hits it. */}
       <WebGLScreenUILayer />
-      {selectedTarget && !isPlaying && !cameraRigObject && (!previewingCinematic || recording) && (
+      {selectedTarget && !isPlaying && !cameraRigObject && !forgePartGizmo && (!previewingCinematic || recording) && (
         <TransformControls
           ref={controlsRef as never}
           object={selectedTarget}
@@ -1517,6 +1542,10 @@ const SNAP_SCALES = [0.1, 0.25, 0.5, 1];
 /** Quality preset + Auto toggle, tucked into a popover so the topbar shows only frequent controls. */
 export function ViewportPanel() {
   const [transformMode, setTransformMode] = useState<TransformMode>('translate');
+  // Keep the in-scene Model Forge part gizmo on the same W/E/R tool as the viewport toolbar.
+  useEffect(() => {
+    useModelForgeSession.getState().setGizmoMode(transformMode);
+  }, [transformMode]);
   // Snap + coordinate space persist across reloads (browser-only viewport prefs).
   const transformSpace = useViewportPrefs((state) => state.transformSpace);
   const setTransformSpace = useViewportPrefs((state) => state.setTransformSpace);
@@ -1733,9 +1762,15 @@ export function ViewportPanel() {
             sceneApiRef.current?.dropToSurface(effectiveSelection(store));
           }
           break;
-        case 'escape':
+        case 'escape': {
+          const forge = useModelForgeSession.getState();
+          if (forge.partId && forge.mode === 'build') {
+            forge.setPartId('');
+            break;
+          }
           store.selectObject('');
           break;
+        }
         case 'delete':
         case 'backspace':
           if (store.selectedObjectId) {
@@ -1770,6 +1805,38 @@ export function ViewportPanel() {
   const dropZoneRef = useRef<HTMLDivElement>(null);
   const [boxRect, setBoxRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
+  type InsertMenuState = { x: number; y: number; worldPos: [number, number, number] };
+  const [insertMenu, setInsertMenu] = useState<InsertMenuState | null>(null);
+
+  // Close the quick-add popover on Esc / click-away, but keep it open when interacting with it.
+  useEffect(() => {
+    if (!insertMenu) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setInsertMenu(null);
+    };
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.insert-popover')) return;
+      setInsertMenu(null);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+    };
+  }, [insertMenu]);
+
+  useEffect(() => {
+    if (!insertMenu || !isPlaying) return;
+    setInsertMenu(null);
+  }, [insertMenu, isPlaying]);
+
+  // Needed by both the insert-at-cursor quick-add and by model drag-and-drop.
+  const dropContextRef = useRef<DropContext | null>(null);
+  const groundPlane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+
   // Drag a rectangle over empty viewport space to select everything inside it (Shift = add).
   const handleViewportMouseDown = (event: React.MouseEvent) => {
     if (isPlaying || previewCamera) return;
@@ -1803,6 +1870,33 @@ export function ViewportPanel() {
         setTimeout(() => {
           suppressDeselectRef.current = false;
         }, 0);
+      } else if (additive || effectiveSelection(useEditorStore.getState()).length === 0) {
+        // Shift-click empty space → open a quick-add popover near the cursor.
+        const zone = dropZoneRef.current;
+        if (zone) {
+          const zr = zone.getBoundingClientRect();
+          const x = e.clientX - zr.left;
+          const y = e.clientY - zr.top;
+
+          const ctx = dropContextRef.current;
+          let worldPos: [number, number, number] = [0, 0, 0];
+          if (ctx) {
+            const rect = ctx.canvas.getBoundingClientRect();
+            const ndc = new THREE.Vector2(
+              ((e.clientX - rect.left) / rect.width) * 2 - 1,
+              -((e.clientY - rect.top) / rect.height) * 2 + 1,
+            );
+            raycaster.setFromCamera(ndc, ctx.camera);
+            const hit = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(groundPlane, hit)) {
+              const sceneObjects = selectActiveObjects(useEditorStore.getState());
+              const terrainY = highestTerrainWorldHeight(sceneObjects, hit.x, hit.z);
+              worldPos = [Number(hit.x.toFixed(2)), Number((terrainY ?? 0).toFixed(2)), Number(hit.z.toFixed(2))];
+            }
+          }
+
+          setInsertMenu({ x, y, worldPos });
+        }
       }
       setBoxRect(null);
     };
@@ -1811,13 +1905,10 @@ export function ViewportPanel() {
   };
 
   // Drag-and-drop a model from the project browser onto the ground under the cursor.
-  const dropContextRef = useRef<DropContext | null>(null);
-  const groundPlane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
-  const raycaster = useMemo(() => new THREE.Raycaster(), []);
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
     // Rely on the shared holder (the webview may hide our custom type during dragover).
-    if (!isAssetDrag(event.dataTransfer) && !isPrefabDrag(event.dataTransfer)) return;
+    if (!isAssetDrag(event.dataTransfer) && !isPrefabDrag(event.dataTransfer) && !isMaterialDrag(event.dataTransfer)) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = 'copy';
@@ -1848,6 +1939,26 @@ export function ViewportPanel() {
   const handleDrop = useCallback(
     (event: React.DragEvent) => {
       const store = useEditorStore.getState();
+
+      // A material dragged from the Asset Browser → apply to current selection.
+      const materialId = readMaterialDragId(event.dataTransfer);
+      if (materialId) {
+        materialDrag.id = null;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const ids = effectiveSelection(store);
+        if (!ids.length) {
+          useProjectStore.setState({ toast: { kind: 'error', message: 'Select objects before dropping a material.' } });
+          return;
+        }
+
+        for (const objectId of ids) store.setObjectMaterial(objectId, materialId);
+        useProjectStore.setState({
+          toast: { kind: 'success', message: `Applied material to ${ids.length} object${ids.length === 1 ? '' : 's'}.` },
+        });
+        return;
+      }
 
       // A prefab dragged from the browser → stamp an instance at the cursor.
       const prefabId = readPrefabDragId(event.dataTransfer);
@@ -1902,6 +2013,44 @@ export function ViewportPanel() {
     },
     [cursorGroundPosition],
   );
+
+  const quickAddFromMenu = (kind: SceneObjectKind) => {
+    const menu = insertMenu;
+    if (!menu) return;
+    const store = useEditorStore.getState();
+
+    const yOffset = kind === 'light' || kind === 'camera' ? 2 : kind === 'empty' ? 0 : 1.5;
+    const position: [number, number, number] = [menu.worldPos[0], menu.worldPos[1] + yOffset, menu.worldPos[2]];
+
+    const id = store.createObjectWithProps(kind, { position });
+    store.selectObject(id);
+
+    if (kind !== 'light' && kind !== 'camera' && kind !== 'empty') {
+      sceneApiRef.current?.dropToSurface([id]);
+    }
+    setInsertMenu(null);
+  };
+
+  const quickAddPrototype = (starterId: string) => {
+    const menu = insertMenu;
+    if (!menu) return;
+    if (!ensureModelForgeEnabled()) return;
+    const store = useEditorStore.getState();
+    const specId = store.createModelSpec(starterId);
+    if (!specId) return;
+    const id = store.createModelFromSpec(specId, { position: menu.worldPos });
+    if (!id) return;
+    store.selectObject(id);
+    useModelForgeSession.getState().setMode('build');
+    useModelForgeSession.getState().setPartId('');
+    setInsertMenu(null);
+  };
+
+  const selectedForgeObject = useEditorStore((state) => {
+    const id = state.selectedObjectId;
+    if (!id || state.isPlaying) return undefined;
+    return selectActiveObjects(state).find((object) => object.id === id && object.model?.enabled);
+  });
 
   return (
     <section className={isPlaying ? 'viewport-panel is-playing' : 'viewport-panel'}>
@@ -2127,6 +2276,45 @@ export function ViewportPanel() {
           <ViewportFallback />
         )}
         {showMouseHint && <div className="mouse-look-hint">Click to capture mouse · ESC to release</div>}
+        {insertMenu && !isPlaying && !editingPrefabId && (
+          <div
+            className="insert-popover"
+            style={{ left: insertMenu.x, top: insertMenu.y }}
+            role="menu"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="insert-popover-title">Quick add</div>
+            <div className="insert-popover-grid">
+              <button type="button" onClick={() => quickAddFromMenu('cube')}>
+                Cube
+              </button>
+              <button type="button" onClick={() => quickAddFromMenu('sphere')}>
+                Sphere
+              </button>
+              <button type="button" onClick={() => quickAddFromMenu('plane')}>
+                Plane
+              </button>
+              <button type="button" onClick={() => quickAddFromMenu('light')}>
+                Light
+              </button>
+              <button type="button" onClick={() => quickAddFromMenu('camera')}>
+                Camera
+              </button>
+              <button type="button" onClick={() => quickAddFromMenu('empty')}>
+                Empty
+              </button>
+            </div>
+            <div className="insert-popover-title">Prototype prop</div>
+            <div className="insert-popover-grid">
+              {MODEL_STARTERS.filter((starter) => ['blank', 'crate', 'barrel', 'arch'].includes(starter.id)).map((starter) => (
+                <button key={starter.id} type="button" title={starter.tagline} onClick={() => quickAddPrototype(starter.id)}>
+                  {starter.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {selectedForgeObject && !isPlaying && !editingPrefabId && <ViewportModelForgeBar object={selectedForgeObject} />}
         {!isPlaying && cinematicPreview && (
           <div className="mouse-look-hint cinematic-preview-hint">Film preview {cinematicPreview.time.toFixed(2)}s</div>
         )}

@@ -18,6 +18,9 @@ import { PHYSICS_MATERIAL_PRESETS, applyPhysicsMaterialPreset } from '../runtime
 import { WATER_STYLE_PRESETS } from '../three/presets';
 import { withTerrainDefaults } from '../terrain/terrain';
 import { treeSpecFromArchetype } from '../tree/treeSpec';
+import { MODEL_STARTERS } from '../model/modelSpec';
+import { ensureModelForgeEnabled, openModelForgeStudio } from '../extensions/openModelForge';
+import { useModelForgeSession } from '../store/modelForgeSessionStore';
 
 const axes = ['X', 'Y', 'Z'] as const;
 
@@ -2117,6 +2120,81 @@ function ParticleSection({
   );
 }
 
+function ModelForgeSection({ object }: { object: SceneObject }) {
+  const specs = useEditorStore((state) => state.modelSpecs);
+  const createModelSpec = useEditorStore((state) => state.createModelSpec);
+  const attachModelSpec = useEditorStore((state) => state.attachModelSpec);
+  const setActiveModelSpec = useEditorStore((state) => state.setActiveModelSpec);
+  const specId = object.model?.enabled ? object.model.specId : undefined;
+  const spec = (specId ? specs.find((entry) => entry.id === specId) : undefined) ?? object.model?.spec;
+
+  const convert = (starterId: string) => {
+    if (!ensureModelForgeEnabled()) return;
+    const id = createModelSpec(starterId, object.name);
+    if (!id) return;
+    attachModelSpec(object.id, id);
+    setActiveModelSpec(id);
+    useModelForgeSession.getState().setMode('build');
+    useModelForgeSession.getState().setPartId('');
+  };
+
+  const blocked = object.kind === 'light' || object.kind === 'camera' || object.kind === 'terrain' || Boolean(object.tree);
+
+  if (blocked && !object.model?.enabled) return null;
+
+  return (
+    <InspectorSection title="Model Forge">
+      {spec ? (
+        <>
+          <p className="field-hint">
+            Prototype prop “{spec.name}” — {spec.parts.length} part{spec.parts.length === 1 ? '' : 's'}. Add primitives
+            in the viewport bar, paint faces, or open the studio to sculpt box corners.
+          </p>
+          <label className="field-row">
+            <span>Library asset</span>
+            <select
+              value={specId ?? ''}
+              onChange={(event) => {
+                attachModelSpec(object.id, event.target.value);
+                setActiveModelSpec(event.target.value);
+              }}
+            >
+              {specs.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="full-button"
+            onClick={() => {
+              if (specId) setActiveModelSpec(specId);
+              openModelForgeStudio();
+            }}
+          >
+            Open Model Forge studio
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="field-hint">
+            Turn this object into a kit-bashable prototype (Spline-style primitives in the scene — not a Blender import).
+          </p>
+          <div className="insert-popover-grid" style={{ position: 'static', display: 'grid' }}>
+            {MODEL_STARTERS.filter((starter) => ['blank', 'crate', 'barrel', 'arch'].includes(starter.id)).map((starter) => (
+              <button key={starter.id} type="button" className="full-button" title={starter.tagline} onClick={() => convert(starter.id)}>
+                {starter.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </InspectorSection>
+  );
+}
+
 /**
  * Parametric tree controls. The archetype picker rebuilds the spec from scratch (archetypes are the
  * starting points, not a locked type), while everything below tunes the current spec in place.
@@ -3269,6 +3347,8 @@ export function InspectorPanel() {
           )}
 
           {object.tree && <TreeSection tree={object.tree} onChange={(patch) => updateTree(object.id, patch)} />}
+
+          <ModelForgeSection object={object} />
 
           {object.renderer && (
             <RendererSection

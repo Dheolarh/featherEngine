@@ -1,8 +1,13 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { TransformControls } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
-import type { ModelPart, ModelSpec, ModelStyle, SceneObject } from '../types';
+import type { TransformControls as TransformControlsImpl } from 'three-stdlib';
+import * as THREE from 'three';
+import type { ModelPart, ModelSpec, ModelStyle, SceneObject, Vector3Tuple } from '../types';
 import { useEditorStore } from '../store/editorStore';
-import { getPartMaterials, getPartRenderGeometry } from '../model/modelGeometry';
+import { useModelForgeSession } from '../store/modelForgeSessionStore';
+import { useViewportPrefs } from '../store/viewportPrefsStore';
+import { faceGroupForFaceIndex, getPartMaterials, getPartRenderEdges, getPartRenderGeometry } from '../model/modelGeometry';
 
 /**
  * Renders one prototype model (Model Forge): a group of flat-shaded primitive parts.
@@ -15,7 +20,9 @@ import { getPartMaterials, getPartRenderGeometry } from '../model/modelGeometry'
  * Geometry is shared per shape and materials shared per palette color (src/model/modelGeometry.ts),
  * so a street of kit-bashed props costs five geometries and a handful of materials. Parts raycast
  * normally — clicks bubble to SceneObjectView's group handler, which is what makes placed props
- * click-selectable in the editor for free.
+ * click-selectable in the editor for free. When the viewport Model Forge bar is in Build/Paint,
+ * part clicks are intercepted here so users can kit-bash and paint faces without leaving the scene.
+ * Build mode also attaches the usual Move/Rotate/Scale gizmo to the selected part (Spline-style).
  */
 
 export interface ModelPartMeshProps {
@@ -30,29 +37,59 @@ export interface ModelPartMeshProps {
   onPartPointerDown?: (part: ModelPart, event: ThreeEvent<PointerEvent>) => void;
   onPartPointerOver?: (part: ModelPart, event: ThreeEvent<PointerEvent>) => void;
   onPartPointerOut?: (part: ModelPart) => void;
+  /** Soft outline for the part currently selected in Build mode. */
+  outlined?: boolean;
 }
 
 const ZERO: [number, number, number] = [0, 0, 0];
 const ONE: [number, number, number] = [1, 1, 1];
+const ignoreOutlineRaycast = () => null;
 
-export function ModelPartMesh({ part, palette, style, neutralTransform, onPartPointerDown, onPartPointerOver, onPartPointerOut }: ModelPartMeshProps) {
+const round = (value: number, decimals = 4): number => {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+};
+
+export function ModelPartMesh({
+  part,
+  palette,
+  style,
+  neutralTransform,
+  onPartPointerDown,
+  onPartPointerOver,
+  onPartPointerOut,
+  outlined,
+}: ModelPartMeshProps) {
   // Cached per (shape | dims+bevel); beveled boxes bake true-radius rounding back into unit space,
   // so mesh scale stays part.scale for every shape.
   const geometry = getPartRenderGeometry(part, style);
   const materials = useMemo(() => getPartMaterials(part, palette, style), [part, palette, style]);
   return (
-    <mesh
-      geometry={geometry}
-      material={materials}
-      position={neutralTransform ? ZERO : part.position}
-      rotation={neutralTransform ? ZERO : part.rotation}
-      scale={neutralTransform ? ONE : part.scale}
-      castShadow
-      receiveShadow
-      onPointerDown={onPartPointerDown ? (event) => onPartPointerDown(part, event) : undefined}
-      onPointerOver={onPartPointerOver ? (event) => onPartPointerOver(part, event) : undefined}
-      onPointerOut={onPartPointerOut ? () => onPartPointerOut(part) : undefined}
-    />
+    <>
+      <mesh
+        geometry={geometry}
+        material={materials}
+        position={neutralTransform ? ZERO : part.position}
+        rotation={neutralTransform ? ZERO : part.rotation}
+        scale={neutralTransform ? ONE : part.scale}
+        castShadow
+        receiveShadow
+        onPointerDown={onPartPointerDown ? (event) => onPartPointerDown(part, event) : undefined}
+        onPointerOver={onPartPointerOver ? (event) => onPartPointerOver(part, event) : undefined}
+        onPointerOut={onPartPointerOut ? () => onPartPointerOut(part) : undefined}
+      />
+      {outlined && (
+        <lineSegments
+          geometry={getPartRenderEdges(part, style)}
+          position={neutralTransform ? ZERO : part.position}
+          rotation={neutralTransform ? ZERO : part.rotation}
+          scale={neutralTransform ? ONE : part.scale}
+          raycast={ignoreOutlineRaycast}
+        >
+          <lineBasicMaterial color="#5b8cff" transparent opacity={0.95} toneMapped={false} />
+        </lineSegments>
+      )}
+    </>
   );
 }
 
@@ -66,13 +103,130 @@ export function ModelMesh({ object }: { object: SceneObject }) {
   const librarySpec = useEditorStore((state) =>
     specId ? state.modelSpecs.find((entry) => entry.id === specId) : undefined,
   );
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId);
+  const isPlaying = useEditorStore((state) => state.isPlaying);
+  const mode = useModelForgeSession((state) => state.mode);
+  const colorSlot = useModelForgeSession((state) => state.colorSlot);
+  const selectedPartId = useModelForgeSession((state) => state.partId);
+  const setPartId = useModelForgeSession((state) => state.setPartId);
+  const gizmoMode = useModelForgeSession((state) => state.gizmoMode);
+  const setPartGizmoEngaged = useModelForgeSession((state) => state.setPartGizmoEngaged);
+  const snapEnabled = useViewportPrefs((state) => state.snapEnabled);
+  const snapStep = useViewportPrefs((state) => state.snapStep);
+  const angleStepDeg = useViewportPrefs((state) => state.angleStepDeg);
+  const scaleStep = useViewportPrefs((state) => state.scaleStep);
+  const controlsRef = useRef<TransformControlsImpl | null>(null);
+  const gizmoActive = useRef(false);
   const spec = resolveModelSpec(object, librarySpec);
+
+  const editing =
+    !isPlaying && selectedObjectId === object.id && (mode === 'build' || mode === 'paint') && Boolean(specId);
+
+  // Start Build with a part selected so the gizmo is immediately useful (Spline: click → edit).
+  // Also recover when switching to another prop whose parts don't include the previous partId.
+  useEffect(() => {
+    if (!editing || mode !== 'build' || !spec) return;
+    if (selectedPartId && spec.parts.some((part) => part.id === selectedPartId)) return;
+    if (spec.parts[0]) setPartId(spec.parts[0].id);
+  }, [editing, mode, spec, selectedPartId, setPartId]);
+
+  useEffect(() => {
+    return () => {
+      if (gizmoActive.current) {
+        gizmoActive.current = false;
+        useModelForgeSession.getState().setPartGizmoEngaged(false);
+      }
+    };
+  }, []);
+
   if (!spec) return null;
+
+  const onPartPointerDown = editing
+    ? (part: ModelPart, event: ThreeEvent<PointerEvent>) => {
+        if (event.nativeEvent.button !== 0 || event.nativeEvent.altKey) return;
+        if (gizmoActive.current) return;
+        event.stopPropagation();
+        setPartId(part.id);
+        if (mode === 'paint' && specId) {
+          const faceIndex = event.faceIndex;
+          const geometry = getPartRenderGeometry(part, spec.style);
+          const faceGroup = faceIndex != null ? faceGroupForFaceIndex(geometry, faceIndex) : undefined;
+          useEditorStore.getState().paintModelPart(specId, part.id, colorSlot, faceGroup);
+        }
+      }
+    : undefined;
+
+  // Commit ONCE on release — mid-drag store writes remount TransformControls and kill the drag
+  // (same pattern as the Model Forge studio preview).
+  const commitFromGizmo = () => {
+    if (!specId || !selectedPartId) return;
+    const target = (controlsRef.current as unknown as { object?: THREE.Object3D } | null)?.object;
+    if (!target) return;
+    const patch: Pick<ModelPart, 'position' | 'rotation' | 'scale'> = {
+      position: [round(target.position.x), round(target.position.y), round(target.position.z)] as Vector3Tuple,
+      rotation: [round(target.rotation.x), round(target.rotation.y), round(target.rotation.z)] as Vector3Tuple,
+      scale: [
+        round(Math.max(0.05, target.scale.x)),
+        round(Math.max(0.05, target.scale.y)),
+        round(Math.max(0.05, target.scale.z)),
+      ] as Vector3Tuple,
+    };
+    useEditorStore.getState().updateModelPart(specId, selectedPartId, patch);
+  };
+
+  const handleGizmoDown = () => {
+    gizmoActive.current = true;
+    setPartGizmoEngaged(true);
+  };
+  const handleGizmoUp = () => {
+    commitFromGizmo();
+    setTimeout(() => {
+      gizmoActive.current = false;
+      setPartGizmoEngaged(false);
+    }, 0);
+  };
+
   return (
     <group>
-      {spec.parts.map((part) => (
-        <ModelPartMesh key={part.id} part={part} palette={spec.palette} style={spec.style} />
-      ))}
+      {spec.parts.map((part) =>
+        editing && mode === 'build' && part.id === selectedPartId ? (
+          <TransformControls
+            key={part.id}
+            ref={controlsRef}
+            mode={gizmoMode}
+            size={0.85}
+            space="local"
+            translationSnap={snapEnabled ? snapStep : null}
+            rotationSnap={snapEnabled ? (angleStepDeg * Math.PI) / 180 : null}
+            scaleSnap={snapEnabled ? scaleStep : null}
+            position={part.position}
+            rotation={part.rotation}
+            scale={part.scale}
+            onMouseDown={handleGizmoDown}
+            onMouseUp={handleGizmoUp}
+          >
+            <group>
+              <ModelPartMesh
+                part={part}
+                palette={spec.palette}
+                style={spec.style}
+                neutralTransform
+                onPartPointerDown={onPartPointerDown}
+                outlined
+              />
+            </group>
+          </TransformControls>
+        ) : (
+          <ModelPartMesh
+            key={part.id}
+            part={part}
+            palette={spec.palette}
+            style={spec.style}
+            onPartPointerDown={onPartPointerDown}
+            outlined={editing && mode === 'build' && part.id === selectedPartId}
+          />
+        ),
+      )}
     </group>
   );
 }

@@ -36,7 +36,7 @@ import { compressGlbTextures } from '../three/compressTextures';
 import { inspectModel, type ModelInspection } from '../three/inspectModel';
 import { ContextMenu, type ContextMenuEntry, type ContextMenuState } from './ContextMenu';
 import { SkeletonEditorModal } from './SkeletonEditorModal';
-import { ASSET_DRAG_TYPE, PREFAB_DRAG_TYPE, assetDrag, hasDragType, prefabDrag } from './dragShared';
+import { ASSET_DRAG_TYPE, PREFAB_DRAG_TYPE, MATERIAL_DRAG_TYPE, assetDrag, hasDragType, materialDrag, prefabDrag } from './dragShared';
 import { focusWorkspacePanel } from './workspacePanels';
 import type { AnimationAsset, AnimatorController, AssetItem, AssetType, DataAsset, MaterialDefinition, ParticleSystemDefinition, Prefab, ProjectFolder, ScriptBlueprint, SkeletalMeshAsset, SkeletonAsset, UIDocument } from '../types';
 
@@ -538,6 +538,7 @@ export function AssetBrowser() {
     dragRef.current = { items };
     assetDrag.id = null;
     prefabDrag.id = null;
+    materialDrag.id = null;
     // Viewport drop still expects a single asset id via the shared holder + dataTransfer.
     const assetItems = items.filter((item) => item.kind === 'asset');
     if (assetItems.length === 1) {
@@ -558,6 +559,17 @@ export function AssetBrowser() {
         /* some webviews block setData during dragstart — the shared holder covers it */
       }
     }
+
+    // Dragging a single material into the viewport applies it to the current selection.
+    const materialItems = items.filter((item) => item.kind === 'material');
+    if (materialItems.length === 1) {
+      materialDrag.id = materialItems[0].id;
+      try {
+        event.dataTransfer.setData(MATERIAL_DRAG_TYPE, materialItems[0].id);
+      } catch {
+        /* some webviews block setData during dragstart — the shared holder covers it */
+      }
+    }
     // Particle systems also drop into the viewport. Reuse the asset holder because the viewport
     // resolves particle systems before imported assets, and both are project-level items.
     const particleItems = items.filter((item) => item.kind === 'particleSystem');
@@ -569,8 +581,7 @@ export function AssetBrowser() {
         /* some webviews block setData during dragstart — the shared holder covers it */
       }
     }
-    const viewportPlaceable =
-      items.length === 1 && ['asset', 'prefab', 'particleSystem'].includes(items[0].kind);
+    const viewportPlaceable = items.length === 1 && ['asset', 'prefab', 'particleSystem', 'material'].includes(items[0].kind);
     event.dataTransfer.effectAllowed = viewportPlaceable ? 'copyMove' : 'move';
     // A small labelled chip as the drag image.
     const chip = document.createElement('div');
@@ -584,6 +595,7 @@ export function AssetBrowser() {
   const handleItemDragEnd = () => {
     assetDrag.id = null;
     prefabDrag.id = null;
+    materialDrag.id = null;
     setDropTarget(null);
     setDropItemId(null);
     setContentDrop(false);

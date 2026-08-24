@@ -20,9 +20,14 @@ const toast = (kind: 'success' | 'error', message: string) => {
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+/** First-class modeling: Model Forge ships with the engine and is on for new users. */
+export const MODEL_FORGE_PLUGIN_ID = 'feather.model-forge';
+
 interface PluginState {
   /** Ids of gallery plugins the user has installed. Persisted; re-activated on every boot. */
   enabledIds: string[];
+  /** Once true, we never auto-enable Model Forge again (so a user who turns it off stays off). */
+  coreBootstrapped: boolean;
   /** Activate a compiled-in plugin and remember it. Returns an error message, or null on success. */
   enable: (pluginId: string) => string | null;
   /** Deactivate a plugin (its panels close, its commands vanish) and forget it. */
@@ -37,6 +42,7 @@ export const usePluginStore = create<PluginState>()(
   persist(
     (set, get) => ({
       enabledIds: [],
+      coreBootstrapped: false,
 
       enable: (pluginId) => {
         const definition = getAvailablePlugin(pluginId);
@@ -90,6 +96,13 @@ export const usePluginStore = create<PluginState>()(
       },
 
       restore: () => {
+        if (!get().coreBootstrapped) {
+          const already = get().enabledIds.includes(MODEL_FORGE_PLUGIN_ID);
+          set({
+            coreBootstrapped: true,
+            enabledIds: already ? get().enabledIds : [...get().enabledIds, MODEL_FORGE_PLUGIN_ID],
+          });
+        }
         for (const pluginId of get().enabledIds) {
           const definition = getAvailablePlugin(pluginId);
           if (!definition) {
@@ -106,6 +119,9 @@ export const usePluginStore = create<PluginState>()(
         }
       },
     }),
-    { name: 'nodeforge.plugins', partialize: (state) => ({ enabledIds: state.enabledIds }) },
+    {
+      name: 'nodeforge.plugins',
+      partialize: (state) => ({ enabledIds: state.enabledIds, coreBootstrapped: state.coreBootstrapped }),
+    },
   ),
 );

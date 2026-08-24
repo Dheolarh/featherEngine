@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { extensionRegistry } from '../../extensions/host';
 import { AVAILABLE_PLUGINS } from '../../extensions/availablePlugins';
 import { useMarketplaceStore } from '../marketplaceStore';
-import { usePluginStore } from '../pluginStore';
+import { MODEL_FORGE_PLUGIN_ID, usePluginStore } from '../pluginStore';
 import { useProjectStore } from '../projectStore';
 
 /**
@@ -43,7 +43,7 @@ describe('store plugin install', () => {
   beforeEach(() => {
     useProjectStore.setState({ toast: null, error: null });
     useMarketplaceStore.setState({ status: 'idle', error: null, packages: [], query: '', tag: null, installingId: null, installedIds: [] });
-    usePluginStore.setState({ enabledIds: [] });
+    usePluginStore.setState({ enabledIds: [], coreBootstrapped: true });
     serveBundledStore();
   });
 
@@ -102,5 +102,13 @@ describe('store plugin install', () => {
     expect(extensionRegistry.hasPlugin(ARBOR_ID)).toBe(true);
     // The unknown id survives (a newer build may include it) without breaking the restore.
     expect(usePluginStore.getState().enabledIds).toContain('feather.from-the-future');
+  });
+
+  it('first restore auto-enables Model Forge for new users', () => {
+    usePluginStore.setState({ enabledIds: [], coreBootstrapped: false });
+    usePluginStore.getState().restore();
+    expect(usePluginStore.getState().coreBootstrapped).toBe(true);
+    expect(usePluginStore.getState().enabledIds).toContain(MODEL_FORGE_PLUGIN_ID);
+    expect(extensionRegistry.hasPlugin(MODEL_FORGE_PLUGIN_ID)).toBe(true);
   });
 });

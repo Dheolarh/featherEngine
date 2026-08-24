@@ -9,10 +9,13 @@
  */
 export const ASSET_DRAG_TYPE = 'application/x-feather-asset';
 export const PREFAB_DRAG_TYPE = 'application/x-feather-prefab';
+export const MATERIAL_DRAG_TYPE = 'application/x-feather-material';
 
 export const assetDrag: { id: string | null } = { id: null };
 /** Same webview-safe holder pattern as `assetDrag`, but for dragging a prefab into the viewport. */
 export const prefabDrag: { id: string | null } = { id: null };
+/** Same webview-safe holder pattern as `assetDrag`, but for dragging a material into the viewport. */
+export const materialDrag: { id: string | null } = { id: null };
 
 export function hasDragType(dataTransfer: DataTransfer | null | undefined, type: string) {
   return Array.from(dataTransfer?.types ?? []).includes(type);
@@ -39,5 +42,17 @@ export function readPrefabDragId(dataTransfer: DataTransfer | null | undefined) 
     return dataTransfer?.getData(PREFAB_DRAG_TYPE) || prefabDrag.id;
   } catch {
     return prefabDrag.id;
+  }
+}
+
+export function isMaterialDrag(dataTransfer: DataTransfer | null | undefined) {
+  return Boolean(materialDrag.id) || hasDragType(dataTransfer, MATERIAL_DRAG_TYPE);
+}
+
+export function readMaterialDragId(dataTransfer: DataTransfer | null | undefined) {
+  try {
+    return dataTransfer?.getData(MATERIAL_DRAG_TYPE) || materialDrag.id;
+  } catch {
+    return materialDrag.id;
   }
 }

@@ -3456,7 +3456,7 @@ const rawEngineTools = {
 
   list_plugins: tool({
     description:
-      'List the editor plugins compiled into this build and whether each is installed (active). Plugins add editor panels and commands — e.g. Arbor Forge, the stylized-tree studio. Install/remove with set_plugin_enabled, or via their Asset Store card.',
+      'List the editor plugins compiled into this build and whether each is installed (active). Plugins add editor panels and commands — e.g. Arbor Forge (stylized trees). Model Forge is on by default for new users. Install/remove with set_plugin_enabled, or via their Asset Store card.',
     inputSchema: z.object({}),
     execute: async () => {
       const enabled = new Set(usePluginStore.getState().enabledIds);

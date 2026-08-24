@@ -751,6 +751,8 @@ interface EditorState {
   setModelPalette: (specId: string, palette: string[]) => boolean;
   /** Place a prototype model object linked to a library asset (terrain-snapped). Returns the object id; null = unknown spec. */
   createModelFromSpec: (specId: string, options?: { position?: Vector3Tuple; name?: string }) => string | null;
+  /** Attach (or replace) a prototype-model spec on an existing object so it can be kit-bashed in the viewport. */
+  attachModelSpec: (objectId: string, specId: string) => boolean;
   /** Apply a one-click grass look (switches the terrain to stylized clump grass). Returns the preset label. */
   applyGrassPreset: (id: string, presetId: GrassPresetId) => string | null;
   setTerrainBrush: (patch: Partial<TerrainBrushSettings>) => void;
@@ -2580,6 +2582,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return { ...mapActiveSceneObjects(state, (objects) => [...objects, next]), selectedObjectId: id };
     });
     return id;
+  },
+  attachModelSpec: (objectId, specId) => {
+    const library = get().modelSpecs.find((entry) => entry.id === specId);
+    const object = selectActiveObjects(get()).find((item) => item.id === objectId);
+    if (!library || !object) return false;
+    set((state) => ({
+      ...mapActiveSceneObjects(state, (objects) =>
+        objects.map((item) =>
+          item.id === objectId ? { ...item, model: { enabled: true, specId } } : item,
+        ),
+      ),
+      activeModelSpecId: specId,
+      isDirty: true,
+    }));
+    return true;
   },
   applyGrassPreset: (id, presetId) => {
     const preset = GRASS_PRESETS[presetId];
