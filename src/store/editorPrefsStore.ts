@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type ThemeMode = 'nova' | 'forge' | 'unreal' | 'dark' | 'light' | 'midnight' | 'high-contrast';
+export type ThemeMode = 'nova' | 'forge' | 'candy' | 'unreal' | 'dark' | 'light' | 'midnight' | 'high-contrast';
 export type Density = 'comfortable' | 'compact';
 export type FontScale = 0.9 | 1.0 | 1.1;
 

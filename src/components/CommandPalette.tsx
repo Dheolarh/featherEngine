@@ -158,9 +158,28 @@ export function CommandPalette() {
       cmds.push({ id: `layout-${id}`, label: `Layout: ${label}`, group: 'Workspace', keywords: 'arrange dock window', run: () => applyWorkspaceLayout(id) });
     }
 
-    const themes: Array<[ThemeMode, string]> = [['dark', 'Dark'], ['midnight', 'Midnight'], ['light', 'Light']];
+    const themes: Array<[ThemeMode, string]> = [
+      ['nova', 'Nova'],
+      ['forge', 'Forge'],
+      ['candy', 'Candy'],
+      ['unreal', 'Unreal'],
+      ['dark', 'Dark'],
+      ['midnight', 'Midnight'],
+      ['light', 'Light'],
+      ['high-contrast', 'High contrast'],
+    ];
     for (const [id, label] of themes) {
-      cmds.push({ id: `theme-${id}`, label: `Theme: ${label}`, group: 'Appearance', keywords: 'color skin appearance', run: () => useEditorPrefs.getState().setThemeMode(id) });
+      cmds.push({
+        id: `theme-${id}`,
+        label: `Theme: ${label}`,
+        group: 'Appearance',
+        keywords: 'color skin appearance candy grape',
+        run: () => {
+          const prefs = useEditorPrefs.getState();
+          prefs.setThemeMode(id);
+          if (id === 'candy') prefs.setAccent('#3fe2ff');
+        },
+      });
     }
 
     cmds.push({

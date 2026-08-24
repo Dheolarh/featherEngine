@@ -32,6 +32,7 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof Palette }> = [
 const THEME_OPTIONS: Array<{ id: ThemeMode; label: string; hint: string }> = [
   { id: 'nova', label: 'Nova', hint: 'Default — cool low-chroma graphite, one electric accent. Calm over long sessions.' },
   { id: 'forge', label: 'Forge', hint: 'NodeForge signature — warm industrial dark, molten-ember accents, mono numerics.' },
+  { id: 'candy', label: 'Candy', hint: 'Marketing-site twin — deep grape base, chunky lips, mint / cyan / amber pop.' },
   { id: 'unreal', label: 'Unreal', hint: 'Flat neutral grays, squared corners — Unreal Engine feel.' },
   { id: 'dark', label: 'Dark', hint: 'Soft blue-grey panels.' },
   { id: 'midnight', label: 'Midnight', hint: 'Deeper black for OLED + focus.' },
@@ -39,7 +40,7 @@ const THEME_OPTIONS: Array<{ id: ThemeMode; label: string; hint: string }> = [
   { id: 'high-contrast', label: 'High contrast', hint: 'Maximum legibility (WCAG AAA).' },
 ];
 
-const ACCENT_SWATCHES = ['#5b8cff', '#7c5cff', '#3ddc97', '#f7b955', '#ff7a18', '#ff6b6b', '#ff8ad6'];
+const ACCENT_SWATCHES = ['#5b8cff', '#6c7bff', '#3fe2ff', '#3ddc97', '#ffc93c', '#ff5ec4', '#ff7a18', '#ff6b6b'];
 
 const DENSITY_OPTIONS: Array<{ id: Density; label: string; hint: string }> = [
   { id: 'comfortable', label: 'Comfortable', hint: 'Default spacing.' },
@@ -144,7 +145,12 @@ function AppearancePanel() {
             <button
               key={opt.id}
               className={`prefs-chip ${themeMode === opt.id ? 'active' : ''}`}
-              onClick={() => setThemeMode(opt.id)}
+              onClick={() => {
+                setThemeMode(opt.id);
+                // Candy’s identity is cyan on grape — seed the accent so selection rings match
+                // the marketing site without forcing it if the user re-picks another theme later.
+                if (opt.id === 'candy') setAccent('#3fe2ff');
+              }}
               title={opt.hint}
             >
               {opt.label}

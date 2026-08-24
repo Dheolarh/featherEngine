@@ -444,6 +444,222 @@
   letter-spacing: 0.01em;
 }
 
+/* ============================================================================
+   CANDY — twin of the marketing site’s flat “candy” skin. Deep grape studio base,
+   chunky radii, solid fills on a hard ink outline with an offset lip (no glass, no
+   blur-glow). Signature mint / cyan / amber drive brand + Play + primaries; the
+   user-tunable --accent still owns selection rings so the two stay deliberate.
+   System-rounded stack only (Tauri CSP blocks web fonts) — Fredoka isn’t loaded.
+   ============================================================================ */
+:root[data-theme="candy"] {
+  color-scheme: dark;
+  font-family: Nunito, "SF Pro Rounded", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #14113a;
+  color: #ffffff;
+  --background: #14113a;
+  --panel: #201c50;
+  --panel-light: #2b2666;
+  --panel-soft: #191541;
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.24);
+  --text: #ffffff;
+  --muted: #bdb7ee;
+  --accent: #3fe2ff;
+  --success: #45f0a6;
+  --warning: #ffc93c;
+  --danger: #ff6f70;
+  --shadow: 0 8px 0 rgba(8, 6, 28, 0.55), 0 26px 48px rgba(0, 0, 0, 0.42);
+  /* Chunky, but dialed under the marketing --r-* scale so dense chrome still fits. */
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 18px;
+  /* Ink underlay + candy accents (mirrors --site-* on the marketing page). */
+  --candy-ink: #08061c;
+  --candy-mint: #45f0a6;
+  --candy-mint-deep: #10a469;
+  --candy-cyan: #3fe2ff;
+  --candy-amber: #ffc93c;
+  --candy-amber-deep: #c8901a;
+  --candy-magenta: #ff5ec4;
+  --candy-violet: #a45cff;
+  --candy-lip: 0 4px 0 var(--candy-ink);
+  --candy-lip-mint: 0 4px 0 var(--candy-mint-deep);
+}
+
+:root[data-theme="candy"] .editor-shell {
+  background:
+    radial-gradient(circle at 82% 0%, rgba(255, 94, 196, 0.1), transparent 28rem),
+    radial-gradient(circle at 8% 20%, rgba(63, 226, 255, 0.08), transparent 30rem),
+    linear-gradient(180deg, #14113a, #100d2f 55%, #0c0a26);
+}
+
+/* Solid grape slabs — no frosted glass. */
+:root[data-theme="candy"] .toolbar,
+:root[data-theme="candy"] .panel-header,
+:root[data-theme="candy"] .viewport-topbar,
+:root[data-theme="candy"] .status-bar,
+:root[data-theme="candy"] .toast {
+  background: rgba(32, 28, 80, 0.96);
+  backdrop-filter: none;
+  box-shadow: inset 0 -1px 0 var(--candy-ink);
+  border-color: var(--candy-ink);
+}
+
+:root[data-theme="candy"] .toolbar {
+  border-bottom: 2px solid var(--candy-ink);
+}
+
+:root[data-theme="candy"] .status-bar {
+  border-top: 2px solid var(--candy-ink);
+}
+
+:root[data-theme="candy"] .nf-dockview-host {
+  --dv-tabs-and-actions-container-background-color: #191541;
+  --dv-activegroup-visiblepanel-tab-background-color: #2b2666;
+  --dv-activegroup-hiddenpanel-tab-background-color: #201c50;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #241f5a;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #171345;
+  --dv-tab-divider-color: var(--candy-ink);
+}
+
+:root[data-theme="candy"] .dv-tab.dv-active-tab {
+  box-shadow: inset 0 -3px 0 var(--candy-cyan);
+}
+
+/* Amber sticker brand mark (matches site-brand__mark). */
+:root[data-theme="candy"] .brand > svg {
+  color: #0b0730;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--candy-amber);
+  box-shadow: 0 3px 0 var(--candy-amber-deep);
+}
+
+:root[data-theme="candy"] .brand strong {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+:root[data-theme="candy"] .brand span {
+  color: #8e87c6;
+}
+
+/* Raised chrome: flat fill + ink edge + hard lip. */
+:root[data-theme="candy"] .icon-button,
+:root[data-theme="candy"] .run-button,
+:root[data-theme="candy"] .export-button,
+:root[data-theme="candy"] .full-button,
+:root[data-theme="candy"] .segmented button,
+:root[data-theme="candy"] .node-palette button {
+  border: 2px solid var(--candy-ink);
+  background: var(--panel-light);
+  box-shadow: var(--candy-lip);
+  color: var(--text);
+}
+
+:root[data-theme="candy"] .icon-button:hover,
+:root[data-theme="candy"] .run-button:hover,
+:root[data-theme="candy"] .export-button:hover,
+:root[data-theme="candy"] .full-button:hover,
+:root[data-theme="candy"] .segmented button:hover,
+:root[data-theme="candy"] .node-palette button:hover {
+  transform: translateY(-2px);
+  background: #332d75;
+  box-shadow: 0 6px 0 var(--candy-ink);
+  color: #fff;
+}
+
+:root[data-theme="candy"] .icon-button:active,
+:root[data-theme="candy"] .run-button:active,
+:root[data-theme="candy"] .export-button:active,
+:root[data-theme="candy"] .full-button:active,
+:root[data-theme="candy"] .segmented button:active,
+:root[data-theme="candy"] .node-palette button:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--candy-ink);
+}
+
+/* Play = mint candy (site primary CTA). */
+:root[data-theme="candy"] .run-button:not(.active) {
+  border-color: var(--candy-ink);
+  color: #04241a;
+  background: var(--candy-mint);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    var(--candy-lip-mint);
+}
+:root[data-theme="candy"] .run-button:not(.active):hover {
+  border-color: var(--candy-ink);
+  color: #04241a;
+  background: #5cf7b4;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 6px 0 var(--candy-mint-deep);
+}
+
+:root[data-theme="candy"] .launcher-primary,
+:root[data-theme="candy"] .export-button {
+  border: 2px solid var(--candy-ink);
+  color: #04241a;
+  background: var(--candy-mint);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    var(--candy-lip-mint);
+}
+:root[data-theme="candy"] .launcher-primary:hover:not(:disabled),
+:root[data-theme="candy"] .export-button:hover {
+  filter: none;
+  background: #5cf7b4;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 6px 0 var(--candy-mint-deep);
+}
+:root[data-theme="candy"] .launcher-primary:active:not(:disabled),
+:root[data-theme="candy"] .export-button:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 1px 0 var(--candy-mint-deep);
+}
+
+:root[data-theme="candy"] .launcher {
+  background:
+    radial-gradient(circle at 78% 0%, rgba(255, 94, 196, 0.14), transparent 36rem),
+    radial-gradient(circle at 12% 28%, rgba(63, 226, 255, 0.12), transparent 34rem),
+    linear-gradient(180deg, #14113a, #100d2f 45%, #0c0a26);
+}
+
+:root[data-theme="candy"] .launcher-brand svg {
+  color: #0b0730;
+  border: 0;
+  background: var(--candy-amber);
+  box-shadow: 0 3px 0 var(--candy-amber-deep);
+}
+
+:root[data-theme="candy"] .nodeforge-node.selected {
+  box-shadow:
+    0 0 0 2px var(--candy-cyan),
+    var(--candy-lip);
+}
+
+:root[data-theme="candy"] .prefs-chip.active,
+:root[data-theme="candy"] .segmented button.active,
+:root[data-theme="candy"] .icon-button.active {
+  border-color: var(--candy-ink);
+  background: color-mix(in srgb, var(--candy-cyan) 22%, var(--panel-light));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--candy-cyan) 45%, transparent),
+    0 2px 0 var(--candy-ink);
+}
+
+:root[data-theme="candy"] .inspector-section-head,
+:root[data-theme="candy"] .palette-group-head {
+  color: var(--candy-amber);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
 /* Cross-cutting tweaks for the light theme: a few hard-coded dark backgrounds
    in components don't follow the palette vars — soften them here. */
 :root[data-theme="light"] body {
