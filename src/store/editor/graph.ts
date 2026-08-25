@@ -142,6 +142,11 @@ export const nodeDescriptions: Record<string, string> = {
   'Clear Save': 'Deletes a local save slot.',
   Print: 'Logs a message to the on-screen console during Play.',
   'Set Quality': 'Sets the game quality preset (Low/Medium/High/Epic) at runtime — adjusts resolution, shadows, and post-FX.',
+  'Show UI': 'Shows a screen UI document (HUD) during Play.',
+  'Hide UI': 'Hides a screen UI document during Play.',
+  'Toggle UI': 'Toggles a screen UI document visible ↔ hidden.',
+  'Set UI Text': "Overrides a UI element's text at runtime (wire a value into Text).",
+  'Set UI Visible': "Shows or hides one UI element inside a document (wire Visible, or set the checkbox).",
 };
 
 export const nodeKindByLabel: Record<string, GraphNodeKind> = {
@@ -299,7 +304,9 @@ export const nodeKindByLabel: Record<string, GraphNodeKind> = {
   Print: 'action.print',
   'Show UI': 'ui.show',
   'Hide UI': 'ui.hide',
+  'Toggle UI': 'ui.toggle',
   'Set UI Text': 'ui.setText',
+  'Set UI Visible': 'ui.setVisible',
   'Get Object Var': 'variable.getObject',
   'Set Object Var': 'variable.setObject',
   'Burst Particles': 'action.burstParticles',
@@ -951,8 +958,12 @@ export const describeNode = (data: Partial<NodeForgeNodeData>): Pick<NodeForgeNo
       return { label: 'Show UI', description: 'Shows a screen UI document (HUD) during Play.' };
     case 'ui.hide':
       return { label: 'Hide UI', description: 'Hides a screen UI document during Play.' };
+    case 'ui.toggle':
+      return { label: 'Toggle UI', description: 'Toggles a screen UI document visible ↔ hidden.' };
     case 'ui.setText':
       return { label: 'Set UI Text', description: "Overrides a UI element's text at runtime (wire a value into Text)." };
+    case 'ui.setVisible':
+      return { label: 'Set UI Visible', description: 'Shows or hides one UI element inside a document during Play.' };
     case 'action.burstParticles':
       return {
         label: `Burst Particles x${Number(data.numberValue ?? 16)}`,

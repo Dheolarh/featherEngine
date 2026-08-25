@@ -607,6 +607,8 @@ interface EditorState {
   runtimeObjectVariables: Record<string, Record<string, GraphValue>>;
   /** Runtime text overrides written by ui.setText, keyed by `${docId}:${elementId}`. Play-only. */
   runtimeUITextOverrides: Record<string, string>;
+  /** Runtime element visibility overrides written by ui.setVisible, keyed by `${docId}:${elementId}`. Play-only. */
+  runtimeUIVisibleOverrides: Record<string, boolean>;
   runtimeCinematic?: RuntimeCinematicState;
   runtimeCinematicCamera?: RuntimeCinematicCamera;
   runtimeCinematicFade?: RuntimeCinematicFade;
@@ -1083,6 +1085,8 @@ interface EditorState {
   hideUI: (docId: string) => void;
   /** Runtime: override an element's text (driven by ui.setText nodes). */
   setUIText: (docId: string, elementId: string, text: string) => void;
+  /** Runtime: override an element's visibility (driven by ui.setVisible nodes). */
+  setUIElementVisible: (docId: string, elementId: string, visible: boolean) => void;
   /**
    * Runtime: write a project variable BY NAME from an interactive UI control (input/toggle/slider/
    * dropdown two-way binding). No-op outside Play; coerces to the variable's declared type.
@@ -1516,6 +1520,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   runtimeVisibleUI: {},
   runtimeObjectVariables: {},
   runtimeUITextOverrides: {},
+  runtimeUIVisibleOverrides: {},
   runtimeCinematic: undefined,
   runtimeCinematicCamera: undefined,
   runtimeCinematicFade: undefined,
@@ -5570,6 +5575,41 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         isDirty: true,
       };
     });
+    // Login template: seed a ready-to-run Logic graph so Sign In / Guest actually dismiss the screen.
+    if (template === 'login') {
+      const blueprintId = get().openUILogic(doc.id);
+      const isLoggedIn = get().variables.find((v) => v.name === 'isLoggedIn');
+      const loginError = get().variables.find((v) => v.name === 'loginError');
+      const wireLogin = (eventName: string, y: number) => {
+        const evt = get().addGraphNodeToBlueprint(blueprintId, 'Custom Event', 'Events', { eventName }, { x: 40, y });
+        const setLogged = isLoggedIn
+          ? get().addGraphNodeToBlueprint(
+              blueprintId,
+              'Set Variable',
+              'Variables',
+              { variableId: isLoggedIn.id, valueType: 'boolean', booleanValue: true },
+              { x: 280, y },
+            )
+          : '';
+        const clearErr = loginError
+          ? get().addGraphNodeToBlueprint(
+              blueprintId,
+              'Set Variable',
+              'Variables',
+              { variableId: loginError.id, valueType: 'string', stringValue: '' },
+              { x: 520, y },
+            )
+          : '';
+        const hide = get().addGraphNodeToBlueprint(blueprintId, 'Hide UI', 'UI', { documentId: doc.id }, { x: 760, y });
+        if (setLogged) get().connectGraphNodes(blueprintId, evt, setLogged);
+        if (setLogged && clearErr) get().connectGraphNodes(blueprintId, setLogged, clearErr);
+        const beforeHide = clearErr || setLogged;
+        if (beforeHide) get().connectGraphNodes(blueprintId, beforeHide, hide);
+        else get().connectGraphNodes(blueprintId, evt, hide);
+      };
+      wireLogin('loginPressed', 40);
+      wireLogin('loginAsGuest', 220);
+    }
     return doc.id;
   },
   applyUITheme: (docId, theme) =>
@@ -5857,6 +5897,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({ runtimeVisibleUI: { ...state.runtimeVisibleUI, [docId]: false } })),
   setUIText: (docId, elementId, text) =>
     set((state) => ({ runtimeUITextOverrides: { ...state.runtimeUITextOverrides, [`${docId}:${elementId}`]: text } })),
+  setUIElementVisible: (docId, elementId, visible) =>
+    set((state) => ({
+      runtimeUIVisibleOverrides: { ...state.runtimeUIVisibleOverrides, [`${docId}:${elementId}`]: visible },
+    })),
   setRuntimeVariableByName: (name, value) =>
     set((state) => {
       if (!state.isPlaying) return {};
@@ -6436,6 +6480,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             ]),
           ),
           runtimeUITextOverrides: {},
+          runtimeUIVisibleOverrides: {},
           runtimeCinematic: autoplay ? { sequenceId: autoplay.id, time: 0, firedActionIds: [], spawnedObjectIds: [] } : undefined,
           runtimeCinematicCamera: initialCinematicCamera(autoplay, objects, state.scenes.find((s) => s.id === state.activeSceneId)?.cinematics ?? []),
           runtimeCinematicFade: initialCinematicFade(autoplay, state.scenes.find((s) => s.id === state.activeSceneId)?.cinematics ?? []),
@@ -6553,6 +6598,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeVisibleUI: {},
         runtimeObjectVariables: {},
         runtimeUITextOverrides: {},
+        runtimeUIVisibleOverrides: {},
         runtimeCinematic: undefined,
         runtimeCinematicCamera: undefined,
         runtimeCinematicFade: undefined,
@@ -6809,6 +6855,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // UI runtime side effects this frame.
       const nextVisibleUI = { ...state.runtimeVisibleUI };
       const nextUITextOverrides = { ...state.runtimeUITextOverrides };
+      const nextUIVisibleOverrides = { ...state.runtimeUIVisibleOverrides };
       const firedEvents = toLowerCaseSet(state.runtimeEventQueue);
       // Last payload carried by each custom event (lowercased name) — written by Fire Event's Payload
       // pin, read from the matching Custom Event's value-out. Persists until the same event fires again.
@@ -8845,9 +8892,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               nextVisibleUI[node.data.documentId] = false;
             }
 
+            if (node.data.nodeKind === 'ui.toggle' && node.data.documentId) {
+              nextVisibleUI[node.data.documentId] = !nextVisibleUI[node.data.documentId];
+            }
+
             if (node.data.nodeKind === 'ui.setText' && node.data.documentId && node.data.elementId) {
               const text = graphValueToString(valueInput(node, 'text', node.data.stringValue ?? ''));
               nextUITextOverrides[`${node.data.documentId}:${node.data.elementId}`] = text;
+            }
+
+            if (node.data.nodeKind === 'ui.setVisible' && node.data.documentId && node.data.elementId) {
+              const visible = toBoolean(valueInput(node, 'visible', node.data.visible ?? true));
+              nextUIVisibleOverrides[`${node.data.documentId}:${node.data.elementId}`] = visible;
             }
 
             if (node.data.nodeKind === 'save.write') {
@@ -12782,6 +12838,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               state.uiDocuments.filter((doc) => doc.surface === 'screen' && doc.visibleOnStart).map((doc) => [doc.id, true]),
             ),
             runtimeUITextOverrides: {},
+            runtimeUIVisibleOverrides: {},
             runtimeCinematic: autoplay ? { sequenceId: autoplay.id, time: 0, firedActionIds: [], spawnedObjectIds: [] } : undefined,
             runtimeCinematicCamera: undefined,
             runtimeCinematicFade: undefined,
@@ -12872,6 +12929,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeObjectVariables: nextObjectVariables,
         runtimeVisibleUI: keepRecord(state.runtimeVisibleUI, nextVisibleUI),
         runtimeUITextOverrides: keepRecord(state.runtimeUITextOverrides, nextUITextOverrides),
+        runtimeUIVisibleOverrides: keepRecord(state.runtimeUIVisibleOverrides, nextUIVisibleOverrides),
         runtimeCinematic: nextRuntimeCinematic,
         runtimeCinematicCamera: nextRuntimeCinematicCamera,
         runtimeCinematicFade: nextRuntimeCinematicFade,
@@ -13227,6 +13285,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeVisibleUI: {},
         runtimeObjectVariables: {},
         runtimeUITextOverrides: {},
+        runtimeUIVisibleOverrides: {},
         runtimeCinematic: undefined,
         runtimeCinematicCamera: undefined,
         runtimeCinematicFade: undefined,

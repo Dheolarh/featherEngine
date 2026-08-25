@@ -517,7 +517,9 @@ const NODE_LABELS = [
   'Print',
   'Show UI',
   'Hide UI',
+  'Toggle UI',
   'Set UI Text',
+  'Set UI Visible',
   'Get Object Var',
   'Set Object Var',
   'NOT',
@@ -682,7 +684,9 @@ const NODE_CATEGORY: Record<(typeof NODE_LABELS)[number], GraphNodeCategory> = {
   Print: 'Runtime',
   'Show UI': 'UI',
   'Hide UI': 'UI',
+  'Toggle UI': 'UI',
   'Set UI Text': 'UI',
+  'Set UI Visible': 'UI',
   'Get Object Var': 'Variables',
   'Set Object Var': 'Variables',
   NOT: 'Logic',
@@ -3868,10 +3872,10 @@ const rawEngineTools = {
 
   create_ui_template: tool({
     description:
-      'Create a polished screen UI in one call. Generic mockups: "hud", "mainMenu", "dialogue", "inventory". Ready-made GAME HUDs/menus (assemble corner-anchored, data-bound widgets AND auto-create the project variables they bind to, so they show live data immediately): "shooterHud" (health bar + ammo + score + crosshair), "platformerHud" (lives + score + coins), "racingHud" (speed + lap + position), "pauseMenu" (Resume/Restart/Quit buttons firing resumeGame/restartGame/quitGame events, hidden on start), "gameOver" (score + Retry firing restartGame, hidden on start), "settings" (volume SLIDER, difficulty DROPDOWN, fullscreen TOGGLE, name INPUT — each two-way-bound to an auto-created variable — plus a Back button firing closeSettings; hidden on start; showcases interactive controls + keyboard/gamepad focus nav). Prefer the game kinds when the user names a genre HUD; tweak afterward with the other ui tools / set_ui_render_mode.',
+      'Create a polished screen UI in one call. Generic mockups: "hud", "mainMenu", "dialogue", "inventory". Ready-made GAME HUDs/menus (assemble corner-anchored, data-bound widgets AND auto-create the project variables they bind to, so they show live data immediately): "shooterHud" (health bar + ammo + score + crosshair), "platformerHud" (lives + score + coins), "racingHud" (speed + lap + position), "pauseMenu" (Resume/Restart/Quit buttons firing resumeGame/restartGame/quitGame events, hidden on start), "gameOver" (score + Retry firing restartGame, hidden on start), "settings" (volume SLIDER, difficulty DROPDOWN, fullscreen TOGGLE, name INPUT — each two-way-bound to an auto-created variable — plus a Back button firing closeSettings; hidden on start; showcases interactive controls + keyboard/gamepad focus nav), "login" (username/password inputs + Sign In / Guest buttons firing loginPressed/loginAsGuest, with a pre-wired Logic graph that sets isLoggedIn and hides the screen). Prefer the game kinds when the user names a genre HUD; tweak afterward with the other ui tools / set_ui_render_mode.',
     inputSchema: z.object({
       template: z
-        .enum(['hud', 'mainMenu', 'dialogue', 'inventory', 'shooterHud', 'platformerHud', 'racingHud', 'pauseMenu', 'gameOver', 'settings'])
+        .enum(['hud', 'mainMenu', 'dialogue', 'inventory', 'shooterHud', 'platformerHud', 'racingHud', 'pauseMenu', 'gameOver', 'settings', 'login'])
         .optional()
         .describe('Defaults to hud.'),
       name: z.string().optional(),
@@ -3889,6 +3893,7 @@ const rawEngineTools = {
         pauseMenu: 'pauseMenu',
         gameOver: 'gameOver',
         settings: 'settings',
+        login: 'login',
       };
       const gameKind = gameTemplate[template];
       if (gameKind) {

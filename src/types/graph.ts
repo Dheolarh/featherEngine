@@ -178,7 +178,9 @@ export type GraphNodeKind =
   | 'action.print'
   | 'ui.show'
   | 'ui.hide'
+  | 'ui.toggle'
   | 'ui.setText'
+  | 'ui.setVisible'
   | 'variable.getObject'
   | 'variable.setObject'
   | 'action.burstParticles'
@@ -316,9 +318,9 @@ export interface NodeForgeNodeData extends Record<string, unknown> {
   targetObjectId?: string;
   /** event.collisionEnter/event.triggerEnter: optional filter for the other object that caused the event. */
   otherObjectId?: string;
-  /** ui.show/hide/setText: id of the UI document to drive. */
+  /** ui.show/hide/toggle/setText/setVisible: id of the UI document to drive. */
   documentId?: string;
-  /** ui.setText: id of the element within the document whose text to override. */
+  /** ui.setText/setVisible: id of the element within the document to override. */
   elementId?: string;
   /** variable.getObject/setObject: key on the owning object's instance variables. */
   objectKey?: string;

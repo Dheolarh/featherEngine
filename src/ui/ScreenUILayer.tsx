@@ -26,6 +26,7 @@ export function ScreenUILayer() {
   const runtimeVariableValues = useEditorStore((state) => state.runtimeVariableValues);
   const runtimeObjectVariables = useEditorStore((state) => state.runtimeObjectVariables);
   const textOverrides = useEditorStore((state) => state.runtimeUITextOverrides);
+  const visibleOverrides = useEditorStore((state) => state.runtimeUIVisibleOverrides);
   const assets = useEditorStore((state) => state.assets);
   const fireCustomEvent = useEditorStore((state) => state.fireCustomEvent);
   const setRuntimeVariableByName = useEditorStore((state) => state.setRuntimeVariableByName);
@@ -52,6 +53,7 @@ export function ScreenUILayer() {
   const resolveComponent = (documentId: string) => uiDocuments.find((d) => d.id === documentId);
 
   const overridesFor = (doc: UIDocument) => scopeOverrides(textOverrides, doc.id);
+  const visibleFor = (doc: UIDocument) => scopeBoolOverrides(visibleOverrides, doc.id);
 
   return (
     <div ref={setOverlay} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 20 }}>
@@ -66,6 +68,7 @@ export function ScreenUILayer() {
             element={{ ...doc.root, anchor: undefined, style: { width: '100%', height: '100%', position: 'relative', ...doc.root.style } }}
             ctx={ctx}
             textOverrides={overridesFor(doc)}
+            visibleOverrides={visibleFor(doc)}
             resolveAssetUrl={resolveAssetUrl}
             resolveComponent={resolveComponent}
             onButtonClick={(el) => el.onClickEvent && fireCustomEvent(el.onClickEvent)}
@@ -89,6 +92,15 @@ function hasInteractive(doc: UIDocument): boolean {
 function scopeOverrides(all: Record<string, string>, docId: string): Record<string, string> {
   const prefix = `${docId}:`;
   const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(all)) {
+    if (key.startsWith(prefix)) out[key.slice(prefix.length)] = value;
+  }
+  return out;
+}
+
+function scopeBoolOverrides(all: Record<string, boolean>, docId: string): Record<string, boolean> {
+  const prefix = `${docId}:`;
+  const out: Record<string, boolean> = {};
   for (const [key, value] of Object.entries(all)) {
     if (key.startsWith(prefix)) out[key.slice(prefix.length)] = value;
   }

@@ -220,7 +220,7 @@ export const makeUIPreset = (preset: UIPresetKind, variableName: string): UIElem
 // One click drops in a complete, good-looking, data-bound screen — instead of assembling widgets
 // element by element. Each returns a whole document plus the project variables it binds to (created
 // by the store if missing) so it works out of the box.
-export type UITemplateKind = 'shooter' | 'platformer' | 'racing' | 'pauseMenu' | 'gameOver' | 'settings';
+export type UITemplateKind = 'shooter' | 'platformer' | 'racing' | 'pauseMenu' | 'gameOver' | 'settings' | 'login';
 
 export const UI_TEMPLATES: Array<{ kind: UITemplateKind; label: string; blurb: string }> = [
   { kind: 'shooter', label: 'Shooter HUD', blurb: 'Health · ammo · score · crosshair' },
@@ -229,6 +229,7 @@ export const UI_TEMPLATES: Array<{ kind: UITemplateKind; label: string; blurb: s
   { kind: 'pauseMenu', label: 'Pause Menu', blurb: 'Resume · Restart · Quit' },
   { kind: 'gameOver', label: 'Game Over', blurb: 'Score readout · Retry' },
   { kind: 'settings', label: 'Settings Menu', blurb: 'Volume · difficulty · toggle · name' },
+  { kind: 'login', label: 'Login Screen', blurb: 'Username · password · sign in' },
 ];
 
 export type UITemplateVar = { name: string; defaultValue: number | string | boolean; type?: 'number' | 'string' | 'boolean' };
@@ -353,6 +354,82 @@ export const makeUITemplate = (kind: UITemplateKind): UITemplateResult => {
           { name: 'difficulty', defaultValue: 'Normal', type: 'string' },
           { name: 'fullscreen', defaultValue: true, type: 'boolean' },
           { name: 'playerName', defaultValue: 'Player 1', type: 'string' },
+        ],
+      };
+    }
+    case 'login': {
+      const doc = makeUIDocument('Login Screen', 'screen');
+      doc.visibleOnStart = true;
+      doc.root.style = { background: 'rgba(5,7,11,0.72)' };
+      const card = makeUIElement('panel', 'Card');
+      card.style = {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        padding: '32px 36px',
+        background: 'rgba(17,20,28,0.96)',
+        borderRadius: '16px',
+        custom: { minWidth: '320px', boxShadow: '0 18px 52px rgba(0,0,0,0.45)' },
+      };
+      card.animation = { type: 'pop', duration: 0.3 };
+      const title = text('Title', 'Welcome', { color: '#fff', fontSize: '26px', fontWeight: '800', textAlign: 'center' });
+      const subtitle = text('Subtitle', 'Sign in to continue', {
+        color: '#9aa3b5',
+        fontSize: '13px',
+        fontWeight: '500',
+        textAlign: 'center',
+      });
+      const username = makeUIElement('input', 'Username');
+      username.valueVariable = 'username';
+      username.placeholder = 'Username';
+      username.style = {
+        width: '100%',
+        padding: '10px 12px',
+        background: 'rgba(10,12,18,0.9)',
+        color: '#fff',
+        border: '1px solid rgba(255,255,255,0.18)',
+        borderRadius: '8px',
+      };
+      const password = makeUIElement('input', 'Password');
+      password.valueVariable = 'password';
+      password.placeholder = 'Password';
+      password.style = {
+        width: '100%',
+        padding: '10px 12px',
+        background: 'rgba(10,12,18,0.9)',
+        color: '#fff',
+        border: '1px solid rgba(255,255,255,0.18)',
+        borderRadius: '8px',
+      };
+      const error = text('Error', '', { color: '#ff6b6b', fontSize: '13px', fontWeight: '600', textAlign: 'center' }, 'loginError');
+      error.bindings = [
+        { target: 'text', expression: 'loginError' },
+        { target: 'visible', expression: "loginError != ''" },
+      ];
+      const login = menuButton('Sign In', 'loginPressed');
+      const guest = makeUIElement('button', 'Guest');
+      guest.text = 'Continue as Guest';
+      guest.onClickEvent = 'loginAsGuest';
+      guest.style = {
+        padding: '10px 18px',
+        background: 'transparent',
+        color: '#cdd5e3',
+        border: '1px solid rgba(255,255,255,0.18)',
+        borderRadius: '10px',
+        fontWeight: '600',
+        fontSize: '14px',
+        textAlign: 'center',
+      };
+      guest.states = { hover: { background: 'rgba(255,255,255,0.06)' }, active: { background: 'rgba(255,255,255,0.1)' } };
+      card.children = [title, subtitle, username, password, error, login, guest];
+      doc.root.children = [anchor(card, 'center', 'middle', 0, 0)];
+      return {
+        doc,
+        vars: [
+          { name: 'username', defaultValue: '', type: 'string' },
+          { name: 'password', defaultValue: '', type: 'string' },
+          { name: 'loginError', defaultValue: '', type: 'string' },
+          { name: 'isLoggedIn', defaultValue: false, type: 'boolean' },
         ],
       };
     }

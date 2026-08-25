@@ -12,6 +12,7 @@ import {
   Hash,
   Image as ImageIcon,
   LayoutDashboard,
+  LogIn,
   MonitorPlay,
   MousePointerClick,
   Pause,
@@ -44,6 +45,7 @@ const TEMPLATE_ICON: Record<UITemplateKind, typeof PanelIcon> = {
   pauseMenu: Pause,
   gameOver: Skull,
   settings: SlidersHorizontal,
+  login: LogIn,
 };
 
 type Mode = 'design' | 'logic';
@@ -767,18 +769,18 @@ export function UIEditorPanel() {
         <UINewMenu />
       </div>
 
-      {doc && (
+      {doc && mode === 'logic' && (
         <div className="ui-tabbar">
-          <button className={clsx(mode === 'design' && 'active')} onClick={() => setMode('design')}>Design</button>
-          <button className={clsx(mode === 'logic' && 'active')} onClick={() => setMode('logic')}>Logic</button>
+          <button onClick={() => setMode('design')}>Design</button>
+          <button className="active" onClick={() => setMode('logic')}>Logic</button>
         </div>
       )}
 
       {!doc ? (
-        <div className="empty-state wide">
+        <div className="empty-state wide ui-empty">
           <LayoutDashboard size={18} aria-hidden />
-          <span>No UI yet</span>
-          <small>Start blank, or drop in a ready-made HUD you can tweak.</small>
+          <span>Build HUDs & menus</span>
+          <small>Start from a template — login, pause, settings, or a genre HUD — then tweak on the canvas.</small>
           <div className="ui-template-grid">
             <button className="ui-template-card" onClick={() => createUIDocument(undefined, 'screen')}>
               <LayoutDashboard size={18} aria-hidden />
@@ -805,22 +807,48 @@ export function UIEditorPanel() {
       ) : mode === 'logic' ? (
         <UILogicGraph doc={doc} />
       ) : (
-        // Horizontal layout: tools sidebar on the left, live preview filling the right.
-        <div className="ui-design">
-          <div className="ui-side">
-            <div className="ui-surface">
-              <span className="ui-surface-label">Type</span>
-              <div className="ui-seg">
-                <button className={clsx(doc.surface === 'screen' && 'active')} onClick={() => updateUIDocument(doc.id, { surface: 'screen' })} title="Drawn on the player's screen (HUD)">
-                  Screen HUD
-                </button>
-                <button className={clsx(doc.surface === 'world' && 'active')} onClick={() => updateUIDocument(doc.id, { surface: 'world' })} title="Anchored over a 3D object (attach it in an object's Inspector)">
-                  World
-                </button>
-              </div>
-            </div>
+        // Spline-style: full-bleed canvas with floating docks (layers left, inspector right, tools top).
+        <div className="ui-design ui-design-canvas-first">
+          <div className="ui-design-frame">
+            <UIEditLayer doc={doc} fillParent={doc.surface === 'screen'} />
+          </div>
 
-            <div className="ui-presets">
+          <div className="ui-float-dock" role="toolbar" aria-label="UI tools">
+            <div className="ui-seg ui-dock-seg">
+              <button className="active" onClick={() => setMode('design')}>
+                Design
+              </button>
+              <button onClick={() => setMode('logic')}>
+                Logic
+              </button>
+            </div>
+            <div className="ui-dock-divider" aria-hidden />
+            <div className="ui-seg ui-dock-seg">
+              <button className={clsx(doc.surface === 'screen' && 'active')} onClick={() => updateUIDocument(doc.id, { surface: 'screen' })} title="Drawn on the player's screen (HUD)">
+                Screen
+              </button>
+              <button className={clsx(doc.surface === 'world' && 'active')} onClick={() => updateUIDocument(doc.id, { surface: 'world' })} title="Anchored over a 3D object">
+                World
+              </button>
+            </div>
+            <div className="ui-seg ui-dock-seg">
+              <button
+                className={clsx((doc.renderMode ?? 'dom') === 'dom' && 'active')}
+                onClick={() => updateUIDocument(doc.id, { renderMode: 'dom' })}
+                title="HTML/CSS overlay"
+              >
+                DOM
+              </button>
+              <button
+                className={clsx(doc.renderMode === 'webgl' && 'active')}
+                onClick={() => updateUIDocument(doc.id, { renderMode: 'webgl' })}
+                title="WebGL (bloom / diegetic)"
+              >
+                WebGL
+              </button>
+            </div>
+            <div className="ui-dock-divider" aria-hidden />
+            <div className="ui-presets ui-dock-presets">
               {PRESETS.map(({ preset, label, icon: Icon }) => (
                 <button key={preset} title={`Add ${label}`} onClick={() => selectUIElement(addUIPreset(doc.id, presetParent(), preset))}>
                   <Icon size={14} aria-hidden />
@@ -828,80 +856,51 @@ export function UIEditorPanel() {
                 </button>
               ))}
             </div>
-
-            <div className="ui-surface">
-              <span className="ui-surface-label">Theme</span>
-              <div className="ui-theme-row">
-                {UI_THEMES.map((theme) => (
-                  <button key={theme.kind} title={theme.blurb} onClick={() => applyUITheme(doc.id, theme.kind)}>
-                    {theme.label}
-                  </button>
-                ))}
-              </div>
+            <div className="ui-theme-row ui-dock-themes">
+              {UI_THEMES.map((theme) => (
+                <button key={theme.kind} title={theme.blurb} onClick={() => applyUITheme(doc.id, theme.kind)}>
+                  {theme.label}
+                </button>
+              ))}
             </div>
+          </div>
 
-            <div className="ui-section">
-              <div className="ui-section-title">Layers</div>
-              <div className="ui-tree">
-                <TreeRow element={doc.root} doc={doc} depth={0} addingUnder={addingUnder} setAddingUnder={setAddingUnder} />
-              </div>
+          <aside className="ui-float-panel ui-float-layers">
+            <div className="ui-section-title">Layers</div>
+            <div className="ui-tree">
+              <TreeRow element={doc.root} doc={doc} depth={0} addingUnder={addingUnder} setAddingUnder={setAddingUnder} />
             </div>
+          </aside>
 
-            {selectedElement && (
-              <div className="ui-section">
-                <div className="ui-section-title">{selectedElement.name} <span className="ui-section-kind">{selectedElement.kind}</span></div>
-                <Properties doc={doc} element={selectedElement} />
+          {selectedElement && (
+            <aside className="ui-float-panel ui-float-inspector">
+              <div className="ui-section-title">
+                {selectedElement.name} <span className="ui-section-kind">{selectedElement.kind}</span>
               </div>
-            )}
-
-            <details className="ui-section ui-doc-settings">
-              <summary>Document settings</summary>
-              <label className="ui-check">
-                <input type="checkbox" checked={doc.visibleOnStart} onChange={(event) => updateUIDocument(doc.id, { visibleOnStart: event.target.checked })} />
-                <span>Visible on start</span>
-              </label>
-              <div className="ui-surface">
-                <span className="ui-surface-label">Renderer</span>
-                <div className="ui-seg">
-                  <button
-                    className={clsx((doc.renderMode ?? 'dom') === 'dom' && 'active')}
-                    onClick={() => updateUIDocument(doc.id, { renderMode: 'dom' })}
-                    title="HTML/CSS overlay. Simplest, full CSS, but no depth occlusion or post-processing."
-                  >
-                    DOM
-                  </button>
-                  <button
-                    className={clsx(doc.renderMode === 'webgl' && 'active')}
-                    onClick={() => updateUIDocument(doc.id, { renderMode: 'webgl' })}
-                    title="Rendered in the 3D canvas (uikit). Gets bloom/post-FX, is depth-correct in world space, and can be mapped onto in-world surfaces."
-                  >
-                    WebGL ✨
-                  </button>
+              <Properties doc={doc} element={selectedElement} />
+              <details className="ui-section ui-doc-settings">
+                <summary>Document</summary>
+                <label className="ui-check">
+                  <input type="checkbox" checked={doc.visibleOnStart} onChange={(event) => updateUIDocument(doc.id, { visibleOnStart: event.target.checked })} />
+                  <span>Visible on start</span>
+                </label>
+                <div className="ui-doc-css">
+                  <span className="ui-surface-label">
+                    <Code2 size={12} aria-hidden /> Stylesheet
+                  </span>
+                  <textarea
+                    className="ui-css"
+                    rows={5}
+                    spellCheck={false}
+                    aria-label="Document stylesheet"
+                    value={doc.css ?? ''}
+                    placeholder={'.hud-card {\n  background: linear-gradient(180deg, #2f96a6, #11414c);\n  border-radius: 12px;\n}'}
+                    onChange={(event) => setUIDocumentCss(doc.id, event.target.value)}
+                  />
                 </div>
-              </div>
-              <div className="ui-doc-css">
-                <span className="ui-surface-label"><Code2 size={12} aria-hidden /> Stylesheet</span>
-                <p className="nfn-desc">
-                  Scoped to this document — <code>:root</code>, <code>html</code> and <code>body</code> rules style the widget frame, never the editor.
-                  Ids are matched as classes (<code>#hud</code> → <code>.id-hud</code>).
-                  {doc.renderMode === 'webgl' && <> <strong>The WebGL renderer ignores CSS</strong> — switch to DOM above to use it.</>}
-                </p>
-                <textarea
-                  className="ui-css"
-                  rows={8}
-                  spellCheck={false}
-                  aria-label="Document stylesheet"
-                  value={doc.css ?? ''}
-                  placeholder={'.hud-card {\n  background: linear-gradient(180deg, #2f96a6, #11414c);\n  border-radius: 12px;\n}'}
-                  onChange={(event) => setUIDocumentCss(doc.id, event.target.value)}
-                />
-              </div>
-            </details>
-          </div>
-
-          <div className="ui-design-frame">
-            <UIEditLayer doc={doc} fillParent={doc.surface === 'screen'} />
-          </div>
+              </details>
+            </aside>
+          )}
         </div>
       )}
     </section>

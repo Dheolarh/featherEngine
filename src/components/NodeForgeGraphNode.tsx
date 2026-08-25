@@ -236,7 +236,9 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'action.print': Terminal,
   'ui.show': LayoutDashboard,
   'ui.hide': LayoutDashboard,
+  'ui.toggle': ToggleLeft,
   'ui.setText': TextIcon,
+  'ui.setVisible': Eye,
   'variable.getObject': Database,
   'variable.setObject': Database,
 };
@@ -458,6 +460,8 @@ export const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: 
       ];
     case 'ui.setText':
       return [{ id: 'text', label: 'Text' }];
+    case 'ui.setVisible':
+      return [{ id: 'visible', label: 'Visible' }];
     case 'data.tableGet':
       return [{ id: 'rowKey', label: 'Row Key' }];
     case 'action.translate':

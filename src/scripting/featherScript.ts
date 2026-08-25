@@ -582,8 +582,12 @@ class FeatherScriptPrinter {
         return `UI.show(${quote(node.data.documentId ?? 'document')})`;
       case 'ui.hide':
         return `UI.hide(${quote(node.data.documentId ?? 'document')})`;
+      case 'ui.toggle':
+        return `UI.toggle(${quote(node.data.documentId ?? 'document')})`;
       case 'ui.setText':
         return `UI.set_text(${quote(node.data.documentId ?? 'document')}, ${quote(node.data.elementId ?? 'element')}, ${this.valueInput(node, 'text', node.data.stringValue ?? '')})`;
+      case 'ui.setVisible':
+        return `UI.set_visible(${quote(node.data.documentId ?? 'document')}, ${quote(node.data.elementId ?? 'element')}, ${this.valueInput(node, 'visible', node.data.visible ?? true)})`;
       case 'save.write':
         return `Save.write(${quote(node.data.saveSlot ?? 'slot1')})`;
       case 'save.load':

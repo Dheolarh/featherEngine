@@ -1059,9 +1059,20 @@ class FeatherGraphBuilder {
         return this.addNode('ui.show', { documentId: stringArg('documentId', 0, '') || undefined }, 1);
       case 'UI.hide':
         return this.addNode('ui.hide', { documentId: stringArg('documentId', 0, '') || undefined }, 1);
+      case 'UI.toggle':
+        return this.addNode('ui.toggle', { documentId: stringArg('documentId', 0, '') || undefined }, 1);
       case 'UI.set_text': {
         const node = this.addNode('ui.setText', { documentId: stringArg('documentId', 0, '') || undefined, elementId: stringArg('elementId', 1, '') || undefined }, 1);
         this.attachValueOrLiteral(node, 'text', rawArg('text', 2), 'string', 'stringValue');
+        return node;
+      }
+      case 'UI.set_visible': {
+        const node = this.addNode(
+          'ui.setVisible',
+          { documentId: stringArg('documentId', 0, '') || undefined, elementId: stringArg('elementId', 1, '') || undefined },
+          1,
+        );
+        this.attachValueOrLiteral(node, 'visible', rawArg('visible', 2), 'boolean', 'visible');
         return node;
       }
       case 'Save.write':

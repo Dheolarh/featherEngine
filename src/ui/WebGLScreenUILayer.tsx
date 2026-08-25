@@ -32,6 +32,7 @@ export function WebGLScreenUILayer() {
   const runtimeVariableValues = useEditorStore((state) => state.runtimeVariableValues);
   const runtimeObjectVariables = useEditorStore((state) => state.runtimeObjectVariables);
   const textOverrides = useEditorStore((state) => state.runtimeUITextOverrides);
+  const visibleOverrides = useEditorStore((state) => state.runtimeUIVisibleOverrides);
   const assets = useEditorStore((state) => state.assets);
   const fireCustomEvent = useEditorStore((state) => state.fireCustomEvent);
 
@@ -58,6 +59,7 @@ export function WebGLScreenUILayer() {
             element={{ ...doc.root, anchor: undefined }}
             ctx={ctx}
             textOverrides={scopeOverrides(textOverrides, doc.id)}
+            visibleOverrides={scopeBoolOverrides(visibleOverrides, doc.id)}
             resolveAssetUrl={resolveAssetUrl}
             resolveComponent={(documentId) => uiDocuments.find((d) => d.id === documentId)}
             onButtonClick={(el) => el.onClickEvent && fireCustomEvent(el.onClickEvent)}
@@ -66,4 +68,13 @@ export function WebGLScreenUILayer() {
       ))}
     </Fullscreen>
   );
+}
+
+function scopeBoolOverrides(all: Record<string, boolean>, docId: string): Record<string, boolean> {
+  const prefix = `${docId}:`;
+  const out: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(all)) {
+    if (key.startsWith(prefix)) out[key.slice(prefix.length)] = value;
+  }
+  return out;
 }

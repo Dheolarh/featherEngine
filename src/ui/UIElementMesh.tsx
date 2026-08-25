@@ -18,6 +18,8 @@ export interface UIElementMeshProps {
   ctx: UIExprContext;
   /** Runtime text overrides keyed by element id (from ui.setText). */
   textOverrides?: Record<string, string>;
+  /** Runtime visibility overrides keyed by element id (from ui.setVisible). */
+  visibleOverrides?: Record<string, boolean>;
   resolveAssetUrl?: (assetId: string) => string | undefined;
   /** Fired when a button element is clicked (live HUD only). */
   onButtonClick?: (element: UIElement) => void;
@@ -39,11 +41,13 @@ function truthy(value: unknown): boolean {
   return typeof value === 'number' ? value !== 0 : Boolean(value);
 }
 
-export function UIElementMesh({ element, ctx, textOverrides, resolveAssetUrl, onButtonClick, resolveComponent, componentStack }: UIElementMeshProps) {
+export function UIElementMesh({ element, ctx, textOverrides, visibleOverrides, resolveAssetUrl, onButtonClick, resolveComponent, componentStack }: UIElementMeshProps) {
+  if (element.id in (visibleOverrides ?? {}) && !visibleOverrides![element.id]) return null;
+
   const resolved: Partial<Record<string, unknown>> = {};
   for (const binding of element.bindings) resolved[binding.target] = evalExpression(binding.expression, ctx);
 
-  if ('visible' in resolved && !truthy(resolved.visible)) return null;
+  if (!('visible' in (visibleOverrides ?? {}) && visibleOverrides![element.id]) && 'visible' in resolved && !truthy(resolved.visible)) return null;
 
   const props = styleToUikit(element.style);
   const disabled = 'disabled' in resolved && truthy(resolved.disabled);
@@ -84,6 +88,7 @@ export function UIElementMesh({ element, ctx, textOverrides, resolveAssetUrl, on
       element={child}
       ctx={ctx}
       textOverrides={textOverrides}
+      visibleOverrides={visibleOverrides}
       resolveAssetUrl={resolveAssetUrl}
       onButtonClick={onButtonClick}
       resolveComponent={resolveComponent}
@@ -108,6 +113,7 @@ export function UIElementMesh({ element, ctx, textOverrides, resolveAssetUrl, on
               element={source.root}
               ctx={{ ...ctx, params }}
               textOverrides={textOverrides}
+              visibleOverrides={visibleOverrides}
               resolveAssetUrl={resolveAssetUrl}
               onButtonClick={onButtonClick}
               resolveComponent={resolveComponent}

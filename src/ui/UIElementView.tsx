@@ -21,6 +21,8 @@ export interface UIElementViewProps {
   ctx: UIExprContext;
   /** Runtime text overrides keyed by element id (from ui.setText). */
   textOverrides?: Record<string, string>;
+  /** Runtime visibility overrides keyed by element id (from ui.setVisible). When set, wins over bindings. */
+  visibleOverrides?: Record<string, boolean>;
   /** Resolve an image element's asset id to a displayable URL. */
   resolveAssetUrl?: (assetId: string) => string | undefined;
   /** Fired when a button element is clicked (live HUD only; preview passes undefined). */
@@ -107,6 +109,7 @@ export function UIElementView({
   element,
   ctx,
   textOverrides,
+  visibleOverrides,
   resolveAssetUrl,
   onButtonClick,
   onValueChange,
@@ -119,14 +122,18 @@ export function UIElementView({
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
+  // Runtime visibility override (ui.setVisible) wins over bind-visible expressions.
+  if (element.id in (visibleOverrides ?? {}) && !visibleOverrides![element.id]) return null;
+
   // Resolve this element's bindings into a small map of target → value.
   const resolved: Partial<Record<string, unknown>> = {};
   for (const binding of element.bindings) {
     resolved[binding.target] = evalExpression(binding.expression, ctx);
   }
 
-  // A `visible` binding evaluating to false removes the element (and its subtree) entirely.
-  if ('visible' in resolved && !truthyBind(resolved.visible)) return null;
+  // A `visible` binding evaluating to false removes the element (and its subtree) entirely —
+  // unless a runtime override forced it visible.
+  if (!('visible' in (visibleOverrides ?? {}) && visibleOverrides![element.id]) && 'visible' in resolved && !truthyBind(resolved.visible)) return null;
 
   const interactive = INTERACTIVE.has(element.kind);
   const disabled = 'disabled' in resolved && truthyBind(resolved.disabled);
@@ -162,6 +169,7 @@ export function UIElementView({
       element={child}
       ctx={ctx}
       textOverrides={textOverrides}
+      visibleOverrides={visibleOverrides}
       resolveAssetUrl={resolveAssetUrl}
       onButtonClick={onButtonClick}
       onValueChange={onValueChange}
@@ -403,6 +411,7 @@ export function UIElementView({
             element={source.root}
             ctx={{ ...ctx, params }}
             textOverrides={textOverrides}
+            visibleOverrides={visibleOverrides}
             resolveAssetUrl={resolveAssetUrl}
             onButtonClick={onButtonClick}
             onValueChange={onValueChange}

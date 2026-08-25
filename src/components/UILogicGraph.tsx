@@ -77,7 +77,10 @@ function Flow({ doc }: { doc: UIDocument }) {
       <aside className="node-palette">
         <div className="blueprint-card">
           <strong>{doc.name} — Logic</strong>
-          <span>Runs via a “UI Logic” object. Wire Show UI / Set UI Text to events.</span>
+          <span>
+            Runs via a “UI Logic” object. Login recipe: Custom Event(loginPressed) → Set Variable → Hide UI. Also:
+            Show / Hide / Toggle UI, Set UI Text, Set UI Visible.
+          </span>
         </div>
         {UI_GROUPS.map(({ title, icon: Icon, nodes }) => (
           <section key={title}>

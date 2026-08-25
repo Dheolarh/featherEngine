@@ -147,7 +147,7 @@ export const nodeGroups: Array<{
   {
     title: 'UI',
     icon: LayoutDashboard,
-    nodes: ['Show UI', 'Hide UI', 'Set UI Text'],
+    nodes: ['Show UI', 'Hide UI', 'Toggle UI', 'Set UI Text', 'Set UI Visible'],
   },
 ];
 
@@ -680,8 +680,12 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
     node.data.nodeKind === 'action.setMaterialProperty' || node.data.nodeKind === 'action.getMaterialProperty';
   const updatesMaterialColorTarget = node.data.nodeKind === 'action.setMaterialColor';
   const updatesUIDoc =
-    node.data.nodeKind === 'ui.show' || node.data.nodeKind === 'ui.hide' || node.data.nodeKind === 'ui.setText';
-  const updatesUIElement = node.data.nodeKind === 'ui.setText';
+    node.data.nodeKind === 'ui.show' ||
+    node.data.nodeKind === 'ui.hide' ||
+    node.data.nodeKind === 'ui.toggle' ||
+    node.data.nodeKind === 'ui.setText' ||
+    node.data.nodeKind === 'ui.setVisible';
+  const updatesUIElement = node.data.nodeKind === 'ui.setText' || node.data.nodeKind === 'ui.setVisible';
   const updatesObjectKey =
     node.data.nodeKind === 'variable.getObject' || node.data.nodeKind === 'variable.setObject';
   const updatesRandom = node.data.nodeKind === 'value.random';
@@ -2478,7 +2482,21 @@ export function NodeInspector({ node }: { node?: NodeForgeNode }) {
                 </option>
               ))}
             </select>
-            <small className="node-hint">Wire a value into the Text input, or set a literal String node.</small>
+            {node.data.nodeKind === 'ui.setText' && (
+              <small className="node-hint">Wire a value into the Text input, or set a literal String node.</small>
+            )}
+          </label>
+        )}
+
+        {node.data.nodeKind === 'ui.setVisible' && (
+          <label className="node-field">
+            <span>Visible</span>
+            <input
+              type="checkbox"
+              checked={node.data.visible !== false}
+              onChange={(event) => updateGraphNodeData(node.id, { visible: event.target.checked })}
+            />
+            <small className="node-hint">Or wire a boolean into the Visible pin.</small>
           </label>
         )}
 
