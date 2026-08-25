@@ -65,9 +65,9 @@ import {
 } from 'lucide-react';
 import type { GraphNodeKind, GraphNodeTone, GraphValueType, NodeForgeNode } from '../types';
 import { keyLabelByCode } from '../utils/keyboardCodes';
-import { outputTypeOf } from '../store/editor/wireTypes';
+import { inputTypeForHandle, outputTypeOf, valueProducerKinds } from '../store/editor/wireTypes';
 
-export { outputTypeOf, outputTypeForHandle, inputTypeForHandle, valueTypesCompatible } from '../store/editor/wireTypes';
+export { outputTypeOf, outputTypeForHandle, inputTypeForHandle, valueTypesCompatible, valueProducerKinds } from '../store/editor/wireTypes';
 
 /** Wire/handle colors per data type. 'any' = type not statically known (e.g. variable.get). */
 export const VALUE_TYPE_COLORS: Record<GraphValueType | 'any', string> = {
@@ -242,73 +242,6 @@ const kindIcon: Partial<Record<GraphNodeKind, typeof Zap>> = {
   'variable.getObject': Database,
   'variable.setObject': Database,
 };
-
-export const valueProducerKinds = new Set<GraphNodeKind>([
-  'logic.compare',
-  'logic.and',
-  'logic.or',
-  'logic.not',
-  'logic.select',
-  'math.abs',
-  'math.min',
-  'math.max',
-  'math.round',
-  'math.power',
-  'math.sin',
-  'math.cos',
-  'string.append',
-  'math.add',
-  'math.subtract',
-  'math.multiply',
-  'math.divide',
-  'math.modulo',
-  'math.clamp',
-  'math.lerp',
-  'math.distance',
-  'math.mapRange',
-  'math.floor',
-  'math.vectorLength',
-  'math.dot',
-  'math.vectorAdd',
-  'math.vectorSubtract',
-  'math.vectorScale',
-  'math.normalize',
-  'math.makeVector',
-  'action.getPosition',
-  'action.getRotation',
-  'action.getScale',
-  'query.findActorByBlueprint',
-  'query.findActorByTag',
-  'query.raycast',
-  'query.velocity',
-  'query.angularVelocity',
-  'value.number',
-  'value.random',
-  'value.string',
-  'value.boolean',
-  'value.vector3',
-  'variable.get',
-  'variable.getObject',
-  'data.tableGet',
-  'material.color',
-  'material.scalar',
-  'material.texture',
-  'material.mix',
-  'material.multiply',
-  'material.add',
-  'material.clamp',
-  'action.getMaterialColor',
-  'action.getMaterialProperty',
-  'input.move',
-  'input.driveInput',
-  'query.vehicleSpeed',
-  'query.grounded',
-  'query.getTimeOfDay',
-  'save.has',
-  'animator.getParam',
-  'animator.getState',
-  'ai.playerLocation',
-]);
 
 export const valueInputsFor = (kind: GraphNodeKind): Array<{ id: string; label: string }> => {
   switch (kind) {
@@ -731,7 +664,6 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
     ? outputTypeOf[data.nodeKind] ?? (data.valueType as GraphValueType | undefined) ?? 'any'
     : null;
 
-  const showInlineDescription = valueInputs.length === 0;
   const pinTop = valueInputs.length ? (detail ? 110 : 92) : 82;
   const pinStep = 28;
 
@@ -778,7 +710,7 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
     <div
       className={`nodeforge-node ${data.tone} ${isEvent ? 'is-event' : ''} ${isValueProducer ? 'is-pure' : ''} ${valueInputs.length ? 'has-value-inputs' : ''} ${isSelected ? 'selected' : ''} ${runtimeError ? 'has-error' : ''}`}
       style={pinBottom ? { minHeight: pinBottom } : undefined}
-      title={runtimeError ? `Runtime error: ${runtimeError}` : `${data.label} · ${data.category}`}
+      title={runtimeError ? `Runtime error: ${runtimeError}` : `${data.label} · ${data.description}`}
       // Select directly so the inspector always opens, independent of ReactFlow's
       // pointer-based selection (which can be unreliable inside a docked panel).
       onClick={() => useEditorStore.getState().selectGraphNode(id)}
@@ -809,7 +741,11 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
         <Handle
           key={input.id}
           id={input.id}
-          className="node-port value-port target"
+          className={`node-port value-port value-${inputTypeForHandle(
+            data.nodeKind,
+            input.id,
+            data.valueType as GraphValueType | undefined,
+          )} target`}
           type="target"
           position={Position.Left}
           style={{ top: pinTop + index * pinStep }}
@@ -859,10 +795,9 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
         </span>
       )}
 
-      {(detail || (showInlineDescription && data.description)) && (
+      {detail && (
         <div className="nfn-body">
-          {detail && <span className="nfn-detail">{detail}</span>}
-          {showInlineDescription && data.description && <p className="nfn-desc">{data.description}</p>}
+          <span className="nfn-detail">{detail}</span>
         </div>
       )}
 

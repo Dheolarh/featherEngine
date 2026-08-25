@@ -1,5 +1,5 @@
-import type { Edge, OnConnect, OnEdgesChange, OnNodesChange } from '@xyflow/react';
-import { addEdge, applyEdgeChanges, applyNodeChanges } from '@xyflow/react';
+import type { Edge, OnConnect, OnEdgesChange, OnNodesChange, OnReconnect } from '@xyflow/react';
+import { addEdge, applyEdgeChanges, applyNodeChanges, reconnectEdge } from '@xyflow/react';
 import { create } from 'zustand';
 import {
   PROJECT_VERSION,
@@ -1157,6 +1157,7 @@ interface EditorState {
   onNodesChange: OnNodesChange<NodeForgeNode>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
+  onReconnect: OnReconnect<Edge>;
   addGraphNode: (label: string, category: GraphNodeCategory) => void;
   exportProject: () => NodeForgeProject;
   loadProject: (project: NodeForgeProject) => void;
@@ -6123,11 +6124,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                     target: targetId,
                     sourceHandle,
                     targetHandle,
-                    animated: !isValueEdge,
+                    animated: false,
                     type: 'smoothstep',
                     style: isValueEdge ? { stroke: '#3DD0DC', strokeWidth: 2 } : undefined,
                   },
-                  graph.edges,
+                  isValueEdge
+                    ? graph.edges.filter(
+                        (edge) => edge.target !== targetId || edge.targetHandle !== targetHandle,
+                      )
+                    : graph.edges,
                 ),
               }
             : graph,
@@ -13046,15 +13051,73 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                 edges: addEdge(
                   {
                     ...connection,
-                    animated: !isValueEdge,
+                    animated: false,
                     type: 'smoothstep',
                     style: isValueEdge ? { stroke: '#3DD0DC', strokeWidth: 2 } : undefined,
                   },
-                  graph.edges,
+                  // Value pins are single-input. Replacing the existing wire makes the visual
+                  // result match the runtime, which resolves one value per target handle.
+                  isValueEdge
+                    ? graph.edges.filter(
+                        (edge) => edge.target !== connection.target || edge.targetHandle !== connection.targetHandle,
+                      )
+                    : graph.edges,
                 ),
               }
             : graph,
         ),
+        isDirty: true,
+      };
+    }),
+  onReconnect: (oldEdge, connection) =>
+    set((state) => {
+      const activeBlueprint = state.blueprints.find((item) => item.id === state.activeBlueprintId);
+      if (!activeBlueprint) return state;
+      const graph = state.graphs.find((item) => item.id === activeBlueprint.graphId);
+      const sourceNode = graph?.nodes.find((node) => node.id === connection.source);
+      const targetNode = graph?.nodes.find((node) => node.id === connection.target);
+      if (!graph || !sourceNode || !targetNode || connection.source === connection.target) return state;
+      if (
+        !isGraphConnectionValid(
+          sourceNode.data.nodeKind,
+          targetNode.data.nodeKind,
+          connection.sourceHandle,
+          connection.targetHandle,
+          sourceNode.data.valueType,
+          targetNode.data.valueType,
+        )
+      ) {
+        return state;
+      }
+      const isValueEdge = Boolean(connection.targetHandle && connection.targetHandle !== 'exec-in');
+      return {
+        blueprints: invalidateFeatherSourceForGraph(state.blueprints, activeBlueprint.graphId),
+        graphs: state.graphs.map((candidate) => {
+          if (candidate.id !== activeBlueprint.graphId) return candidate;
+          const reconnectableEdges = isValueEdge
+            ? candidate.edges.filter(
+                (edge) =>
+                  edge.id === oldEdge.id ||
+                  edge.target !== connection.target ||
+                  edge.targetHandle !== connection.targetHandle,
+              )
+            : candidate.edges;
+          return {
+            ...candidate,
+            // Keep the edge id stable so React Flow can animate the endpoint move instead of
+            // removing one SVG path and mounting another.
+            edges: reconnectEdge(oldEdge, connection, reconnectableEdges, { shouldReplaceId: false }).map((edge) =>
+              edge.id === oldEdge.id
+                ? {
+                    ...edge,
+                    animated: false,
+                    type: 'smoothstep',
+                    style: isValueEdge ? { stroke: '#3DD0DC', strokeWidth: 2 } : undefined,
+                  }
+                : edge,
+            ),
+          };
+        }),
         isDirty: true,
       };
     }),
@@ -13108,7 +13171,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       uiDocuments: state.uiDocuments ?? [],
       particleSystems: state.particleSystems ?? [],
       blueprints: state.blueprints,
-      graphs: state.graphs,
+      // React Flow's selection/drag markers are editor-session state, not project content. Leaving
+      // them in a save made projects reopen with arbitrary cards/wires highlighted.
+      graphs: state.graphs.map((graph) => ({
+        ...graph,
+        nodes: graph.nodes.map((node) => {
+          const clean = { ...node };
+          delete clean.selected;
+          delete clean.dragging;
+          return clean;
+        }),
+        edges: graph.edges.map((edge) => {
+          const clean = { ...edge };
+          delete clean.selected;
+          return clean;
+        }),
+      })),
       prefabs: state.prefabs ?? [],
       treeSpecs: state.treeSpecs ?? [],
       modelSpecs: state.modelSpecs ?? [],

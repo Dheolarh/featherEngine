@@ -77,6 +77,68 @@ const blueprintContentChanged = (next: ScriptBlueprint[], previous: ScriptBluepr
   });
 };
 
+const shallowChangedExcept = (
+  next: Record<string, unknown>,
+  previous: Record<string, unknown>,
+  ignored: ReadonlySet<string>,
+): boolean => {
+  const keys = new Set([...Object.keys(next), ...Object.keys(previous)]);
+  for (const key of keys) {
+    if (!ignored.has(key) && next[key] !== previous[key]) return true;
+  }
+  return false;
+};
+
+const GRAPH_KEYS_TO_IGNORE = new Set(['nodes', 'edges']);
+const NODE_KEYS_TO_IGNORE = new Set(['selected', 'dragging']);
+const EDGE_KEYS_TO_IGNORE = new Set(['selected']);
+
+const graphContentChanged = (next: ProjectGraph[], previous: ProjectGraph[]): boolean => {
+  if (next === previous) return false;
+  if (next.length !== previous.length) return true;
+
+  return next.some((graph, graphIndex) => {
+    const before = previous[graphIndex];
+    if (!before || graph.id !== before.id) return true;
+    if (graph === before) return false;
+    if (
+      shallowChangedExcept(
+        graph as unknown as Record<string, unknown>,
+        before as unknown as Record<string, unknown>,
+        GRAPH_KEYS_TO_IGNORE,
+      )
+    ) return true;
+    if (graph.nodes.length !== before.nodes.length || graph.edges.length !== before.edges.length) return true;
+    const nodesChanged = graph.nodes.some((node, nodeIndex) => {
+      const priorNode = before.nodes[nodeIndex];
+      return (
+        !priorNode ||
+        node.id !== priorNode.id ||
+        (node !== priorNode &&
+          shallowChangedExcept(
+            node as unknown as Record<string, unknown>,
+            priorNode as unknown as Record<string, unknown>,
+            NODE_KEYS_TO_IGNORE,
+          ))
+      );
+    });
+    if (nodesChanged) return true;
+    return graph.edges.some((edge, edgeIndex) => {
+      const priorEdge = before.edges[edgeIndex];
+      return (
+        !priorEdge ||
+        edge.id !== priorEdge.id ||
+        (edge !== priorEdge &&
+          shallowChangedExcept(
+            edge as unknown as Record<string, unknown>,
+            priorEdge as unknown as Record<string, unknown>,
+            EDGE_KEYS_TO_IGNORE,
+          ))
+      );
+    });
+  });
+};
+
 const syncDepths = () => {
   const { undoDepth, redoDepth } = useEditorStore.getState();
   if (undoDepth !== undoStack.length || redoDepth !== redoStack.length) {
@@ -143,11 +205,12 @@ export const initHistory = () => {
   if (attached) return;
   attached = true;
   useEditorStore.subscribe((state, prev) => {
-    // Only project-content edits are undoable. Selection/UI/depth changes leave these refs untouched.
+    // Only project-content edits are undoable. React Flow rebuilds graph references for selection,
+    // so compare those transient flags explicitly rather than treating every new array as an edit.
     if (
       state.scenes === prev.scenes &&
       !blueprintContentChanged(state.blueprints, prev.blueprints) &&
-      state.graphs === prev.graphs
+      !graphContentChanged(state.graphs, prev.graphs)
     ) return;
     if (isTimeTraveling) return;
     // Never capture runtime ticks or the Play/Stop transition — gameplay isn't an "edit".

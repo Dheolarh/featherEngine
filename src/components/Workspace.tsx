@@ -48,7 +48,13 @@ type PanelDir = 'left' | 'right' | 'above' | 'below' | 'within';
  *  field rows; the object/asset list only needs room for a name and a badge. */
 const SIDEBAR_WIDTH = 300;
 const INSPECTOR_WIDTH = 330;
-type PanelDef = { component: string; title: string; ref?: string; direction?: PanelDir };
+type PanelDef = {
+  component: string;
+  title: string;
+  ref?: string;
+  direction?: PanelDir;
+  preferredHeightRatio?: number;
+};
 const PANEL_DEFS: Record<string, PanelDef> = {
   viewport: { component: 'viewport', title: 'Viewport' },
   // Left sidebar trio — all tabs of one group, so opening one never splits the sidebar.
@@ -68,7 +74,13 @@ const PANEL_DEFS: Record<string, PanelDef> = {
   trees: { component: 'trees', title: 'Tree', ref: 'viewport', direction: 'below' },
   animator: { component: 'animator', title: 'Animator', ref: 'viewport', direction: 'below' },
   ui: { component: 'ui', title: 'UI', ref: 'viewport', direction: 'below' },
-  scripting: { component: 'scripting', title: 'Scripting', ref: 'viewport', direction: 'below' },
+  scripting: {
+    component: 'scripting',
+    title: 'Scripting',
+    ref: 'viewport',
+    direction: 'below',
+    preferredHeightRatio: 0.58,
+  },
   cinematic: { component: 'cinematic', title: 'Film Mode', ref: 'viewport', direction: 'below' },
   // Kept registered so old saved layouts and pop-out windows still resolve it, but no longer
   // docked by default — the Inspector shows scene settings when nothing is selected.
@@ -205,8 +217,11 @@ function buildShell(api: DockviewApi) {
   // Dockview splits evenly by default, which left the viewport at a third of the window — the
   // thing you are actually building should dominate, so pin the sidebars to a readable fixed
   // width and let the viewport take the rest.
-  api.getPanel('hierarchy')?.api.setSize({ width: SIDEBAR_WIDTH });
-  api.getPanel('inspector')?.api.setSize({ width: INSPECTOR_WIDTH });
+  const availableWidth = api.width || (typeof window === 'undefined' ? 1440 : window.innerWidth);
+  const hierarchyWidth = Math.min(SIDEBAR_WIDTH, Math.max(220, Math.round(availableWidth * 0.19)));
+  const inspectorWidth = Math.min(INSPECTOR_WIDTH, Math.max(250, Math.round(availableWidth * 0.21)));
+  api.getPanel('hierarchy')?.api.setSize({ width: hierarchyWidth });
+  api.getPanel('inspector')?.api.setSize({ width: inspectorWidth });
 }
 
 /** Modeling-first: the bare shell, with the material editor tabbed behind the Inspector. */
@@ -219,7 +234,9 @@ function buildModelingLayout(api: DockviewApi) {
 /** Scripting-first: graph dominates the bottom half. */
 function buildScriptingLayout(api: DockviewApi) {
   buildShell(api);
-  api.addPanel({ id: 'scripting', component: 'scripting', title: 'Scripting', position: { referencePanel: 'viewport', direction: 'below' } });
+  const scripting = api.addPanel({ id: 'scripting', component: 'scripting', title: 'Scripting', position: { referencePanel: 'viewport', direction: 'below' } });
+  const availableHeight = api.height || (typeof window === 'undefined' ? 900 : window.innerHeight);
+  scripting.api.setSize({ height: Math.max(360, Math.round(availableHeight * 0.58)) });
 }
 
 /** Animation-first: Animator front-and-centre. */

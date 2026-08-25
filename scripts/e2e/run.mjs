@@ -296,6 +296,105 @@ spec('graph nodes respond to a real click by selecting', async () => {
   }
 });
 
+spec('scripting canvas is responsive and focus mode keeps the graph readable', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script', width: 1600, height: 1000 });
+  try {
+    await openScripting(app);
+    const docked = await app.evaluate(`(() => {
+      const body = document.querySelector('.scripting-body').getBoundingClientRect();
+      const flow = document.querySelector('.flow-shell').getBoundingClientRect();
+      const compact = getComputedStyle(document.querySelector('.scripting-compact-nav')).display !== 'none';
+      return { bodyWidth: body.width, flowWidth: flow.width, flowHeight: flow.height, compact };
+    })()`);
+    assert.equal(docked.compact, true, 'a docked graph uses the canvas-first compact workspace');
+    assert.ok(docked.flowWidth >= docked.bodyWidth * 0.9, 'the docked canvas receives nearly the full panel width');
+    assert.ok(docked.flowHeight >= 300, 'Scripting opens tall enough to program comfortably');
+
+    await app.realClick('.graph-focus-toggle');
+    await app.waitFor(`document.querySelector('.graph-focus-toggle')?.getAttribute('aria-pressed') === 'true'`, {
+      label: 'Scripting focus mode enabled',
+    });
+    const focused = await app.evaluate(`(() => {
+      const flow = document.querySelector('.flow-shell').getBoundingClientRect();
+      return { width: flow.width, height: flow.height };
+    })()`);
+    assert.ok(focused.width > 900, 'focused graph has a wide programming canvas');
+    assert.ok(focused.height > docked.flowHeight, 'focused graph grows vertically');
+
+    // The primary graph shortcuts work from the focused canvas, not from form fields elsewhere.
+    await app.evaluate(`document.querySelector('.flow-shell')?.focus()`);
+    await app.page.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA' });
+    await app.page.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA' });
+    await app.waitFor(`document.querySelector('.node-search')`, { label: 'A shortcut opened node search' });
+    await app.page.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await app.page.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+
+    await app.realClick('.graph-focus-toggle');
+    await app.waitFor(`document.querySelector('.graph-focus-toggle')?.getAttribute('aria-pressed') === 'false'`, {
+      label: 'Scripting focus mode restored',
+    });
+  } finally {
+    await app.dispose();
+  }
+});
+
+spec('dragging a value wire to empty canvas creates and connects a compatible node', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script' });
+  try {
+    await openScripting(app);
+    const numberId = await app.evaluate(
+      `window.__featherStore.activeGraph().nodes.find((node) => node.data.nodeKind === 'value.number')?.id`,
+    );
+    assert.ok(numberId, 'the demo graph has a Number node');
+    await app.realClick('.graph-focus-toggle');
+    await app.waitFor(`document.querySelector('.graph-focus-toggle')?.getAttribute('aria-pressed') === 'true'`, {
+      label: 'graph focused for wire gesture',
+    });
+    await app.evaluate(`new Promise((resolve) => setTimeout(resolve, 700))`);
+
+    const sourceSelector = `[data-id=${JSON.stringify(numberId)}] .node-port.value-port.source`;
+    const source = await app.boxOf(sourceSelector, {
+      within: '.flow-shell',
+    });
+    const sourceState = await app.evaluate(`(() => {
+      const node = document.querySelector(${JSON.stringify(`[data-id=${JSON.stringify(numberId)}]`)});
+      const pin = document.querySelector(${JSON.stringify(`[data-id=${JSON.stringify(numberId)}] .node-port.value-port.source`)});
+      const rect = node?.getBoundingClientRect();
+      return { numberId: ${JSON.stringify(numberId)}, nodes: document.querySelectorAll('.react-flow__node').length, node: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null, pin: Boolean(pin) };
+    })()`);
+    assert.ok(source, `the Number output pin is visible: ${JSON.stringify(sourceState)}`);
+    const empty = await app.evaluate(`(() => {
+      const r = document.querySelector('.flow-shell').getBoundingClientRect();
+      const candidates = [
+        [r.left + r.width * 0.76, r.top + r.height * 0.72],
+        [r.left + r.width * 0.72, r.top + r.height * 0.52],
+        [r.left + r.width * 0.52, r.top + r.height * 0.78],
+      ];
+      for (const [x, y] of candidates) {
+        if (document.elementFromPoint(x, y)?.classList.contains('react-flow__pane')) return { x, y };
+      }
+      return null;
+    })()`);
+    assert.ok(empty, 'the graph exposes empty canvas for drag-to-create');
+    await dragOn(app, source, empty, 8);
+    await app.waitFor(`document.querySelector('.node-search')`, { label: 'compatible node menu opened' });
+    await app.evaluate(`(() => {
+      const buttons = [...document.querySelectorAll('.node-search-list button')];
+      buttons.find((button) => button.textContent.includes('Rotate'))?.click();
+    })()`);
+    await app.waitFor(
+      `(() => {
+        const graph = window.__featherStore.graphs.find((item) => item.id === window.__featherStore.blueprints.find((item) => item.id === window.__featherStore.activeBlueprintId)?.graphId);
+        const rotate = graph?.nodes.find((node) => node.data.nodeKind === 'action.rotate');
+        return Boolean(rotate && graph.edges.some((edge) => edge.source === ${JSON.stringify(numberId)} && edge.target === rotate.id && edge.targetHandle === 'amount'));
+      })()`,
+      { label: 'new Rotate node auto-wired to Number' },
+    );
+  } finally {
+    await app.dispose();
+  }
+});
+
 spec('breakpoint dot arms and disarms on click', async () => {
   const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=script' });
   try {

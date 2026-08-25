@@ -33,6 +33,7 @@ export const outputTypeOf: Partial<Record<GraphNodeKind, GraphValueType>> = {
   'query.raycast': 'boolean',
   'query.overlapSphere': 'boolean',
   'query.cableTension': 'number',
+  'ai.distanceToPlayer': 'number',
   'math.abs': 'number',
   'math.min': 'number',
   'math.max': 'number',
@@ -55,8 +56,105 @@ export const outputTypeOf: Partial<Record<GraphNodeKind, GraphValueType>> = {
   'action.getScale': 'vector3',
   'query.velocity': 'vector3',
   'query.angularVelocity': 'vector3',
+  'ai.directionToPlayer': 'vector3',
   'ai.hasLineOfSight': 'boolean',
   'query.sphereCast': 'boolean',
+};
+
+/**
+ * Nodes evaluated on demand through value wires rather than through execution flow.
+ *
+ * Keep this as the single source of truth for both normalization and rendering. The two
+ * surfaces used to maintain separate lists, which meant several Physics/AI query nodes were
+ * saved as pure nodes but rendered like exec nodes with no usable value output.
+ */
+export const valueProducerKinds = new Set<GraphNodeKind>([
+  'logic.compare',
+  'logic.and',
+  'logic.or',
+  'logic.not',
+  'logic.select',
+  'math.abs',
+  'math.min',
+  'math.max',
+  'math.round',
+  'math.power',
+  'math.sin',
+  'math.cos',
+  'string.append',
+  'math.add',
+  'math.subtract',
+  'math.multiply',
+  'math.divide',
+  'math.modulo',
+  'math.clamp',
+  'math.lerp',
+  'math.distance',
+  'math.mapRange',
+  'math.floor',
+  'math.vectorLength',
+  'math.dot',
+  'math.vectorAdd',
+  'math.vectorSubtract',
+  'math.vectorScale',
+  'math.normalize',
+  'math.makeVector',
+  'action.getPosition',
+  'action.getRotation',
+  'action.getScale',
+  'query.findActorByBlueprint',
+  'query.findActorByTag',
+  'query.raycast',
+  'query.overlapSphere',
+  'query.sphereCast',
+  'query.cableTension',
+  'query.velocity',
+  'query.angularVelocity',
+  'value.number',
+  'value.random',
+  'value.string',
+  'value.boolean',
+  'value.vector3',
+  'variable.get',
+  'variable.getObject',
+  'data.tableGet',
+  'material.color',
+  'material.scalar',
+  'material.texture',
+  'material.mix',
+  'material.multiply',
+  'material.add',
+  'material.clamp',
+  'action.getMaterialColor',
+  'action.getMaterialProperty',
+  'input.move',
+  'input.driveInput',
+  'query.vehicleSpeed',
+  'query.grounded',
+  'query.getTimeOfDay',
+  'save.has',
+  'animator.getParam',
+  'animator.getState',
+  'ai.distanceToPlayer',
+  'ai.directionToPlayer',
+  'ai.hasLineOfSight',
+  'ai.playerLocation',
+]);
+
+const inputTypeOverrides: Partial<
+  Record<GraphNodeKind, Partial<Record<string, GraphValueType | 'any'>>>
+> = {
+  'logic.and': { a: 'boolean', b: 'boolean' },
+  'logic.or': { a: 'boolean', b: 'boolean' },
+  'logic.not': { value: 'boolean' },
+  'logic.callFunction': { a: 'any', b: 'any', c: 'any' },
+  'logic.functionReturn': { value: 'any' },
+  'logic.switch': { value: 'any' },
+  'animator.setBool': { value: 'boolean' },
+  'action.setPhysics': { enabled: 'boolean' },
+  'action.setVisible': { visible: 'boolean' },
+  'ui.setVisible': { visible: 'boolean' },
+  'action.fireEvent': { payload: 'any' },
 };
 
 /** Resolve the data type leaving a specific source handle (multi-out nodes differ per pin). */
@@ -95,6 +193,8 @@ export const inputTypeForHandle = (
 ): GraphValueType | 'any' | 'exec' => {
   const handle = targetHandle ?? 'exec-in';
   if (handle.startsWith('exec') || handle === 'exec-in') return 'exec';
+  const override = inputTypeOverrides[kind]?.[handle];
+  if (override) return override;
   if (handle === 'condition' || handle === 'on') return 'boolean';
   if (
     handle === 'vector' ||

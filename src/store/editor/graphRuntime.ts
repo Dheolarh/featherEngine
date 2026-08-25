@@ -3,14 +3,46 @@ import type { NodeForgeNode, ProjectGraph } from '../../types';
 import { isStructuralGraphConnection } from './wireTypes';
 
 const LAYOUT_COL = 264;
-const LAYOUT_ROW = 152;
 const LAYOUT_X0 = 48;
 const LAYOUT_Y0 = 48;
 const LAYOUT_GRID = 24;
+const LAYOUT_ROW_GAP = 48;
+
+const numericSize = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+};
+
+/** Conservative card-height estimate for layout before React Flow has measured the DOM. */
+const estimatedNodeHeight = (node: NodeForgeNode): number => {
+  const measured = node.measured?.height ?? numericSize(node.style?.height);
+  if (measured) return measured;
+  const kind = node.data.nodeKind;
+  if (kind === 'comment.note') return 144;
+  if (kind === 'math.mapRange') return 240;
+  if (kind === 'logic.callFunction') return 224;
+  if (kind === 'query.raycast') return 208;
+  if (kind === 'query.overlapSphere') return 184;
+  if (kind === 'logic.switch') return Math.max(152, 122 + (node.data.switchCases?.length ?? 0) * 28);
+  if (kind === 'logic.sequence' || kind === 'event.functionEntry') return 184;
+  if (
+    kind === 'logic.select' ||
+    kind === 'math.makeVector' ||
+    kind === 'math.clamp' ||
+    kind === 'math.lerp' ||
+    kind === 'action.tweenProperty'
+  ) return 200;
+  return 144;
+};
 
 /** Layered left-to-right layout that follows execution flow and snaps to a grid. */
 export const layoutGraphNodes = (nodes: NodeForgeNode[], edges: Edge[]): NodeForgeNode[] => {
   if (nodes.length === 0) return nodes;
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const indegree = new Map(nodes.map((node) => [node.id, 0]));
   const adjacency = new Map(nodes.map((node) => [node.id, [] as string[]]));
   edges.forEach((edge) => {
@@ -35,6 +67,16 @@ export const layoutGraphNodes = (nodes: NodeForgeNode[], edges: Edge[]): NodeFor
     });
   }
 
+  // A strongly-connected section never reaches indegree zero. Lay those nodes out as a compact
+  // three-row block after the acyclic flow instead of piling the whole cycle into column zero.
+  const unresolved = nodes
+    .filter((node) => (remaining.get(node.id) ?? 0) > 0)
+    .sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y);
+  if (unresolved.length > 0) {
+    const firstCycleColumn = Math.max(0, ...layer.values()) + 1;
+    unresolved.forEach((node, index) => layer.set(node.id, firstCycleColumn + Math.floor(index / 3)));
+  }
+
   const byLayer = new Map<number, string[]>();
   nodes.forEach((node) => {
     const column = layer.get(node.id) ?? 0;
@@ -48,8 +90,11 @@ export const layoutGraphNodes = (nodes: NodeForgeNode[], edges: Edge[]): NodeFor
     .sort((a, b) => a - b)
     .forEach((column) => {
       const ids = byLayer.get(column)!.sort((a, b) => (orderY.get(a) ?? 0) - (orderY.get(b) ?? 0));
-      ids.forEach((id, index) => {
-        positions.set(id, { x: snap(LAYOUT_X0 + column * LAYOUT_COL), y: snap(LAYOUT_Y0 + index * LAYOUT_ROW) });
+      let nextY = LAYOUT_Y0;
+      ids.forEach((id) => {
+        const node = nodeById.get(id)!;
+        positions.set(id, { x: snap(LAYOUT_X0 + column * LAYOUT_COL), y: snap(nextY) });
+        nextY += estimatedNodeHeight(node) + LAYOUT_ROW_GAP;
       });
     });
 

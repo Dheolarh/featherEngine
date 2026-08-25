@@ -13,12 +13,26 @@ export interface ScriptProblem {
 /** Drop dangling / illegal wires. Returns the same object when nothing changed (keeps runtime WeakMap identity). */
 export function sanitizeGraph(graph: ProjectGraph): ProjectGraph {
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const edges = graph.edges.filter((edge) => {
+  const structurallyValid = graph.edges.filter((edge) => {
     const source = nodesById.get(edge.source);
     const target = nodesById.get(edge.target);
     if (!source || !target || edge.source === edge.target) return false;
     return isStructuralGraphConnection(edge.sourceHandle, edge.targetHandle);
   });
+  // The runtime resolves one value per target pin and historically let the last duplicate win.
+  // Preserve that result while removing the older, misleading wires from loaded/pasted graphs.
+  const occupiedValueInputs = new Set<string>();
+  const edges = structurallyValid
+    .slice()
+    .reverse()
+    .filter((edge) => {
+      if ((edge.targetHandle ?? 'exec-in').startsWith('exec')) return true;
+      const key = `${edge.target}:${edge.targetHandle ?? ''}`;
+      if (occupiedValueInputs.has(key)) return false;
+      occupiedValueInputs.add(key);
+      return true;
+    })
+    .reverse();
   return edges.length === graph.edges.length ? graph : { ...graph, edges };
 }
 

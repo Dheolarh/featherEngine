@@ -16,6 +16,7 @@ import type {
 import { makeId } from './ids';
 import { keyLabelByCode } from '../../utils/keyboardCodes';
 import { normalizeTimelineCurve, timelineCurvePreset } from '../../runtime/timelineCurve';
+import { valueProducerKinds } from './wireTypes';
 
 export const defaultValueForType = (type: GraphValueType): GraphValue => {
   if (type === 'number') return 0;
@@ -1252,50 +1253,7 @@ export const normalizeNodeData = (data: Partial<NodeForgeNodeData>): NodeForgeNo
     normalized.hasOutput = false;
   }
 
-  const isPureValueNode =
-    nodeKind.startsWith('value.') ||
-    nodeKind.startsWith('math.') ||
-    nodeKind.startsWith('string.') ||
-    nodeKind === 'logic.select' ||
-    nodeKind === 'logic.compare' ||
-    nodeKind === 'logic.and' ||
-    nodeKind === 'logic.or' ||
-    nodeKind === 'logic.not' ||
-    nodeKind === 'action.getPosition' ||
-    nodeKind === 'action.getRotation' ||
-    nodeKind === 'action.getScale' ||
-    nodeKind === 'ai.distanceToPlayer' ||
-    nodeKind === 'ai.directionToPlayer' ||
-    nodeKind === 'ai.hasLineOfSight' ||
-    nodeKind === 'ai.playerLocation' ||
-    nodeKind === 'variable.get' ||
-    nodeKind === 'data.tableGet' ||
-    nodeKind === 'material.color' ||
-    nodeKind === 'material.scalar' ||
-    nodeKind === 'material.texture' ||
-    nodeKind === 'material.mix' ||
-    nodeKind === 'material.multiply' ||
-    nodeKind === 'material.add' ||
-    nodeKind === 'material.clamp' ||
-    nodeKind === 'action.getMaterialColor' ||
-    nodeKind === 'action.getMaterialProperty' ||
-    nodeKind === 'input.move' ||
-    nodeKind === 'input.driveInput' ||
-    nodeKind === 'query.vehicleSpeed' ||
-    nodeKind === 'query.findActorByBlueprint' ||
-    nodeKind === 'query.findActorByTag' ||
-    nodeKind === 'query.raycast' ||
-    nodeKind === 'query.overlapSphere' ||
-    nodeKind === 'query.sphereCast' ||
-    nodeKind === 'query.cableTension' ||
-    nodeKind === 'query.velocity' ||
-    nodeKind === 'query.angularVelocity' ||
-    nodeKind === 'query.grounded' ||
-    nodeKind === 'query.getTimeOfDay' ||
-    nodeKind === 'save.has' ||
-    nodeKind === 'animator.getParam' ||
-    nodeKind === 'animator.getState' ||
-    nodeKind === 'variable.getObject';
+  const isPureValueNode = valueProducerKinds.has(nodeKind);
 
   if ((nodeKind === 'variable.getObject' || nodeKind === 'variable.setObject') && typeof normalized.objectKey !== 'string') {
     normalized.objectKey = 'health';

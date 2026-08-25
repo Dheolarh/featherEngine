@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Background, Controls, MiniMap, ReactFlow, useReactFlow, type Connection, type Edge, type NodeTypes } from '@xyflow/react';
 import {
   AlertTriangle,
@@ -10,10 +10,13 @@ import {
   Database,
   Download,
   FolderOpen,
+  Focus,
   GitBranch,
   LayoutDashboard,
   LayoutGrid,
   Link2,
+  Maximize2,
+  Minimize2,
   MousePointer2,
   Plus,
   RotateCcw,
@@ -60,12 +63,17 @@ import { useProjectStore } from '../store/projectStore';
 import { useFeatherExternalStore } from '../store/featherExternalStore';
 import { TimelineCurveEditor } from './TimelineCurveEditor';
 import { timelineCurvePreset } from '../runtime/timelineCurve';
+import {
+  isWorkspacePanelMaximized,
+  onWorkspacePanelMaximizedChange,
+  toggleWorkspacePanelMaximized,
+} from './workspacePanels';
 
 const nodeTypes: NodeTypes = {
   nodeforge: NodeForgeGraphNode,
 };
 
-const defaultEdgeOptions = { animated: true, type: 'smoothstep' } as const;
+const defaultEdgeOptions = { animated: false, type: 'smoothstep', interactionWidth: 28 } as const;
 const connectionLineStyle = { stroke: '#5B8CFF', strokeWidth: 2 } as const;
 const snapGrid: [number, number] = [24, 24];
 
@@ -2720,7 +2728,7 @@ export function VisualScriptingPanel() {
   const onNodesChange = useEditorStore((state) => state.onNodesChange);
   const onEdgesChange = useEditorStore((state) => state.onEdgesChange);
   const onConnect = useEditorStore((state) => state.onConnect);
-  const addGraphNode = useEditorStore((state) => state.addGraphNode);
+  const onReconnect = useEditorStore((state) => state.onReconnect);
   const addGraphNodeToBlueprint = useEditorStore((state) => state.addGraphNodeToBlueprint);
   const connectGraphNodes = useEditorStore((state) => state.connectGraphNodes);
   const variables = useEditorStore((state) => state.variables);
@@ -2755,11 +2763,28 @@ export function VisualScriptingPanel() {
   const [allowEditorTabExit, setAllowEditorTabExit] = useState(false);
   const [compactVisualPane, setCompactVisualPane] = useState<'nodes' | 'canvas' | 'details'>('canvas');
   const [compactCodePane, setCompactCodePane] = useState<'reference' | 'editor'>('editor');
+  const [isFocusMode, setIsFocusMode] = useState(() => isWorkspacePanelMaximized('scripting'));
   const externalEditingAvailable = Boolean(projectDir && projectDir !== 'web');
 
-  const { screenToFlowPosition } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const flowShellRef = useRef<HTMLDivElement | null>(null);
   const featherEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const frameGraph = useCallback(
+    () => void fitView({ padding: 0.18, minZoom: 0.58, maxZoom: 1, duration: 280 }),
+    [fitView],
+  );
+  const frameGraphAfterLayout = useCallback(() => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(frameGraph));
+  }, [frameGraph]);
+  const arrangeAndFrameGraph = useCallback(() => {
+    autoLayoutActiveGraph();
+    frameGraphAfterLayout();
+  }, [autoLayoutActiveGraph, frameGraphAfterLayout]);
+  const toggleFocusMode = useCallback(() => {
+    const maximized = toggleWorkspacePanelMaximized('scripting');
+    setIsFocusMode(maximized);
+    frameGraphAfterLayout();
+  }, [frameGraphAfterLayout]);
   const focusVisualCanvas = () => {
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => flowShellRef.current?.focus()));
   };
@@ -2770,9 +2795,25 @@ export function VisualScriptingPanel() {
     y: number;
     pending?: { nodeId: string; handleId: string | null; handleType: 'source' | 'target' };
   } | null>(null);
+  const openNodeSearchAtCanvasCenter = useCallback(() => {
+    const bounds = flowShellRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setSearchMenu({ x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 });
+  }, []);
   useEffect(() => {
     if (editorMode === 'script') setSearchMenu(null);
   }, [editorMode]);
+  useEffect(
+    () => onWorkspacePanelMaximizedChange('scripting', setIsFocusMode),
+    [],
+  );
+  useEffect(() => {
+    if (editorMode !== 'blueprint' || compactVisualPane !== 'canvas') return;
+    // Dockview and the container query settle over a couple of frames when Scripting is opened,
+    // focused, or restored. Fit after that resize so cards never begin clipped under the HUD.
+    const timeout = window.setTimeout(frameGraph, 220);
+    return () => window.clearTimeout(timeout);
+  }, [activeBlueprintId, compactVisualPane, editorMode, frameGraph, isFocusMode]);
   useEffect(() => {
     const blueprint = useEditorStore.getState().blueprints.find((item) => item.id === activeBlueprintId);
     setEditorMode(blueprint?.featherSource !== undefined ? 'script' : 'blueprint');
@@ -2797,6 +2838,7 @@ export function VisualScriptingPanel() {
   // Drives a class on the canvas while a wire is being dragged, so CSS can dim the incompatible ports
   // (exec can't connect to value): you instantly see where the wire can actually land.
   const [connectingKind, setConnectingKind] = useState<'exec' | 'value' | null>(null);
+  const [connectingValueType, setConnectingValueType] = useState<GraphValueType | 'any' | null>(null);
   // Multi-node clipboard: the copied nodes plus the wires running between them (other wires don't travel).
   const [clipboard, setClipboard] = useState<{ nodes: NodeForgeNode[]; edges: Edge[] } | null>(null);
 
@@ -2804,7 +2846,7 @@ export function VisualScriptingPanel() {
   const [paletteFilter, setPaletteFilter] = useState('');
   const featherScript = useMemo(
     () =>
-      graph && activeBlueprint
+      editorMode === 'script' && graph && activeBlueprint
         ? graphToFeatherScript({
             blueprint: activeBlueprint,
             graph,
@@ -2812,7 +2854,7 @@ export function VisualScriptingPanel() {
             blueprints,
           })
         : '',
-    [activeBlueprint, blueprints, graph, variables],
+    [activeBlueprint, blueprints, editorMode, graph, variables],
   );
   const featherSource = activeBlueprint?.featherSource ?? featherScript;
   const featherParse = useMemo(() => parseFeatherScript(featherSource), [featherSource]);
@@ -3133,9 +3175,13 @@ export function VisualScriptingPanel() {
 
   // The node a breakpoint stopped Play on, so it can be marked distinctly from a normal pulse.
   const brokeHere = useEditorStore((state) => state.runtimeBreakNodeId);
+  const flowNodeCacheRef = useRef(
+    new WeakMap<NodeForgeNode, { decorationKey: string; node: NodeForgeNode }>(),
+  );
 
   // Nodes fed to React Flow, tagged with the exec-hot pulse class while executing and carrying a
-  // transient `liveValue` / `execHitCount` (read by NodeForgeGraphNode).
+  // transient `liveValue` / `execHitCount` (read by NodeForgeGraphNode). Reuse decorated objects for
+  // untouched nodes so dragging one card does not ask every card in a large graph to re-render.
   const flowNodes = useMemo<NodeForgeNode[]>(() => {
     const nodes = graph?.nodes;
     if (!nodes) return [];
@@ -3145,11 +3191,20 @@ export function VisualScriptingPanel() {
       const live = liveValues[node.id];
       const hits = hitCounts[node.id];
       const hot = hotNodes.has(node.id);
-      return {
+      const className = hot
+        ? brokeHere === node.id
+          ? 'exec-hot exec-broke'
+          : 'exec-hot'
+        : brokeHere === node.id
+          ? 'exec-broke'
+          : '';
+      const decorationKey = `${className}|${live ?? ''}|${hits ?? ''}|${node.selected ? 1 : 0}`;
+      const cached = flowNodeCacheRef.current.get(node);
+      if (cached?.decorationKey === decorationKey) return cached.node;
+      const decorated: NodeForgeNode = {
         ...node,
         ariaLabel: `${node.data.label}, ${node.data.category} node${node.selected ? ', selected' : ''}`,
-        ...(hot ? { className: brokeHere === node.id ? 'exec-hot exec-broke' : 'exec-hot' } : {}),
-        ...(brokeHere === node.id && !hot ? { className: 'exec-broke' } : {}),
+        ...(className ? { className } : {}),
         ...((hasValues || hasHits) && (live || hits)
           ? {
               data: {
@@ -3160,6 +3215,8 @@ export function VisualScriptingPanel() {
             }
           : {}),
       };
+      flowNodeCacheRef.current.set(node, { decorationKey, node: decorated });
+      return decorated;
     });
   }, [graph, hotNodes, liveValues, hitCounts, brokeHere]);
 
@@ -3284,27 +3341,45 @@ export function VisualScriptingPanel() {
       return;
     }
     const id = addGraphNodeToBlueprint(activeBlueprintId, choice.nodeLabel ?? choice.label, choice.category, choice.data ?? {}, position);
-    // Auto-wire the dragged-from socket to the new node (Unreal-style). Handle ids are uniform enough to do
-    // this reliably for exec flow (exec-in/exec-out) and for feeding a value input from a new value node
-    // (value-out). The one case we can't target generically — an output into an arbitrary value INPUT — just
-    // drops the node unconnected.
+    // Auto-wire the socket that opened the menu. Value outputs choose the first compatible input on
+    // the picked node, so the common "drag a number, choose Rotate" flow completes in one action.
     const pending = screen.pending;
     if (pending) {
-      // Only wire a handle we KNOW the new node has, so we never leave a dangling edge: pure value nodes
-      // (outputTypeOf defined) have `value-out` and no exec pins; everything else has exec-in/exec-out.
-      const created = useEditorStore.getState().activeGraph()?.nodes.find((node) => node.id === id);
+      const liveGraph = useEditorStore.getState().activeGraph();
+      const created = liveGraph?.nodes.find((node) => node.id === id);
       const kind = created?.data.nodeKind as GraphNodeKind | undefined;
-      const isValueNode = kind ? outputTypeOf[kind] !== undefined : false;
+      const isPureValueNode = kind ? valueProducerKinds.has(kind) : false;
+      const hasValueOutput = Boolean(
+        kind && (isPureValueNode || kind === 'logic.cast' || kind === 'action.spawnPrefab'),
+      );
       const exec = (pending.handleId ?? '').startsWith('exec');
       let connection: Connection | null = null;
       if (pending.handleType === 'source') {
-        // Dragged from an OUTPUT → into the new node's input. Exec into an action node's exec-in is the
-        // reliable case; a value output into an arbitrary input handle can't be targeted generically.
-        if (exec && !isValueNode) connection = { source: pending.nodeId, sourceHandle: pending.handleId, target: id, targetHandle: 'exec-in' };
-      } else if (exec && !isValueNode) {
+        if (exec && !isPureValueNode) {
+          connection = { source: pending.nodeId, sourceHandle: pending.handleId, target: id, targetHandle: 'exec-in' };
+        } else if (!exec && kind) {
+          const origin = liveGraph?.nodes.find((node) => node.id === pending.nodeId);
+          const sourceType = origin
+            ? outputTypeForHandle(
+                origin.data.nodeKind,
+                pending.handleId,
+                origin.data.valueType as GraphValueType | undefined,
+              )
+            : 'any';
+          const input = valueInputsFor(kind).find((pin) =>
+            valueTypesCompatible(
+              sourceType,
+              inputTypeForHandle(kind, pin.id, created?.data.valueType as GraphValueType | undefined),
+            ),
+          );
+          if (input) {
+            connection = { source: pending.nodeId, sourceHandle: pending.handleId, target: id, targetHandle: input.id };
+          }
+        }
+      } else if (exec && !isPureValueNode) {
         // Dragged from an exec INPUT → drive it from the new action node's exec-out.
         connection = { source: id, sourceHandle: 'exec-out', target: pending.nodeId, targetHandle: pending.handleId };
-      } else if (!exec && isValueNode) {
+      } else if (!exec && hasValueOutput) {
         // Dragged from a value INPUT → feed it from the new value node's value-out (the common "I need a value here").
         connection = { source: id, sourceHandle: 'value-out', target: pending.nodeId, targetHandle: pending.handleId };
       }
@@ -3314,12 +3389,20 @@ export function VisualScriptingPanel() {
     setSearchMenu(null);
   };
 
+  const canvasCenterPosition = () => {
+    const bounds = flowShellRef.current?.getBoundingClientRect();
+    if (!bounds) return undefined;
+    return screenToFlowPosition({ x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 });
+  };
+
   const addPaletteNode = (label: string, category: GraphNodeCategory) => {
+    const position = canvasCenterPosition();
     if (label === 'New Variable') {
-      createVariableNode();
+      createVariableNode(position);
       return;
     }
-    addGraphNode(label, category);
+    const id = addGraphNodeToBlueprint(activeBlueprintId, label, category, {}, position);
+    selectGraphNode(id);
   };
 
   // Drag a palette entry onto the canvas to drop a node exactly where the cursor is.
@@ -3361,6 +3444,25 @@ export function VisualScriptingPanel() {
       const isCopy = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c';
       const isPaste = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v';
       const isDelete = event.key === 'Delete' || event.key === 'Backspace';
+      const plainKey = !event.ctrlKey && !event.metaKey && !event.altKey;
+      if (plainKey && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openNodeSearchAtCanvasCenter();
+        return;
+      }
+      if (plainKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        frameGraph();
+        return;
+      }
+      if (event.ctrlKey && !event.metaKey && event.code === 'Space') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        toggleFocusMode();
+        return;
+      }
       // The working set = every marquee/shift-selected node, falling back to the inspector's single selection.
       const selectedNodes = graph?.nodes.filter((node) => node.selected) ?? [];
       const selectedEdges = graph?.edges.filter((edge) => edge.selected) ?? [];
@@ -3396,7 +3498,18 @@ export function VisualScriptingPanel() {
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [activeBlueprintId, clipboard, deleteGraphNodes, graph, onEdgesChange, pasteGraphNodes, selectGraphNode]);
+  }, [
+    activeBlueprintId,
+    clipboard,
+    deleteGraphNodes,
+    frameGraph,
+    graph,
+    onEdgesChange,
+    openNodeSearchAtCanvasCenter,
+    pasteGraphNodes,
+    selectGraphNode,
+    toggleFocusMode,
+  ]);
 
   // Reject self-wires, exec↔value crosses, and typed value mismatches (number↛vector3, etc.).
   // `any` is a wild card so references / untyped Get Variable still connect freely.
@@ -3429,17 +3542,42 @@ export function VisualScriptingPanel() {
   // dropped on empty canvas → open the node menu there with this socket pending so the pick auto-wires.
   const onConnectStart = (_event: unknown, params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null }) => {
     connectingRef.current = params.nodeId && params.handleType ? { nodeId: params.nodeId, handleId: params.handleId, handleType: params.handleType } : null;
-    setConnectingKind(isExecHandle(params.handleId) ? 'exec' : 'value');
+    const exec = isExecHandle(params.handleId);
+    setConnectingKind(exec ? 'exec' : 'value');
+    if (exec || !params.nodeId || !params.handleType) {
+      setConnectingValueType(null);
+      return;
+    }
+    const node = graph?.nodes.find((candidate) => candidate.id === params.nodeId);
+    if (!node) {
+      setConnectingValueType('any');
+      return;
+    }
+    setConnectingValueType(
+      params.handleType === 'source'
+        ? outputTypeForHandle(
+            node.data.nodeKind,
+            params.handleId,
+            node.data.valueType as GraphValueType | undefined,
+          ) as GraphValueType | 'any'
+        : inputTypeForHandle(
+            node.data.nodeKind,
+            params.handleId,
+            node.data.valueType as GraphValueType | undefined,
+          ) as GraphValueType | 'any',
+    );
   };
   const handleConnect = (connection: Connection) => {
     connectingRef.current = null;
     setConnectingKind(null);
+    setConnectingValueType(null);
     onConnect(connection);
   };
   const onConnectEnd = (event: MouseEvent | TouchEvent) => {
     const pending = connectingRef.current;
     connectingRef.current = null;
     setConnectingKind(null);
+    setConnectingValueType(null);
     if (!pending) return;
     const target = event.target as HTMLElement | null;
     if (!target?.classList?.contains('react-flow__pane')) return; // landed on a socket/node, not empty canvas
@@ -3463,8 +3601,9 @@ export function VisualScriptingPanel() {
       const stroke = hot ? '#ffd34d' : exec ? EXEC_WIRE_COLOR : VALUE_TYPE_COLORS[typeByNode.get(edge.source) ?? 'any'];
       return {
         ...edge,
+        animated: hot || Boolean(edge.selected),
         ariaLabel: `${exec ? 'Execution' : 'Value'} connection from ${labelByNode.get(edge.source) ?? 'unknown node'} to ${labelByNode.get(edge.target) ?? 'unknown node'}`,
-        style: { ...edge.style, stroke, strokeWidth: hot ? 3 : 2 },
+        style: { ...edge.style, stroke, strokeWidth: hot || edge.selected ? 3 : 2 },
       };
     });
   }, [graph, hotNodes]);
@@ -3567,7 +3706,7 @@ export function VisualScriptingPanel() {
     connectGraphNodes(activeBlueprint.id, eventId, actionId, 'exec-out', 'exec-in');
     selectGraphNode(actionId);
     window.requestAnimationFrame(() => {
-      autoLayoutActiveGraph();
+      arrangeAndFrameGraph();
       flowShellRef.current?.focus();
     });
   };
@@ -3756,13 +3895,23 @@ export function VisualScriptingPanel() {
           {editorMode === 'blueprint' && (
             <button
               className="icon-button compact"
-              title="Auto-arrange nodes on a grid"
-              aria-label="Auto-arrange nodes on a grid"
-              onClick={autoLayoutActiveGraph}
+              title="Auto-arrange and frame nodes"
+              aria-label="Auto-arrange and frame nodes"
+              onClick={arrangeAndFrameGraph}
             >
               <LayoutGrid size={14} aria-hidden />
             </button>
           )}
+          <button
+            className="icon-button compact graph-focus-toggle"
+            type="button"
+            title={isFocusMode ? 'Restore workspace (Ctrl+Space)' : 'Focus Scripting (Ctrl+Space)'}
+            aria-label={isFocusMode ? 'Restore workspace' : 'Focus Scripting'}
+            aria-pressed={isFocusMode}
+            onClick={toggleFocusMode}
+          >
+            {isFocusMode ? <Minimize2 size={14} aria-hidden /> : <Maximize2 size={14} aria-hidden />}
+          </button>
           <button className="icon-button compact" title="Create reusable Blueprint" aria-label="Create reusable behavior" onClick={createBlueprint}>
             <Plus size={14} aria-hidden />
           </button>
@@ -4279,7 +4428,11 @@ export function VisualScriptingPanel() {
         </aside>
 
         <div
-          className={connectingKind ? `flow-shell connecting-from-${connectingKind}` : 'flow-shell'}
+          className={[
+            'flow-shell',
+            connectingKind ? `connecting-from-${connectingKind}` : '',
+            connectingValueType ? `connecting-type-${connectingValueType}` : '',
+          ].filter(Boolean).join(' ')}
           ref={flowShellRef}
           tabIndex={0}
           role="region"
@@ -4311,7 +4464,7 @@ export function VisualScriptingPanel() {
           onDrop={onCanvasDrop}
         >
           <p className="sr-only" id="visual-scripting-help">
-            Use the Essentials list or search to add nodes. Tab to a node, then press Enter or Space to select it and use arrow keys to move it. Use the Connections section in Details to create or remove wires. Press Delete to remove a selected node or wire. Press Shift F10 to open node search.
+            Press A to add a node, F to frame the graph, or Control Space to focus the Scripting panel. Tab to a node, then press Enter or Space to select it and use arrow keys to move it. Drag a pin into empty space to choose and automatically connect a compatible node. Use the Connections section in Details to create or remove wires. Press Delete to remove a selected node or wire.
           </p>
           {/* The add-node button shares this HUD row rather than floating separately — both used to
               sit at top-left of .flow-shell and overlapped. aria-hidden moved onto the text children
@@ -4329,11 +4482,20 @@ export function VisualScriptingPanel() {
               <Plus size={14} aria-hidden />
               <span>Add node</span>
             </button>
+            <button
+              type="button"
+              className="flow-canvas-action flow-frame-button"
+              title="Frame all nodes (F)"
+              aria-label="Frame all nodes"
+              onClick={frameGraph}
+            >
+              <Focus size={14} aria-hidden />
+            </button>
             <span aria-hidden>{selectedNodeDetail}</span>
             <small aria-hidden>
               {graph.nodes.length} nodes / {graph.edges.length} wires
               {clipboard ? ` / ${clipboard.nodes.length} copied` : ''} · Drag a pin to empty space (or
-              right-click) to add a node · Shift+drag to box-select
+              right-click) to add a node · A add · F frame · Shift+drag box-select
             </small>
           </div>
           {graph.edges.length === 0 && graph.nodes.length <= 2 && (
@@ -4380,6 +4542,7 @@ export function VisualScriptingPanel() {
             onConnect={handleConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
+            onReconnect={onReconnect}
             isValidConnection={isValidConnection}
             edgesFocusable
             edgesReconnectable
@@ -4404,9 +4567,14 @@ export function VisualScriptingPanel() {
             deleteKeyCode={['Backspace', 'Delete']}
             defaultEdgeOptions={defaultEdgeOptions}
             connectionLineStyle={connectionLineStyle}
+            connectionRadius={28}
+            reconnectRadius={28}
+            autoPanSpeed={18}
+            onlyRenderVisibleElements
             snapToGrid
             snapGrid={snapGrid}
             fitView
+            fitViewOptions={{ padding: 0.18, minZoom: 0.58, maxZoom: 1, duration: 240 }}
           >
             {/* xyflow's MiniMap defaults to a LIGHT mask (rgba(240,240,240,.6)) and light node
                 fills, which rendered as a big white slab covering the bottom of the canvas on a dark
@@ -4424,7 +4592,7 @@ export function VisualScriptingPanel() {
               nodeStrokeColor="rgba(140, 175, 220, 0.35)"
             />
             <Controls aria-label="Visual script zoom controls" position="bottom-right" />
-            <Background color="#30394D" gap={18} size={1} />
+            <Background color="#30394D" gap={24} size={1} />
           </ReactFlow>
         </div>
         <NodeInspector node={selectedGraphNode} />

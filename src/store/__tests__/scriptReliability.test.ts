@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Edge } from '@xyflow/react';
 import { toNumber, toVector3 } from '../editor/objectFactory';
 import { scanBlueprintGraphProblems, sanitizeGraph } from '../editor/graphDiagnostics';
-import { isGraphConnectionValid } from '../editor/wireTypes';
+import { makeNodeData } from '../editor/graph';
+import {
+  inputTypeForHandle,
+  isGraphConnectionValid,
+  outputTypeForHandle,
+  valueProducerKinds,
+} from '../editor/wireTypes';
 import { scanProblems } from '../../components/ProblemsPanel';
 import type { NodeForgeNode, ProjectGraph, ScriptBlueprint } from '../../types';
 
@@ -43,6 +49,37 @@ describe('script reliability', () => {
     expect(isGraphConnectionValid('value.vector3', 'action.translate', 'value-out', 'vector')).toBe(true);
     expect(isGraphConnectionValid('event.start', 'action.jump', 'exec-out', 'exec-in')).toBe(true);
     expect(isGraphConnectionValid('event.start', 'action.jump', 'exec-out', 'vector')).toBe(false);
+  });
+
+  it('keeps AI and physics queries as typed value nodes', () => {
+    const expected = [
+      ['ai.distanceToPlayer', 'number'],
+      ['ai.directionToPlayer', 'vector3'],
+      ['ai.hasLineOfSight', 'boolean'],
+      ['query.overlapSphere', 'boolean'],
+      ['query.sphereCast', 'boolean'],
+      ['query.cableTension', 'number'],
+    ] as const;
+
+    for (const [kind, output] of expected) {
+      const data = makeNodeData(kind, 'Physics', { nodeKind: kind });
+      expect(valueProducerKinds.has(kind)).toBe(true);
+      expect(data.hasInput).toBe(false);
+      expect(data.hasOutput).toBe(true);
+      expect(outputTypeForHandle(kind, 'value-out')).toBe(output);
+    }
+  });
+
+  it('uses the real boolean and open-ended input types instead of defaulting every pin to number', () => {
+    expect(inputTypeForHandle('logic.and', 'a')).toBe('boolean');
+    expect(inputTypeForHandle('logic.not', 'value')).toBe('boolean');
+    expect(inputTypeForHandle('animator.setBool', 'value')).toBe('boolean');
+    expect(inputTypeForHandle('action.setVisible', 'visible')).toBe('boolean');
+    expect(inputTypeForHandle('action.setPhysics', 'enabled')).toBe('boolean');
+    expect(inputTypeForHandle('action.fireEvent', 'payload')).toBe('any');
+    expect(isGraphConnectionValid('value.boolean', 'action.setVisible', 'value-out', 'visible')).toBe(true);
+    expect(isGraphConnectionValid('value.number', 'action.setVisible', 'value-out', 'visible')).toBe(false);
+    expect(isGraphConnectionValid('value.string', 'action.fireEvent', 'value-out', 'payload')).toBe(true);
   });
 
   it('flags dangling wires and Call Function with no Function node', () => {
@@ -98,5 +135,22 @@ describe('script reliability', () => {
     expect(cleaned.edges).toHaveLength(1);
     expect(cleaned.edges[0]?.id).toBe('ok');
     expect(sanitizeGraph(cleaned)).toBe(cleaned);
+  });
+
+  it('keeps only the last loaded value wire for a single input, matching runtime resolution', () => {
+    const graph: ProjectGraph = {
+      id: 'g-1',
+      name: 'Single Input',
+      nodes: [
+        makeNode('first', 'value.number'),
+        makeNode('second', 'value.number'),
+        makeNode('rotate', 'action.rotate'),
+      ],
+      edges: [
+        { id: 'old', source: 'first', target: 'rotate', sourceHandle: 'value-out', targetHandle: 'amount' } as Edge,
+        { id: 'latest', source: 'second', target: 'rotate', sourceHandle: 'value-out', targetHandle: 'amount' } as Edge,
+      ],
+    };
+    expect(sanitizeGraph(graph).edges.map((edge) => edge.id)).toEqual(['latest']);
   });
 });

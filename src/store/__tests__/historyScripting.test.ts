@@ -66,4 +66,22 @@ describe('scripting undo history', () => {
     expect(restored.featherSourceLastSyncedHash).toBe(latestDiskHash);
     expect(restored.featherSourceLastSyncedVisualHash).toBe(latestVisualHash);
   });
+
+  it('does not turn canvas selection into an undo step, but still captures node movement', () => {
+    useEditorStore.getState().createBlueprintNamed('Selection Probe');
+    const graph = useEditorStore.getState().activeGraph()!;
+    const node = graph.nodes[0]!;
+    clearHistory();
+
+    useEditorStore.getState().onNodesChange([{ id: node.id, type: 'select', selected: true }]);
+    expect(useEditorStore.getState().undoDepth).toBe(0);
+
+    const moved = { x: node.position.x + 48, y: node.position.y + 24 };
+    useEditorStore.getState().onNodesChange([{ id: node.id, type: 'position', position: moved }]);
+    expect(useEditorStore.getState().undoDepth).toBe(1);
+    expect(useEditorStore.getState().activeGraph()?.nodes[0]?.position).toEqual(moved);
+
+    undo();
+    expect(useEditorStore.getState().activeGraph()?.nodes[0]?.position).toEqual(node.position);
+  });
 });

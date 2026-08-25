@@ -19,6 +19,8 @@ export interface DockPanelDef {
   title: string;
   ref?: string;
   direction?: 'left' | 'right' | 'above' | 'below' | 'within';
+  /** Preferred share of the workspace height for panels docked above/below the main view. */
+  preferredHeightRatio?: number;
 }
 
 // Injected by Workspace at module load. Passing the table in (rather than importing it) keeps
@@ -39,7 +41,11 @@ export function ensureWorkspacePanel(id: string): boolean {
   // Position relative to its usual neighbour, but fall back to a plain add if that's gone.
   const position =
     def.ref && def.direction && api.getPanel(def.ref) ? { referencePanel: def.ref, direction: def.direction } : undefined;
-  api.addPanel({ id, component: def.component, title: def.title, position });
+  const panel = api.addPanel({ id, component: def.component, title: def.title, position });
+  if (def.preferredHeightRatio && (def.direction === 'above' || def.direction === 'below')) {
+    const availableHeight = api.height || (typeof window === 'undefined' ? 720 : window.innerHeight);
+    panel.api.setSize({ height: Math.max(360, Math.round(availableHeight * def.preferredHeightRatio)) });
+  }
   return true;
 }
 
@@ -64,6 +70,30 @@ export function getWorkspaceApi(): DockviewApi | null {
 export function focusWorkspacePanel(id: string) {
   ensureWorkspacePanel(id);
   apiSingleton?.getPanel(id)?.api.setActive();
+}
+
+/** Whether the Dockview group containing a panel currently owns the workspace. */
+export function isWorkspacePanelMaximized(id: string): boolean {
+  return apiSingleton?.getPanel(id)?.api.isMaximized() ?? false;
+}
+
+/** Toggle a panel's native Dockview focus mode without rebuilding or losing the user's layout. */
+export function toggleWorkspacePanelMaximized(id: string): boolean {
+  if (!ensureWorkspacePanel(id)) return false;
+  const panel = apiSingleton?.getPanel(id);
+  if (!panel) return false;
+  if (panel.api.isMaximized()) panel.api.exitMaximized();
+  else panel.api.maximize();
+  return panel.api.isMaximized();
+}
+
+/** Subscribe to focus-mode changes for one panel. */
+export function onWorkspacePanelMaximizedChange(id: string, listener: (maximized: boolean) => void): () => void {
+  const api = apiSingleton;
+  listener(isWorkspacePanelMaximized(id));
+  if (!api) return () => undefined;
+  const disposable = api.onDidMaximizedGroupChange(() => listener(isWorkspacePanelMaximized(id)));
+  return () => disposable.dispose();
 }
 
 /** Open an extension panel, adding it to Dockview the first time and focusing it thereafter. */
