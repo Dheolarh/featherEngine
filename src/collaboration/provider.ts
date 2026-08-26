@@ -79,6 +79,9 @@ const UPDATE_PROTOCOL = 0x01;
 const UPDATE_KIND = 0x01;
 const MAX_BINARY_UPDATE = 32 * 1024 * 1024;
 const PRESENCE_INTERVAL_MS = 100;
+const CLOSE_REASON_SESSION_ENDED = 'Session ended';
+const CLOSE_REASON_TUNNEL_UNAVAILABLE = 'Ngrok tunnel unavailable';
+const CLOSE_REASON_RELAY_UNAVAILABLE = 'Local relay unavailable';
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -290,9 +293,23 @@ export class CollaborationWebSocketProvider {
     if (this.authTimer) this.clearTimer(this.authTimer);
     this.authTimer = null;
     if (this.destroyed) return;
-    if (event.code === 1001 && event.reason === 'Session ended') {
-      this.terminate('The host ended the collaboration session.');
-      return;
+    if (event.code === 1001) {
+      if (event.reason === CLOSE_REASON_TUNNEL_UNAVAILABLE) {
+        this.terminate('The ngrok tunnel stopped unexpectedly. Check the host network and start a new session.');
+        return;
+      }
+      if (event.reason === CLOSE_REASON_RELAY_UNAVAILABLE) {
+        this.terminate('The host collaboration relay stopped unexpectedly. Start a new session.');
+        return;
+      }
+      if (event.reason === CLOSE_REASON_SESSION_ENDED) {
+        this.terminate(
+          this.role === 'host'
+            ? 'The collaboration session stopped unexpectedly.'
+            : 'The host ended the collaboration session.',
+        );
+        return;
+      }
     }
     if (event.code === 1008 || event.code === 4002) {
       this.terminate(event.reason || 'The collaboration server rejected the connection.');

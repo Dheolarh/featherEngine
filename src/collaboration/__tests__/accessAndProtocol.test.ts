@@ -126,4 +126,49 @@ describe('collaboration roles and binary protocol', () => {
     expect(terminations).toEqual(['The host ended the collaboration session.']);
     provider.destroy();
   });
+
+  it('reports an ngrok forwarding failure without claiming that the host ended the session', () => {
+    class FakeSocket {
+      readyState = 0;
+      binaryType = '';
+      private readonly listeners = new Map<string, Array<(event: never) => void>>();
+      addEventListener(type: string, listener: EventListener) {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener as (event: never) => void]);
+      }
+      send() { /* protocol output is irrelevant to this close-reason regression */ }
+      close(code = 1000, reason = '') {
+        if (this.readyState === 3) return;
+        this.readyState = 3;
+        this.emit('close', { code, reason });
+      }
+      emit(type: string, event: unknown) {
+        for (const listener of this.listeners.get(type) ?? []) listener(event as never);
+      }
+    }
+
+    const socket = new FakeSocket();
+    const terminations: string[] = [];
+    const provider = new CollaborationWebSocketProvider({
+      doc: new Y.Doc(),
+      websocketUrl: 'ws://127.0.0.1:45678/collaboration/ws',
+      sessionId: 'session_0123456789',
+      credential: 'secret_0123456789abcdefghijklmnopqrstuvwxyz',
+      displayName: 'Host',
+      clientId: 'client_0123456789',
+      initialRole: 'host',
+      onStatus: () => undefined,
+      onWelcome: () => undefined,
+      onRoster: () => undefined,
+      onPresence: () => undefined,
+      onTerminated: (message) => terminations.push(message),
+      webSocketFactory: () => socket as unknown as WebSocket,
+    });
+
+    socket.close(1001, 'Ngrok tunnel unavailable');
+    expect(terminations).toEqual([
+      'The ngrok tunnel stopped unexpectedly. Check the host network and start a new session.',
+    ]);
+    expect(terminations[0]).not.toContain('host ended');
+    provider.destroy();
+  });
 });

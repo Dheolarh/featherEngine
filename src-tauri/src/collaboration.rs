@@ -14,8 +14,7 @@ use axum::Router;
 use base64::engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD};
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
-use ngrok::prelude::TunnelBuilder;
-use ngrok::tunnel::EndpointInfo;
+use ngrok::prelude::{EndpointInfo, ForwarderBuilder, TunnelCloser};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -24,7 +23,7 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tauri::{AppHandle, State as TauriState};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::{interval, timeout};
@@ -52,6 +51,27 @@ const MAX_SESSION_ASSET_CONCURRENCY: usize = 8;
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(45);
+const TUNNEL_STARTUP_STABILITY: Duration = Duration::from_millis(250);
+const CLOSE_REASON_SESSION_ENDED: &str = "Session ended";
+const CLOSE_REASON_TUNNEL_UNAVAILABLE: &str = "Ngrok tunnel unavailable";
+const CLOSE_REASON_RELAY_UNAVAILABLE: &str = "Local relay unavailable";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RelayShutdownReason {
+    SessionEnded,
+    TunnelUnavailable,
+    RelayUnavailable,
+}
+
+impl RelayShutdownReason {
+    fn close_reason(self) -> &'static str {
+        match self {
+            Self::SessionEnded => CLOSE_REASON_SESSION_ENDED,
+            Self::TunnelUnavailable => CLOSE_REASON_TUNNEL_UNAVAILABLE,
+            Self::RelayUnavailable => CLOSE_REASON_RELAY_UNAVAILABLE,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -209,9 +229,24 @@ struct RelayState {
     asset_concurrency: Arc<Semaphore>,
     pending_connections: AtomicUsize,
     cancellation: CancellationToken,
+    shutdown_reason: RwLock<RelayShutdownReason>,
 }
 
 impl RelayState {
+    fn shutdown_reason(&self) -> RelayShutdownReason {
+        *self
+            .shutdown_reason
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn set_shutdown_reason(&self, reason: RelayShutdownReason) {
+        *self
+            .shutdown_reason
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = reason;
+    }
+
     fn roster(&self) -> Vec<Participant> {
         let mut participants: Vec<_> = self
             .participants
@@ -357,6 +392,9 @@ impl CollaborationManager {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
         {
+            session
+                .relay
+                .set_shutdown_reason(RelayShutdownReason::SessionEnded);
             session.cancellation.cancel();
         }
     }
@@ -366,6 +404,9 @@ impl Drop for CollaborationManager {
     fn drop(&mut self) {
         if let Ok(session) = self.session.get_mut() {
             if let Some(session) = session.as_ref() {
+                session
+                    .relay
+                    .set_shutdown_reason(RelayShutdownReason::SessionEnded);
                 session.cancellation.cancel();
             }
         }
@@ -377,6 +418,22 @@ struct StartingGuard<'a>(&'a AtomicBool);
 impl Drop for StartingGuard<'_> {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
+    }
+}
+
+async fn shutdown_running_session(session: RunningSession, reason: RelayShutdownReason) {
+    session.relay.set_shutdown_reason(reason);
+    session.cancellation.cancel();
+    let mut local_task = session.local_task;
+    let mut tunnel_task = session.tunnel_task;
+    let stopped = timeout(Duration::from_secs(5), async {
+        let _ = (&mut local_task).await;
+        let _ = (&mut tunnel_task).await;
+    })
+    .await;
+    if stopped.is_err() {
+        local_task.abort();
+        tunnel_task.abort();
     }
 }
 
@@ -429,20 +486,20 @@ pub(crate) async fn start_collaboration(
     }
     let _starting = StartingGuard(&manager.starting);
 
-    {
+    let stale_session = {
         let mut guard = manager
             .session
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if guard
-            .as_ref()
-            .is_some_and(|session| session.alive.load(Ordering::Acquire))
-        {
+        if guard.as_ref().is_some_and(|session| {
+            session.alive.load(Ordering::Acquire) && !session.cancellation.is_cancelled()
+        }) {
             return Err("A collaboration session is already running.".into());
         }
-        if let Some(stale) = guard.take() {
-            stale.cancellation.cancel();
-        }
+        guard.take()
+    };
+    if let Some(stale) = stale_session {
+        shutdown_running_session(stale, RelayShutdownReason::SessionEnded).await;
     }
 
     validate_session_id(&session_id)?;
@@ -470,6 +527,7 @@ pub(crate) async fn start_collaboration(
     let local_address = listener
         .local_addr()
         .map_err(|_| "Could not read the local collaboration address.".to_string())?;
+    let local_url = format!("http://{local_address}");
 
     // The token is moved directly into the ngrok SDK. Feather never logs it, writes it to disk,
     // places it in application state, or includes an SDK error that might echo credentials.
@@ -481,15 +539,22 @@ pub(crate) async fn start_collaboration(
             "Could not connect to ngrok. Check the authtoken and network connection.".to_string()
         })?;
     let mut endpoint = ngrok_session.http_endpoint();
-    endpoint.forwards_to(format!("Feather collaboration on {local_address}"));
     if let Some(domain) = domain {
         endpoint.domain(domain);
     }
-    let tunnel = endpoint.listen().await.map_err(|_| {
-        "Could not start the ngrok endpoint. Check the domain and account plan.".to_string()
-    })?;
-    let public_url = tunnel.url().trim_end_matches('/').to_string();
-    let local_url = format!("http://{local_address}");
+    // Use ngrok's supported forwarder so endpoint connections receive the SDK's protocol,
+    // proxy-header, reconnect, and shutdown handling instead of a hand-written byte pump.
+    let mut forwarder = endpoint
+        .listen_and_forward(
+            local_url
+                .parse()
+                .map_err(|_| "Could not prepare the local collaboration endpoint.".to_string())?,
+        )
+        .await
+        .map_err(|_| {
+            "Could not start the ngrok endpoint. Check the domain and account plan.".to_string()
+        })?;
+    let public_url = forwarder.url().trim_end_matches('/').to_string();
 
     let cancellation = CancellationToken::new();
     let alive = Arc::new(AtomicBool::new(true));
@@ -504,6 +569,7 @@ pub(crate) async fn start_collaboration(
         asset_concurrency: Arc::new(Semaphore::new(MAX_SESSION_ASSET_CONCURRENCY)),
         pending_connections: AtomicUsize::new(0),
         cancellation: cancellation.clone(),
+        shutdown_reason: RwLock::new(RelayShutdownReason::SessionEnded),
     });
     // Remove plaintext credentials as soon as their salted hashes have been created.
     drop(host_secret);
@@ -518,12 +584,14 @@ pub(crate) async fn start_collaboration(
         .with_state(relay.clone());
     let local_cancellation = cancellation.clone();
     let local_alive = alive.clone();
+    let local_relay = relay.clone();
     let local_task = tokio::spawn(async move {
         let shutdown = local_cancellation.clone();
         let result = axum::serve(listener, router)
             .with_graceful_shutdown(async move { shutdown.cancelled().await })
             .await;
-        if result.is_err() {
+        if result.is_err() && !local_cancellation.is_cancelled() {
+            local_relay.set_shutdown_reason(RelayShutdownReason::RelayUnavailable);
             local_cancellation.cancel();
         }
         local_alive.store(false, Ordering::Release);
@@ -531,9 +599,21 @@ pub(crate) async fn start_collaboration(
 
     let tunnel_cancellation = cancellation.clone();
     let tunnel_alive = alive.clone();
+    let tunnel_relay = relay.clone();
     let tunnel_task = tokio::spawn(async move {
-        proxy_ngrok_to_loopback(tunnel, local_address, tunnel_cancellation.clone()).await;
-        tunnel_cancellation.cancel();
+        let forwarding_exit = tokio::select! {
+            result = forwarder.join() => Some(result),
+            _ = tunnel_cancellation.cancelled() => None,
+        };
+        if forwarding_exit.is_some() {
+            if !tunnel_cancellation.is_cancelled() {
+                tunnel_relay.set_shutdown_reason(RelayShutdownReason::TunnelUnavailable);
+                tunnel_cancellation.cancel();
+            }
+        } else {
+            let _ = forwarder.close().await;
+            let _ = timeout(Duration::from_secs(2), forwarder.join()).await;
+        }
         tunnel_alive.store(false, Ordering::Release);
     });
 
@@ -555,6 +635,37 @@ pub(crate) async fn start_collaboration(
         tunnel_task,
         alive,
     });
+
+    // A listener can be allocated before an account/network failure closes its forwarding task.
+    // Do not report a successful host start until it survives that immediate failure window.
+    tokio::time::sleep(TUNNEL_STARTUP_STABILITY).await;
+    let failed_session = {
+        let mut guard = manager
+            .session
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if guard.as_ref().is_some_and(|session| {
+            !session.alive.load(Ordering::Acquire) || session.cancellation.is_cancelled()
+        }) {
+            guard.take()
+        } else {
+            None
+        }
+    };
+    if let Some(failed) = failed_session {
+        let reason = failed.relay.shutdown_reason();
+        shutdown_running_session(failed, reason).await;
+        return Err(match reason {
+            RelayShutdownReason::TunnelUnavailable => {
+                "The ngrok endpoint closed immediately. Check the account limits and network connection, then try again."
+            }
+            RelayShutdownReason::RelayUnavailable => {
+                "The local collaboration relay stopped before the session became ready."
+            }
+            RelayShutdownReason::SessionEnded => "The collaboration session was stopped before it became ready.",
+        }
+        .to_string());
+    }
     Ok(result)
 }
 
@@ -568,18 +679,7 @@ pub(crate) async fn stop_collaboration(
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .take();
     if let Some(session) = session {
-        session.cancellation.cancel();
-        let mut local_task = session.local_task;
-        let mut tunnel_task = session.tunnel_task;
-        let stopped = timeout(Duration::from_secs(5), async {
-            let _ = (&mut local_task).await;
-            let _ = (&mut tunnel_task).await;
-        })
-        .await;
-        if stopped.is_err() {
-            local_task.abort();
-            tunnel_task.abort();
-        }
+        shutdown_running_session(session, RelayShutdownReason::SessionEnded).await;
     }
     Ok(())
 }
@@ -770,35 +870,6 @@ fn hex_lower(bytes: &[u8]) -> String {
         encoded.push(HEX[(byte & 0x0f) as usize] as char);
     }
     encoded
-}
-
-async fn proxy_ngrok_to_loopback<T>(
-    mut tunnel: T,
-    local_address: std::net::SocketAddr,
-    cancellation: CancellationToken,
-) where
-    T: ngrok::Tunnel<Conn = ngrok::conn::EndpointConn>,
-{
-    loop {
-        tokio::select! {
-          _ = cancellation.cancelled() => {
-            let _ = tunnel.close().await;
-            break;
-          }
-          incoming = tunnel.try_next() => {
-            match incoming {
-              Ok(Some(mut incoming)) => {
-                tokio::spawn(async move {
-                  if let Ok(mut loopback) = TcpStream::connect(local_address).await {
-                    let _ = tokio::io::copy_bidirectional(&mut incoming, &mut loopback).await;
-                  }
-                });
-              }
-              Ok(None) | Err(_) => break,
-            }
-          }
-        }
-    }
 }
 
 async fn asset_options() -> Response {
@@ -1306,7 +1377,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<RelayState>) {
           _ = state.cancellation.cancelled() => {
             let _ = socket_tx.send(Message::Close(Some(CloseFrame {
               code: close_code::AWAY,
-              reason: "Session ended".into(),
+              reason: state.shutdown_reason().close_reason().into(),
             }))).await;
             break;
           }
@@ -1733,6 +1804,22 @@ fn validate_content_type(content_type: Option<String>) -> Result<String, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shutdown_reasons_distinguish_user_stop_from_transport_failure() {
+        assert_eq!(
+            RelayShutdownReason::SessionEnded.close_reason(),
+            "Session ended"
+        );
+        assert_eq!(
+            RelayShutdownReason::TunnelUnavailable.close_reason(),
+            "Ngrok tunnel unavailable"
+        );
+        assert_eq!(
+            RelayShutdownReason::RelayUnavailable.close_reason(),
+            "Local relay unavailable"
+        );
+    }
 
     #[test]
     fn credentials_are_hashed_and_roles_are_distinct() {
