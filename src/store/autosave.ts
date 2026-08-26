@@ -1,6 +1,7 @@
 import type { NodeForgeProject } from '../types';
 import { useEditorStore } from './editorStore';
 import { useProjectStore } from './projectStore';
+import { canUseHostOnlyFeatures } from '../collaboration/access';
 
 /**
  * Crash/close recovery: while a project has unsaved edits, we debounce a full serialized snapshot
@@ -31,6 +32,7 @@ function writeSnapshot() {
   timer = null;
   const editor = useEditorStore.getState();
   const project = useProjectStore.getState();
+  if (!canUseHostOnlyFeatures()) return;
   if (!project.hasProject || !editor.isDirty) return;
   try {
     const snapshot: RecoverySnapshot = {
@@ -59,6 +61,14 @@ export function initAutosave() {
   useEditorStore.subscribe((state) => {
     // Never during Play: the runtime tick churns state every frame and those aren't user edits.
     if (state.isPlaying) {
+      prevDirty = state.isDirty;
+      return;
+    }
+    if (!canUseHostOnlyFeatures()) {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
       prevDirty = state.isDirty;
       return;
     }

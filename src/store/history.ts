@@ -1,5 +1,6 @@
 import type { ProjectGraph, Scene, ScriptBlueprint } from '../types';
 import { useEditorStore } from './editorStore';
+import { canEditCollaborativeProject, collaborationAccess } from '../collaboration/access';
 
 /**
  * Undo/redo for scene edits. The store mutates IMMUTABLY (every object mutator rebuilds the `scenes` array via
@@ -35,6 +36,31 @@ const redoStack: HistoryEntry[] = [];
 let isTimeTraveling = false;
 let lastChangeAt = 0;
 let attached = false;
+let historySuppressionDepth = 0;
+
+export interface CollaborationUndoDelegate {
+  undo: () => void;
+  redo: () => void;
+  clear: () => void;
+  depths: () => { undo: number; redo: number };
+}
+
+let collaborationUndoDelegate: CollaborationUndoDelegate | null = null;
+
+export function setCollaborationUndoDelegate(delegate: CollaborationUndoDelegate | null): void {
+  collaborationUndoDelegate = delegate;
+  syncDepths();
+}
+
+/** Remote CRDT projection is authored state, but it must never enter another user's local undo. */
+export function applyWithoutHistory<T>(apply: () => T): T {
+  historySuppressionDepth += 1;
+  try {
+    return apply();
+  } finally {
+    historySuppressionDepth -= 1;
+  }
+}
 
 const snapshotFrom = (state: {
   scenes: Scene[];
@@ -140,6 +166,14 @@ const graphContentChanged = (next: ProjectGraph[], previous: ProjectGraph[]): bo
 };
 
 const syncDepths = () => {
+  if (collaborationUndoDelegate) {
+    const depths = collaborationUndoDelegate.depths();
+    const state = useEditorStore.getState();
+    if (state.undoDepth !== depths.undo || state.redoDepth !== depths.redo) {
+      useEditorStore.setState({ undoDepth: depths.undo, redoDepth: depths.redo });
+    }
+    return;
+  }
   const { undoDepth, redoDepth } = useEditorStore.getState();
   if (undoDepth !== undoStack.length || redoDepth !== redoStack.length) {
     useEditorStore.setState({ undoDepth: undoStack.length, redoDepth: redoStack.length });
@@ -179,6 +213,12 @@ const apply = (entry: HistoryEntry) => {
 };
 
 export const undo = () => {
+  if (collaborationUndoDelegate) {
+    if (!canEditCollaborativeProject()) return;
+    collaborationUndoDelegate.undo();
+    syncDepths();
+    return;
+  }
   if (!undoStack.length) return;
   redoStack.push(snapshotFrom(useEditorStore.getState()));
   apply(undoStack.pop()!);
@@ -186,6 +226,12 @@ export const undo = () => {
 };
 
 export const redo = () => {
+  if (collaborationUndoDelegate) {
+    if (!canEditCollaborativeProject()) return;
+    collaborationUndoDelegate.redo();
+    syncDepths();
+    return;
+  }
   if (!redoStack.length) return;
   undoStack.push(snapshotFrom(useEditorStore.getState()));
   apply(redoStack.pop()!);
@@ -194,6 +240,7 @@ export const redo = () => {
 
 /** Wipe history — call when a project is created/opened so edits from the old project can't be "undone" into the new one. */
 export const clearHistory = () => {
+  collaborationUndoDelegate?.clear();
   undoStack.length = 0;
   redoStack.length = 0;
   lastChangeAt = 0;
@@ -213,6 +260,7 @@ export const initHistory = () => {
       !graphContentChanged(state.graphs, prev.graphs)
     ) return;
     if (isTimeTraveling) return;
+    if (historySuppressionDepth > 0 || collaborationAccess().active) return;
     // Never capture runtime ticks or the Play/Stop transition — gameplay isn't an "edit".
     if (state.isPlaying || prev.isPlaying) return;
 

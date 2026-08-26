@@ -1068,6 +1068,114 @@ spec('model forge installs from the store, builds, paints, places and bakes a pr
   }
 });
 
+spec('collaboration dialog exposes safe host setup and validates join invites without a tunnel', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=timeline', width: 1280, height: 800 });
+  try {
+    await app.realClick('[data-testid="collaboration-toolbar-button"]');
+    await app.waitFor(`document.querySelector('[data-testid="collaboration-dialog"]')`, {
+      label: 'collaboration dialog open',
+    });
+    await app.waitFor(`document.activeElement?.dataset?.testid === 'collaboration-display-name'`, {
+      label: 'collaboration dialog autofocus',
+    });
+
+    const initial = await app.evaluate(`(() => {
+      const dialog = document.querySelector('[data-testid="collaboration-dialog"]');
+      const token = document.querySelector('[data-testid="collaboration-authtoken"]');
+      const submit = document.querySelector('[data-testid="collaboration-start-submit"]');
+      const rect = dialog.getBoundingClientRect();
+      return {
+        role: dialog.getAttribute('role'),
+        modal: dialog.getAttribute('aria-modal'),
+        tokenType: token.type,
+        tokenAutocomplete: token.autocomplete,
+        startDisabled: submit.disabled,
+        focused: document.activeElement?.dataset?.testid,
+        fitsViewport: rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight,
+        mentionsMemoryOnly: dialog.textContent.includes('Memory only'),
+        mentionsHostPlay: dialog.textContent.includes('Host controls Play'),
+      };
+    })()`);
+    assert.deepEqual(initial, {
+      role: 'dialog',
+      modal: 'true',
+      tokenType: 'password',
+      tokenAutocomplete: 'off',
+      startDisabled: true,
+      focused: 'collaboration-display-name',
+      fitsViewport: true,
+      mentionsMemoryOnly: true,
+      mentionsHostPlay: true,
+    });
+
+    await app.realClick('[data-testid="collaboration-tab-join"]');
+    assert.equal(
+      await app.evaluate(`document.querySelector('[data-testid="collaboration-join-submit"]').disabled`),
+      true,
+      'join remains blocked until name and invite are present',
+    );
+
+    await app.evaluate(`(() => {
+      const setValue = (selector, value) => {
+        const input = document.querySelector(selector);
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      setValue('[data-testid="collaboration-join-display-name"]', 'Morgan');
+      setValue(
+        '[data-testid="collaboration-join-invite"]',
+        'https://sample.ngrok.app/#feather-session=session_0123456789&feather-secret=secret_0123456789abcdefghijklmnopqrstuvwxyz',
+      );
+    })()`);
+    await app.waitFor(`!document.querySelector('[data-testid="collaboration-join-submit"]').disabled`, {
+      label: 'valid join form enabled',
+    });
+
+    await app.page.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await app.page.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+    await app.waitFor(`!document.querySelector('[data-testid="collaboration-dialog"]')`, {
+      label: 'Escape closes collaboration dialog',
+    });
+    assert.equal(
+      await app.evaluate(`document.activeElement?.dataset?.testid`),
+      'collaboration-toolbar-button',
+      'closing restores focus to the toolbar launcher',
+    );
+
+    // Exercise the guest toolbar policy through the local Zustand state only. No network or ngrok
+    // process is involved, so this remains deterministic in CI and cannot create an external tunnel.
+    await app.evaluate(`(async () => {
+      const { useCollaborationStore } = await import('/src/store/collaborationStore.ts');
+      useCollaborationStore.setState({
+        status: 'connected',
+        role: 'editor',
+        sessionName: 'Mock review',
+        participants: [],
+      });
+    })()`);
+    await app.waitFor(
+      `document.querySelector('[data-testid="toolbar-play-button"]').disabled
+        && document.querySelector('[data-testid="toolbar-save-button"]').disabled`,
+      { label: 'guest Play and Save controls disabled' },
+    );
+    const guestControls = await app.evaluate(`(() => ({
+      playTitle: document.querySelector('[data-testid="toolbar-play-button"]').title,
+      saveTitle: document.querySelector('[data-testid="toolbar-save-button"]').title,
+      toolbarState: document.querySelector('[data-testid="collaboration-toolbar-button"]').dataset.collaborationStatus,
+    }))()`);
+    assert.ok(guestControls.playTitle.includes('Only the collaboration host'));
+    assert.ok(guestControls.saveTitle.includes('Only the collaboration host'));
+    assert.equal(guestControls.toolbarState, 'connected');
+
+    await app.evaluate(`(async () => {
+      const { useCollaborationStore } = await import('/src/store/collaborationStore.ts');
+      useCollaborationStore.setState({ status: 'idle', role: null, sessionName: '', participants: [] });
+    })()`);
+  } finally {
+    await app.dispose();
+  }
+});
+
 async function serverUp() {
   try {
     const response = await fetch(BASE_URL, { signal: AbortSignal.timeout(2000) });

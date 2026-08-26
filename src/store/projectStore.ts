@@ -23,6 +23,7 @@ import { contentAddressedName, dataUrlToBytes, sha256Hex } from '../utils/conten
 import { useEditorStore } from './editorStore';
 import { clearHistory } from './history';
 import { clearRecovery, type RecoverySnapshot } from './autosave';
+import { canUseHostOnlyFeatures, collaborationAccess } from '../collaboration/access';
 
 /** Caller-supplied package metadata; the rest (id, createdAt, engineVersion) is filled in. */
 export type PackageMetaInput = Partial<Omit<PackageMeta, 'engineVersion' | 'createdAt'>>;
@@ -302,6 +303,28 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set, get) => {
+      const blockProjectLifecycleDuringCollaboration = () => {
+        if (!collaborationAccess().active) return false;
+        set({
+          toast: {
+            kind: 'error',
+            message: 'Leave or stop collaboration before opening, creating, or closing a project.',
+          },
+        });
+        return true;
+      };
+
+      const blockGuestPackageMutation = () => {
+        if (canUseHostOnlyFeatures()) return false;
+        set({
+          toast: {
+            kind: 'error',
+            message: 'Only the collaboration host can import packages into the shared project.',
+          },
+        });
+        return true;
+      };
+
       const addRecent = (dir: string, name: string) => {
         if (dir === 'web') return;
         set((state) => ({
@@ -449,6 +472,7 @@ export const useProjectStore = create<ProjectState>()(
         },
 
         newProject: async (name) => {
+          if (blockProjectLifecycleDuringCollaboration()) return;
           set({ busy: true, error: null });
           try {
             const platform = await getPlatform();
@@ -467,6 +491,7 @@ export const useProjectStore = create<ProjectState>()(
         },
 
         openProject: async () => {
+          if (blockProjectLifecycleDuringCollaboration()) return;
           set({ busy: true, error: null });
           try {
             const platform = await getPlatform();
@@ -485,6 +510,7 @@ export const useProjectStore = create<ProjectState>()(
         },
 
         openRecent: async (dir) => {
+          if (blockProjectLifecycleDuringCollaboration()) return;
           set({ busy: true, error: null });
           try {
             const platform = await getPlatform();
@@ -514,6 +540,10 @@ export const useProjectStore = create<ProjectState>()(
         save: async () => {
           const { projectDir, projectName, hasProject } = get();
           if (!hasProject) return;
+          if (!canUseHostOnlyFeatures()) {
+            set({ toast: { kind: 'error', message: 'Only the collaboration host can save the shared project.' } });
+            return;
+          }
           if (!projectDir) return get().saveAs(projectName);
           set({ busy: true, error: null });
           try {
@@ -531,6 +561,10 @@ export const useProjectStore = create<ProjectState>()(
         },
 
         saveAs: async (name) => {
+          if (!canUseHostOnlyFeatures()) {
+            set({ toast: { kind: 'error', message: 'Only the collaboration host can save the shared project.' } });
+            return;
+          }
           set({ busy: true, error: null });
           try {
             const platform = await getPlatform();
@@ -713,6 +747,7 @@ export const useProjectStore = create<ProjectState>()(
         },
 
         newProjectFromPackageUrl: async (url, name) => {
+          if (blockProjectLifecycleDuringCollaboration()) return false;
           set({ busy: true, error: null });
           try {
             const archive = readPackageFile(await fetchPackage(url));
@@ -750,6 +785,7 @@ export const useProjectStore = create<ProjectState>()(
 
         importPackageFromFile: async () => {
           if (!get().hasProject) return;
+          if (blockGuestPackageMutation()) return;
           set({ busy: true, error: null });
           try {
             const platform = await getPlatform();
@@ -772,6 +808,7 @@ export const useProjectStore = create<ProjectState>()(
 
         importPackageFromUrl: async (url) => {
           if (!get().hasProject) return false;
+          if (blockGuestPackageMutation()) return false;
           set({ busy: true, error: null });
           try {
             const platform = await getPlatform();
@@ -790,11 +827,13 @@ export const useProjectStore = create<ProjectState>()(
 
         // Continue with the built-in starter scene without a saved project (Save acts as Save As).
         useDemo: () => {
+          if (blockProjectLifecycleDuringCollaboration()) return;
           clearRecovery();
           set({ hasProject: true, projectDir: isDesktop ? null : 'web', projectName: 'Demo (unsaved)' });
         },
 
         restoreRecovery: (snapshot) => {
+          if (blockProjectLifecycleDuringCollaboration()) return;
           useEditorStore.getState().loadProject(snapshot.project);
           clearHistory();
           // The restored state is exactly the unsaved work, so flag it dirty (and clear the snapshot
@@ -805,6 +844,7 @@ export const useProjectStore = create<ProjectState>()(
         },
 
         closeProject: () => {
+          if (blockProjectLifecycleDuringCollaboration()) return;
           clearRecovery();
           set({ hasProject: false, projectDir: null, projectName: 'Untitled Project' });
         },

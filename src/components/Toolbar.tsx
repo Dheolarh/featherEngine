@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Box,
   Boxes,
@@ -24,6 +24,7 @@ import {
   Store,
   TreePine,
   Undo2,
+  Users,
   X,
 } from 'lucide-react';
 import { PREFAB_EDIT_SCENE_ID } from '../types';
@@ -39,6 +40,8 @@ import type { SceneObjectKind, TreeArchetype } from '../types';
 import { focusWorkspacePanel, openWorkspacePanel } from './workspacePanels';
 import { askPackageDetails } from '../store/packageDetailsStore';
 import { useExtensionSnapshot } from '../extensions/react';
+import { useCollaborationStore } from '../store/collaborationStore';
+import { CollaborationDialog } from './CollaborationDialog';
 
 /** Parametric trees aren't a SceneObjectKind (they're a component), so they get their own Add entries. */
 const treeTools: Array<{ archetype: TreeArchetype; label: string }> = [
@@ -398,6 +401,52 @@ function SceneSwitcher() {
   );
 }
 
+function CollaborationToolbarButton({ open, onClick }: { open: boolean; onClick: () => void }) {
+  const status = useCollaborationStore((state) => state.status);
+  const sessionName = useCollaborationStore((state) => state.sessionName);
+  const participants = useCollaborationStore((state) => state.participants);
+  const role = useCollaborationStore((state) => state.role);
+  const isLive = status === 'hosting' || status === 'connected' || status === 'reconnecting';
+  const isWorking = status === 'starting' || status === 'joining';
+  const label = isLive
+    ? `${participants.length || 1} live`
+    : isWorking
+      ? status === 'starting' ? 'Starting…' : 'Joining…'
+      : status === 'error' ? 'Reconnect' : 'Collaborate';
+  const title = isLive
+    ? `${sessionName || 'Live collaboration'} · ${role ? `${role[0].toUpperCase()}${role.slice(1)}` : 'Connected'}`
+    : status === 'error' ? 'Collaboration needs attention' : 'Start or join a live editing session';
+
+  return (
+    <button
+      type="button"
+      className={`collaboration-toolbar-button collaboration-status--${status} ${isLive ? 'is-live' : ''}`}
+      onClick={onClick}
+      title={title}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      data-testid="collaboration-toolbar-button"
+      data-collaboration-status={status}
+    >
+      {isLive && participants.length > 0 ? (
+        <span className="collaboration-toolbar-faces" aria-hidden>
+          {participants.slice(0, 3).map((participant) => (
+            <span key={participant.id} style={{ '--participant-color': participant.color } as CSSProperties}>
+              {participant.name.trim().slice(0, 1).toUpperCase() || '?'}
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span className="collaboration-toolbar-icon" aria-hidden>
+          <Users size={15} />
+          <i className="collaboration-status-dot" />
+        </span>
+      )}
+      <span className="collaboration-toolbar-label">{label}</span>
+    </button>
+  );
+}
+
 export function Toolbar() {
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const isPlayPaused = useEditorStore((state) => state.isPlayPaused);
@@ -411,7 +460,13 @@ export function Toolbar() {
   const projectName = useProjectStore((state) => state.projectName);
   const save = useProjectStore((state) => state.save);
   const busy = useProjectStore((state) => state.busy);
+  const collaborationStatus = useCollaborationStore((state) => state.status);
+  const collaborationRole = useCollaborationStore((state) => state.role);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [collaborationOpen, setCollaborationOpen] = useState(false);
+  const guestProjectLock = collaborationRole !== null
+    && collaborationRole !== 'host'
+    && collaborationStatus !== 'idle';
 
   // ⌘S / Ctrl+S to save; F6 pause / F7 step during Play.
   useEffect(() => {
@@ -496,12 +551,15 @@ export function Toolbar() {
 
       {/* No settings cog: View → Preferences… opens the same modal. */}
 
+      <CollaborationToolbarButton open={collaborationOpen} onClick={() => setCollaborationOpen(true)} />
+
       <div className="tool-group" aria-label="Runtime controls">
         <button
           className={isPlaying ? 'run-button active' : 'run-button'}
-          title={editingPrefab ? 'Close the prefab editor to play' : isPlaying ? 'Stop preview' : 'Play preview'}
-          disabled={editingPrefab}
+          title={guestProjectLock ? 'Only the collaboration host can run the shared simulation' : editingPrefab ? 'Close the prefab editor to play' : isPlaying ? 'Stop preview' : 'Play preview'}
+          disabled={editingPrefab || guestProjectLock}
           onClick={() => setPlaying(!isPlaying)}
+          data-testid="toolbar-play-button"
         >
           {isPlaying ? <Square size={16} aria-hidden /> : <Play size={16} aria-hidden />}
           <span>{isPlaying ? 'Stop' : 'Play'}</span>
@@ -524,7 +582,13 @@ export function Toolbar() {
         )}
         <RuntimeErrorBadge />
         <ProblemsButton />
-        <button className="export-button" title="Save project (⌘S)" onClick={() => void save()} disabled={busy}>
+        <button
+          className="export-button"
+          title={guestProjectLock ? 'Only the collaboration host can save project files' : 'Save project (⌘S)'}
+          onClick={() => void save()}
+          disabled={busy || guestProjectLock}
+          data-testid="toolbar-save-button"
+        >
           <Save size={16} aria-hidden />
           <span>Save</span>
         </button>
@@ -532,6 +596,7 @@ export function Toolbar() {
       </div>
 
       <PreferencesModal open={prefsOpen} onClose={() => setPrefsOpen(false)} />
+      <CollaborationDialog open={collaborationOpen} onClose={() => setCollaborationOpen(false)} />
     </header>
   );
 }

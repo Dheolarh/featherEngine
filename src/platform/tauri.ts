@@ -14,7 +14,15 @@ import {
 } from '@tauri-apps/plugin-fs';
 import type { NodeForgeProject, ProjectManifest, Scene } from '../types';
 import { ASSETS_DIR, SCENES_DIR, blankProject, joinProject, splitProject } from '../project/serialize';
-import type { OpenedProject, Platform, ProjectTextWriteResult } from './types';
+import type {
+  CollaborationHostStatus,
+  OpenedProject,
+  Platform,
+  ProjectTextWriteResult,
+  StartedCollaborationHost,
+  RegisteredCollaborationAsset,
+} from './types';
+import { canUseHostOnlyFeatures } from '../collaboration/access';
 
 const MANIFEST = 'project.json';
 const MAX_PROJECT_TEXT_BYTES = 4 * 1024 * 1024;
@@ -159,10 +167,12 @@ export const tauriPlatform: Platform = {
   },
 
   async saveProject(dir, project) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Only the collaboration host can save the shared project.');
     await writeProjectFiles(dir, project);
   },
 
   async importAsset(dir, file) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Only the collaboration host can import project assets.');
     const assetsDir = await join(dir, ASSETS_DIR);
     await mkdir(assetsDir, { recursive: true });
     const safeName = file.name.replace(/[^\w.\-]+/g, '_');
@@ -177,6 +187,7 @@ export const tauriPlatform: Platform = {
   },
 
   async readProjectText(projectDir, relativePath) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Linked FeatherScript files are controlled by the collaboration host.');
     const safePath = safeProjectRelativePath(relativePath);
     await assertNoProjectPathSymlinks(projectDir, safePath);
     return invoke<string | null>('read_project_text', {
@@ -186,6 +197,7 @@ export const tauriPlatform: Platform = {
   },
 
   async writeProjectText(projectDir, relativePath, contents, options) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Linked FeatherScript files are controlled by the collaboration host.');
     const safePath = safeProjectRelativePath(relativePath);
     assertProjectTextSize(contents);
     if (options?.expectedContents !== null && options?.expectedContents !== undefined) {
@@ -201,6 +213,7 @@ export const tauriPlatform: Platform = {
   },
 
   async watchProjectPaths(projectDir, relativePaths, onChange, options) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Linked FeatherScript files are controlled by the collaboration host.');
     if (relativePaths.length === 0) {
       throw new Error('At least one project-relative path is required to start a watcher.');
     }
@@ -252,6 +265,7 @@ export const tauriPlatform: Platform = {
   },
 
   async revealProjectFile(projectDir, relativePath) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Linked FeatherScript files are controlled by the collaboration host.');
     await assertNoProjectPathSymlinks(projectDir, relativePath);
     const target = await absoluteProjectPath(projectDir, relativePath);
     await invoke('reveal_in_explorer', { path: target });
@@ -345,10 +359,30 @@ export const tauriPlatform: Platform = {
   },
 
   async saveInProject(projectDir, subfolder, fileName, bytes) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Only the collaboration host can write project files.');
     const dir = await join(projectDir, subfolder);
     await mkdir(dir, { recursive: true });
     const target = await join(dir, fileName);
     await writeFile(target, bytes);
     return target;
+  },
+
+  async startCollaboration(request) {
+    return invoke<StartedCollaborationHost>('start_collaboration', { ...request });
+  },
+
+  async stopCollaboration() {
+    await invoke('stop_collaboration');
+  },
+
+  async collaborationStatus() {
+    return invoke<CollaborationHostStatus>('collaboration_status');
+  },
+
+  async registerCollaborationAssets(projectDir, assets) {
+    return invoke<RegisteredCollaborationAsset[]>('register_collaboration_assets', {
+      projectDir,
+      assets,
+    });
   },
 };

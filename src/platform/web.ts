@@ -1,6 +1,7 @@
 import type { NodeForgeProject } from '../types';
 import { migrateLoaded } from '../project/serialize';
 import type { OpenedProject, Platform } from './types';
+import { canUseHostOnlyFeatures } from '../collaboration/access';
 
 const WEB_DIR = 'web';
 
@@ -55,10 +56,12 @@ export const webPlatform: Platform = {
   },
 
   async saveProject(_dir, project) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Only the collaboration host can save the shared project.');
     download(project.name, project);
   },
 
   async importAsset(_dir, file) {
+    if (!canUseHostOnlyFeatures()) throw new Error('Only the collaboration host can import project assets.');
     return { path: `assets/${file.name}`, url: URL.createObjectURL(file) };
   },
 

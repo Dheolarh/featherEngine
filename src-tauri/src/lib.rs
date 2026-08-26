@@ -1,10 +1,17 @@
+mod collaboration;
+
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_fs::FsExt;
+
+use collaboration::{
+  collaboration_status, register_collaboration_assets, start_collaboration, stop_collaboration,
+  CollaborationManager,
+};
 
 const MAX_LINKED_TEXT_BYTES: usize = 4 * 1024 * 1024;
 static LINKED_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -803,6 +810,7 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(CollaborationManager::default())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
     .invoke_handler(tauri::generate_handler![
@@ -810,8 +818,17 @@ pub fn run() {
       check_export_platforms,
       reveal_in_explorer,
       read_project_text,
-      write_project_text_atomic
+      write_project_text_atomic,
+      start_collaboration,
+      stop_collaboration,
+      collaboration_status,
+      register_collaboration_assets
     ])
+    .on_window_event(|window, event| {
+      if window.label() == "main" && matches!(event, WindowEvent::Destroyed) {
+        window.state::<CollaborationManager>().shutdown_now();
+      }
+    })
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

@@ -56,6 +56,7 @@ Feather keeps the complete game-making loop in one live workspace:
 | **Iterate in place** | Press Play without leaving the editor; inspect execution flow, values, logs, physics, and frame timing live. |
 | **Ship the same project** | Produce a portable web build or package it for Windows, macOS, Linux, Android, and iOS. |
 | **Work with an AI co-editor** | Let the built-in assistant create and modify the scene through the same tools used by the editor. |
+| **Build together live** | Host an encrypted, Yjs-backed editing session from the desktop app through your own ngrok tunnel. |
 
 There is no separate runtime authoring toolchain to learn: the web editor, Tauri desktop app, and
 exported player share the same React, Three.js, and Rapier foundation.
@@ -117,6 +118,7 @@ Blueprints, replace assets, and reuse the systems in your own game.
 | **Cinematics** | Shot sequencing, camera paths, cuts and blends, timed object/audio/event actions, overlays, frame-locked WebM capture, and MP4 export through ffmpeg.wasm. |
 | **Runtime diagnostics** | On-screen console, live variable watch, execution and value tracing, problem reporting, performance profiler, render/physics statistics, and replay capture. |
 | **AI authoring** | Bring-your-own-key support for OpenAI, Anthropic, and Google models, tool-driven scene editing, smart routing, and a localhost-only MCP bridge for external agents. |
+| **Live collaboration** | Host/editor/viewer roles, presence and participant controls, reconnect-safe CRDT editing, and authenticated host-to-guest asset streaming without a Feather cloud server. |
 | **Production export** | Self-contained game bundles, a portable web player, native desktop installers, mobile shells, build verification, and a platform-readiness doctor. |
 
 ## Get started
@@ -324,6 +326,7 @@ verify the workflow end to end. The complete checklist is in
 
 ## Documentation
 
+- [Live Collaboration](docs/COLLABORATION.md) — start/join workflow, authority model, security, and limitations
 - [Plugin SDK](docs/PLUGIN_SDK.md) — commands, dockable panels, safe project APIs, and plugin lifecycle
 - [Production Export](docs/PRODUCTION_EXPORT.md) — web, desktop, Android, and iOS packaging
 - [AI Assistant](docs/AI_ASSISTANT.md) — tool architecture, MCP, and the contributor checklist

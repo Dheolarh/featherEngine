@@ -1,6 +1,7 @@
 import type { Edge, OnConnect, OnEdgesChange, OnNodesChange, OnReconnect } from '@xyflow/react';
 import { addEdge, applyEdgeChanges, applyNodeChanges, reconnectEdge } from '@xyflow/react';
 import { create } from 'zustand';
+import { canUseHostOnlyFeatures } from '../collaboration/access';
 import {
   PROJECT_VERSION,
   PREFAB_EDIT_SCENE_ID,
@@ -5011,19 +5012,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isDirty: true,
     })),
   updateBlueprintFeatherExternalLink: (id, link) =>
-    set((state) => ({
-      blueprints: state.blueprints.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              featherSourcePath: link?.path,
-              featherSourceLastSyncedHash: link?.lastSyncedHash,
-              featherSourceLastSyncedVisualHash: link?.lastSyncedVisualHash,
-            }
-          : item,
-      ),
-      isDirty: true,
-    })),
+    set((state) =>
+      canUseHostOnlyFeatures()
+        ? {
+            blueprints: state.blueprints.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    featherSourcePath: link?.path,
+                    featherSourceLastSyncedHash: link?.lastSyncedHash,
+                    featherSourceLastSyncedVisualHash: link?.lastSyncedVisualHash,
+                  }
+                : item,
+            ),
+            isDirty: true,
+          }
+        : state,
+    ),
   syncBlueprintFeatherSource: (id, source) => {
     const state = get();
     const blueprint = state.blueprints.find((item) => item.id === id);
@@ -6364,6 +6369,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setPlaying: (isPlaying) =>
     set((state) => {
       if (isPlaying === state.isPlaying) return state;
+      if (isPlaying && !canUseHostOnlyFeatures()) return state;
       // Play runs the game scene, not a prefab being edited — block it while the prefab editor is open.
       if (isPlaying && state.editingPrefabId) return state;
       // Fresh run = fresh error reporting: a script fixed since the last run should report again.

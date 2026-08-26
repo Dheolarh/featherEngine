@@ -54,6 +54,49 @@ export interface ProjectTextWriteOptions {
   expectedContents: string | null;
 }
 
+export type CollaborationJoinRole = 'editor' | 'viewer';
+
+export interface StartCollaborationRequest {
+  /** ngrok Agent authtoken. It is passed directly to the native agent and never persisted. */
+  authtoken: string;
+  sessionId: string;
+  joinSecret: string;
+  hostSecret: string;
+  defaultRole: CollaborationJoinRole;
+  /** Optional reserved/custom ngrok domain; free accounts normally leave this blank. */
+  domain?: string;
+}
+
+export interface StartedCollaborationHost {
+  localUrl: string;
+  publicUrl: string;
+  sessionId: string;
+}
+
+export interface CollaborationHostStatus {
+  active: boolean;
+  localUrl?: string;
+  publicUrl?: string;
+  sessionId?: string;
+  participants: Array<{
+    id: string;
+    name: string;
+    role: 'host' | CollaborationJoinRole;
+  }>;
+}
+
+export interface CollaborationAssetRegistration {
+  sha256: string;
+  relativePath: string;
+  contentType?: string;
+}
+
+export interface RegisteredCollaborationAsset {
+  sha256: string;
+  size: number;
+  path: string;
+}
+
 export type ProjectTextWriteResult =
   | { kind: 'written' }
   | {
@@ -167,4 +210,15 @@ export interface Platform {
    * check their browser's Downloads folder.
    */
   revealFile?(path: string): Promise<void>;
+  /** Desktop only: start the local authenticated WebSocket relay and publish it through ngrok. */
+  startCollaboration?(request: StartCollaborationRequest): Promise<StartedCollaborationHost>;
+  /** Desktop host only: close the relay/tunnel and disconnect its participants. */
+  stopCollaboration?(): Promise<void>;
+  /** Desktop only: inspect the in-memory relay. No credential is included in this response. */
+  collaborationStatus?(): Promise<CollaborationHostStatus>;
+  /** Register already-hashed project files for authenticated guest transfer. */
+  registerCollaborationAssets?(
+    projectDir: string,
+    assets: CollaborationAssetRegistration[],
+  ): Promise<RegisteredCollaborationAsset[]>;
 }
