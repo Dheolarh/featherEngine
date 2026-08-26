@@ -46,6 +46,11 @@ const presenceSchema = z.object({
   participantId: z.string(),
   data: collaborationPresenceSchema,
 });
+const liveUpdateSchema = z.object({
+  v: z.literal(1),
+  type: z.literal('update'),
+  update: z.string().max(64 * 1024 * 1024),
+});
 const syncRequestSchema = z.object({
   v: z.literal(1),
   type: z.literal('syncRequest'),
@@ -126,8 +131,12 @@ export function encodeCollaborationUpdate(update: Uint8Array): Uint8Array {
   return frame;
 }
 
-export function decodeCollaborationUpdate(frame: ArrayBuffer | Uint8Array): Uint8Array | null {
-  const bytes = frame instanceof Uint8Array ? frame : new Uint8Array(frame);
+export function decodeCollaborationUpdate(frame: ArrayBuffer | ArrayBufferView): Uint8Array | null {
+  const bytes = frame instanceof Uint8Array
+    ? frame
+    : ArrayBuffer.isView(frame)
+      ? new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength)
+      : new Uint8Array(frame);
   if (
     bytes.length < 3 ||
     bytes.length > MAX_BINARY_UPDATE + 2 ||
@@ -135,6 +144,20 @@ export function decodeCollaborationUpdate(frame: ArrayBuffer | Uint8Array): Uint
     bytes[1] !== UPDATE_KIND
   ) return null;
   return bytes.subarray(2);
+}
+
+/** Decode the reliable JSON/base64 live-update envelope used by current clients. */
+export function decodeCollaborationUpdateMessage(message: string): Uint8Array | null {
+  try {
+    const parsed = liveUpdateSchema.safeParse(JSON.parse(message));
+    return parsed.success ? base64ToBytes(parsed.data.update) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function encodeCollaborationUpdateMessage(update: Uint8Array): string {
+  return JSON.stringify({ v: 1, type: 'update', update: bytesToBase64(update) });
 }
 
 /** Small dependency-free Yjs provider for the host relay's authenticated WebSocket protocol. */
@@ -205,6 +228,10 @@ export class CollaborationWebSocketProvider {
       this.handleBinary(event.data);
       return;
     }
+    if (ArrayBuffer.isView(event.data)) {
+      this.handleBinary(event.data);
+      return;
+    }
     if (event.data instanceof Blob) {
       void event.data.arrayBuffer().then((buffer) => this.handleBinary(buffer));
     }
@@ -259,6 +286,20 @@ export class CollaborationWebSocketProvider {
       return;
     }
 
+    const liveUpdate = liveUpdateSchema.safeParse(parsed);
+    if (liveUpdate.success) {
+      try {
+        Y.applyUpdate(
+          this.options.doc,
+          base64ToBytes(liveUpdate.data.update),
+          REMOTE_COLLABORATION_ORIGIN,
+        );
+      } catch {
+        this.options.onStatus('error', 'A collaboration update was invalid and was ignored.');
+      }
+      return;
+    }
+
     const syncRequest = syncRequestSchema.safeParse(parsed);
     if (syncRequest.success && this.role !== 'viewer') {
       this.sendJson({
@@ -295,7 +336,7 @@ export class CollaborationWebSocketProvider {
     }
   }
 
-  private handleBinary(frame: ArrayBuffer): void {
+  private handleBinary(frame: ArrayBuffer | ArrayBufferView): void {
     const update = decodeCollaborationUpdate(frame);
     if (!update) return;
     try {
@@ -373,7 +414,10 @@ export class CollaborationWebSocketProvider {
 
   private sendUpdate(update: Uint8Array): void {
     if (!this.welcomed || !this.socket || this.socket.readyState !== 1 || this.role === 'viewer') return;
-    this.socket.send(encodeCollaborationUpdate(update));
+    // Initial state already uses a JSON/base64 frame successfully across WebKit, ngrok and the
+    // native relay. Keep incremental edits on that same transport too. Binary input remains
+    // supported for compatibility with sessions created by older builds.
+    this.socket.send(encodeCollaborationUpdateMessage(update));
   }
 
   private sendJson(value: unknown): void {

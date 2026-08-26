@@ -38,6 +38,10 @@ const MAX_SYNC_UPDATE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_WS_MESSAGE_BYTES: usize = MAX_SYNC_UPDATE_BYTES * 4 / 3 + 4096;
 const MAX_PRESENCE_BYTES: usize = 32 * 1024;
 const MAX_RATE_WINDOW_BYTES: u64 = 64 * 1024 * 1024;
+// Edit-mode transform projection runs at roughly 31 Hz and presence at up to 10 Hz. Keep enough
+// headroom for normal dragging plus sync/control frames while the byte budget remains the primary
+// protection against large-message abuse.
+const MAX_MESSAGES_PER_RATE_WINDOW: u32 = 900;
 const MAX_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_REGISTERED_ASSETS: usize = 4096;
 const OUTBOUND_QUEUE_CAPACITY: usize = 256;
@@ -1173,6 +1177,8 @@ struct AuthMessage {
 enum ClientCommand {
     #[serde(rename = "presence")]
     Presence { v: u8, data: Value },
+    #[serde(rename = "update")]
+    Update { v: u8, update: String },
     #[serde(rename = "syncRequest")]
     SyncRequest { v: u8 },
     #[serde(rename = "syncState")]
@@ -1195,6 +1201,7 @@ impl ClientCommand {
     fn version(&self) -> u8 {
         match self {
             Self::Presence { v, .. }
+            | Self::Update { v, .. }
             | Self::SyncRequest { v }
             | Self::SyncState { v, .. }
             | Self::SetRole { v, .. }
@@ -1232,7 +1239,9 @@ impl RateLimit {
         }
         self.message_count += 1;
         self.message_bytes = self.message_bytes.saturating_add(message_bytes as u64);
-        if self.message_count > 300 || self.message_bytes > MAX_RATE_WINDOW_BYTES {
+        if self.message_count > MAX_MESSAGES_PER_RATE_WINDOW
+            || self.message_bytes > MAX_RATE_WINDOW_BYTES
+        {
             return false;
         }
         if is_presence {
@@ -1501,6 +1510,25 @@ fn handle_command(
                 Some(participant_id),
             );
         }
+        ClientCommand::Update { update, .. } => {
+            let decoded = BASE64
+                .decode(update.as_bytes())
+                .map_err(|_| ("invalid_update", "Live update must be valid base64."))?;
+            if decoded.is_empty() || decoded.len() > MAX_SYNC_UPDATE_BYTES {
+                return Err((
+                    "message_too_large",
+                    "Live updates must be between 1 byte and 32 MiB.",
+                ));
+            }
+            state.broadcast(
+                json_message(json!({
+                  "v": PROTOCOL_VERSION,
+                  "type": "update",
+                  "update": update,
+                })),
+                Some(participant_id),
+            );
+        }
         ClientCommand::SyncRequest { .. } => {
             let authors: Vec<_> = state
                 .participants
@@ -1622,6 +1650,7 @@ fn authorize_command(
 ) -> Result<(), (&'static str, &'static str)> {
     let allowed = match command {
         ClientCommand::Presence { .. } | ClientCommand::SyncRequest { .. } => true,
+        ClientCommand::Update { .. } => role.can_edit(),
         ClientCommand::SyncState { .. } => role.can_edit(),
         ClientCommand::SetRole { .. } | ClientCommand::Kick { .. } => role.is_host(),
     };
@@ -1808,6 +1837,68 @@ fn validate_content_type(content_type: Option<String>) -> Result<String, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio_tungstenite::{connect_async, tungstenite::Message as ClientWsMessage};
+
+    async fn authenticate_test_client(
+        url: &str,
+        session_id: &str,
+        credential: &str,
+        name: &str,
+        client_id: &str,
+    ) -> tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    > {
+        let (mut socket, _) = connect_async(url).await.expect("connect test client");
+        socket
+            .send(ClientWsMessage::Text(
+                json!({
+                  "v": PROTOCOL_VERSION,
+                  "type": "auth",
+                  "sessionId": session_id,
+                  "credential": credential,
+                  "name": name,
+                  "clientId": client_id,
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("send test auth");
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let message = socket.next().await.expect("welcome frame").expect("valid frame");
+                if let ClientWsMessage::Text(text) = message {
+                    let value: Value = serde_json::from_str(text.as_ref()).expect("welcome json");
+                    if value.get("type").and_then(Value::as_str) == Some("welcome") {
+                        break;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("welcome timeout");
+        socket
+    }
+
+    async fn next_test_live_update(
+        socket: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) -> Value {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let message = socket.next().await.expect("relay frame").expect("valid frame");
+                if let ClientWsMessage::Text(text) = message {
+                    let value: Value = serde_json::from_str(text.as_ref()).expect("relay json");
+                    if value.get("type").and_then(Value::as_str) == Some("update") {
+                        break value;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("live update timeout")
+    }
 
     #[test]
     fn shutdown_reasons_distinguish_user_stop_from_transport_failure() {
@@ -1880,6 +1971,19 @@ mod tests {
                 .0,
             "permission_denied"
         );
+
+        let live_update = ClientCommand::Update {
+            v: PROTOCOL_VERSION,
+            update: BASE64.encode([1_u8, 2, 3]),
+        };
+        assert!(authorize_command(CollaborationRole::Host, &live_update).is_ok());
+        assert!(authorize_command(CollaborationRole::Editor, &live_update).is_ok());
+        assert_eq!(
+            authorize_command(CollaborationRole::Viewer, &live_update)
+                .unwrap_err()
+                .0,
+            "permission_denied"
+        );
     }
 
     #[test]
@@ -1913,6 +2017,98 @@ mod tests {
             assert!(limiter.accept_message(true, 100));
         }
         assert!(!limiter.accept_message(true, 100));
+    }
+
+    #[test]
+    fn normal_live_drag_rate_stays_inside_the_general_limit() {
+        let mut limiter = RateLimit::new();
+        // 31 authored updates/s + 10 presence updates/s + control headroom for ten seconds.
+        for _ in 0..500 {
+            assert!(limiter.accept_message(false, 256));
+        }
+    }
+
+    #[tokio::test]
+    async fn loopback_relay_forwards_live_updates_in_both_directions() {
+        let session_id = "relay-session-0123456789";
+        let host_secret = "host-secret-0123456789-abcdefghijklmnopqrstuvwxyz";
+        let join_secret = "join-secret-0123456789-abcdefghijklmnopqrstuvwxyz";
+        let cancellation = CancellationToken::new();
+        let state = Arc::new(RelayState {
+            session_id: session_id.into(),
+            credentials: CredentialHashes::new(host_secret, join_secret),
+            default_role: CollaborationRole::Editor,
+            participants: RwLock::new(HashMap::new()),
+            kicked_clients: RwLock::new(HashSet::new()),
+            assets: RwLock::new(HashMap::new()),
+            asset_rate_limit: Mutex::new(AssetDownloadLimit::new()),
+            asset_concurrency: Arc::new(Semaphore::new(MAX_SESSION_ASSET_CONCURRENCY)),
+            pending_connections: AtomicUsize::new(0),
+            cancellation: cancellation.clone(),
+            shutdown_reason: RwLock::new(RelayShutdownReason::SessionEnded),
+        });
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind loopback relay");
+        let address = listener.local_addr().expect("relay address");
+        let router = Router::new()
+            .route("/collaboration/ws", get(websocket_route))
+            .with_state(state);
+        let shutdown = cancellation.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async move { shutdown.cancelled().await })
+                .await
+                .expect("serve loopback relay");
+        });
+        let url = format!("ws://{address}/collaboration/ws");
+
+        let mut host = authenticate_test_client(
+            &url,
+            session_id,
+            host_secret,
+            "Host",
+            "host-client-1",
+        )
+        .await;
+        let mut editor = authenticate_test_client(
+            &url,
+            session_id,
+            join_secret,
+            "Editor",
+            "editor-client-1",
+        )
+        .await;
+
+        let host_update = BASE64.encode([9_u8, 8, 7, 6]);
+        host.send(ClientWsMessage::Text(
+            json!({ "v": PROTOCOL_VERSION, "type": "update", "update": host_update })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("host sends update");
+        assert_eq!(
+            next_test_live_update(&mut editor).await.get("update"),
+            Some(&Value::String(host_update)),
+        );
+
+        let editor_update = BASE64.encode([1_u8, 2, 3, 4]);
+        editor
+            .send(ClientWsMessage::Text(
+                json!({ "v": PROTOCOL_VERSION, "type": "update", "update": editor_update })
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("editor sends update");
+        assert_eq!(
+            next_test_live_update(&mut host).await.get("update"),
+            Some(&Value::String(editor_update)),
+        );
+
+        cancellation.cancel();
+        let _ = timeout(Duration::from_secs(2), server).await;
     }
 
     #[test]

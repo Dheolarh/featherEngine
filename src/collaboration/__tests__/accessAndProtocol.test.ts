@@ -9,12 +9,14 @@ import * as Y from 'yjs';
 import {
   CollaborationWebSocketProvider,
   decodeCollaborationUpdate,
+  decodeCollaborationUpdateMessage,
   encodeCollaborationUpdate,
+  encodeCollaborationUpdateMessage,
 } from '../provider';
 
 afterEach(resetCollaborationAccessForTests);
 
-describe('collaboration roles and binary protocol', () => {
+describe('collaboration roles and update protocol', () => {
   it('allows editors to author but reserves save/play/filesystem work for the host', () => {
     setCollaborationAccess(true, 'editor');
     expect(canEditCollaborativeProject()).toBe(true);
@@ -27,11 +29,17 @@ describe('collaboration roles and binary protocol', () => {
     expect(canUseHostOnlyFeatures()).toBe(true);
   });
 
-  it('frames only the agreed Yjs update protocol and rejects malformed data', () => {
+  it('keeps backward-compatible binary framing strict', () => {
     const update = new Uint8Array([3, 1, 4, 1, 5]);
     expect(decodeCollaborationUpdate(encodeCollaborationUpdate(update))).toEqual(update);
     expect(decodeCollaborationUpdate(new Uint8Array([2, 1, 3]))).toBeNull();
     expect(decodeCollaborationUpdate(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+
+  it('round-trips current live updates through the reliable text envelope', () => {
+    const update = new Uint8Array([8, 5, 3, 2, 1]);
+    expect(decodeCollaborationUpdateMessage(encodeCollaborationUpdateMessage(update))).toEqual(update);
+    expect(decodeCollaborationUpdateMessage('{"v":1,"type":"update","update":"not base64!"}')).toBeNull();
   });
 
   it('authenticates, publishes Yjs updates and replays offline edits after reconnect', () => {
@@ -97,7 +105,9 @@ describe('collaboration roles and binary protocol', () => {
       serverTime: 1,
     }));
     doc.getMap('test').set('value', 42);
-    expect(sockets[0].sent.some((value) => value instanceof Uint8Array)).toBe(true);
+    expect(sockets[0].sent.some(
+      (value) => typeof value === 'string' && decodeCollaborationUpdateMessage(value) !== null,
+    )).toBe(true);
 
     sockets[0].close();
     doc.getMap('test').set('offlineValue', 99);
@@ -116,8 +126,10 @@ describe('collaboration roles and binary protocol', () => {
       assetToken: 'asset_0123456789abcdefghijklmnopqrstuvwxyz',
       serverTime: 2,
     }));
-    const replayFrame = sockets[1].sent.find((value) => value instanceof Uint8Array) as Uint8Array;
-    const replayUpdate = decodeCollaborationUpdate(replayFrame);
+    const replayFrame = sockets[1].sent.find(
+      (value): value is string => typeof value === 'string' && decodeCollaborationUpdateMessage(value) !== null,
+    )!;
+    const replayUpdate = decodeCollaborationUpdateMessage(replayFrame);
     const replayed = new Y.Doc();
     expect(replayUpdate).not.toBeNull();
     Y.applyUpdate(replayed, replayUpdate!);

@@ -6,7 +6,11 @@ import { useProjectStore } from '../../store/projectStore';
 import { useCollaborationStore } from '../../store/collaborationStore';
 import { buildCollaborationInvite } from '../invite';
 import { readProjectFromCollaborationDoc, writeProjectToCollaborationDoc } from '../projectDocument';
-import { decodeCollaborationUpdate, encodeCollaborationUpdate } from '../provider';
+import {
+  decodeCollaborationUpdateMessage,
+  encodeCollaborationUpdate,
+  encodeCollaborationUpdateMessage,
+} from '../provider';
 import { resetCollaborationAccessForTests } from '../access';
 
 class FakeSocket {
@@ -155,34 +159,35 @@ describe('collaboration guest workspace isolation', () => {
 
   it('replicates transforms guest-to-host and host-to-guest without a remote echo', async () => {
     const { socket, sharedDocument } = await joinAndReceiveSharedProject();
-    const binaryCount = () => socket.sent.filter((value) => value instanceof Uint8Array).length;
+    const updateMessages = () => socket.sent
+      .filter((value): value is string => typeof value === 'string')
+      .filter((value) => decodeCollaborationUpdateMessage(value) !== null);
 
-    const beforeGuestEdit = binaryCount();
+    const beforeGuestEdit = updateMessages().length;
     useEditorStore.getState().updateTransform('cube-one', 'position', [6, 2, -3]);
     await new Promise((resolve) => setTimeout(resolve, 45));
 
-    const guestFrame = socket.sent.filter((value): value is Uint8Array => value instanceof Uint8Array).at(-1)!;
-    const guestUpdate = decodeCollaborationUpdate(guestFrame);
+    const guestUpdate = decodeCollaborationUpdateMessage(updateMessages().at(-1)!);
     expect(guestUpdate).not.toBeNull();
     Y.applyUpdate(sharedDocument, guestUpdate!);
     expect(readProjectFromCollaborationDoc(sharedDocument)?.scenes[0].objects[0].transform.position).toEqual([6, 2, -3]);
-    expect(binaryCount()).toBeGreaterThan(beforeGuestEdit);
+    expect(updateMessages().length).toBeGreaterThan(beforeGuestEdit);
 
     const vectorBeforeHostEdit = Y.encodeStateVector(sharedDocument);
     const hostProject = readProjectFromCollaborationDoc(sharedDocument)!;
     hostProject.scenes[0].objects[0].transform.scale = [2, 3, 4];
     writeProjectToCollaborationDoc(sharedDocument, hostProject);
     const hostUpdate = Y.encodeStateAsUpdate(sharedDocument, vectorBeforeHostEdit);
-    const hostFrame = encodeCollaborationUpdate(hostUpdate);
-    const beforeHostFrame = binaryCount();
-    socket.message(hostFrame.buffer.slice(hostFrame.byteOffset, hostFrame.byteOffset + hostFrame.byteLength));
+    const hostFrame = encodeCollaborationUpdateMessage(hostUpdate);
+    const beforeHostFrame = updateMessages().length;
+    socket.message(hostFrame);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(
       useEditorStore.getState().scenes[0].objects.find((object) => object.id === 'cube-one')?.transform.scale,
     ).toEqual([2, 3, 4]);
     await new Promise((resolve) => setTimeout(resolve, 45));
-    expect(binaryCount()).toBe(beforeHostFrame);
+    expect(updateMessages().length).toBe(beforeHostFrame);
   });
 
   it('re-publishes local presence for newcomers and removes departed presence', async () => {

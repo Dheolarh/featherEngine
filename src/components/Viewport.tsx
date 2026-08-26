@@ -1174,6 +1174,9 @@ function SceneContent({
   // Record mode: on release, drop/refresh a transform keyframe at the playhead from the dragged pose.
   const endGizmoDrag = useCallback(() => {
     setDraggingGizmo(false);
+    // Drei normally emits objectChange before mouseUp, but explicitly sample once more so WebKit
+    // cannot strand the final pose when those two events land in the opposite order.
+    syncSelectedTransform();
     multiDragRef.current = null;
     // Publish the exact pointer-up pose before clearing the transient "moving" badge.
     flushProjectChanges();
@@ -1190,7 +1193,7 @@ function SceneContent({
       rotation: [target.rotation.x, target.rotation.y, target.rotation.z],
       scale: [target.scale.x, target.scale.y, target.scale.z],
     });
-  }, [flushProjectChanges, selectedObjectId, setEditingActivity]);
+  }, [flushProjectChanges, selectedObjectId, setEditingActivity, syncSelectedTransform]);
 
   useEffect(() => () => setEditingActivity(undefined), [setEditingActivity]);
 

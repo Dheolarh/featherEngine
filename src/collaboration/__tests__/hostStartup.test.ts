@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { blankProject } from '../../project/serialize';
 import { resetCollaborationAccessForTests } from '../access';
 import { readProjectFromCollaborationDoc } from '../projectDocument';
-import { decodeCollaborationUpdate } from '../provider';
+import { decodeCollaborationUpdateMessage } from '../provider';
 
 const platformMocks = vi.hoisted(() => ({
   startCollaboration: vi.fn(),
@@ -166,8 +166,8 @@ describe('collaboration host startup lifecycle', () => {
     await new Promise((resolve) => setTimeout(resolve, 45));
 
     const peer = new Y.Doc();
-    for (const frame of socket.sent.filter((value): value is Uint8Array => value instanceof Uint8Array)) {
-      const update = decodeCollaborationUpdate(frame);
+    for (const frame of socket.sent.filter((value): value is string => typeof value === 'string')) {
+      const update = decodeCollaborationUpdateMessage(frame);
       if (update) Y.applyUpdate(peer, update);
     }
     expect(readProjectFromCollaborationDoc(peer)?.scenes[0].objects[0].transform.position).toEqual([8, 1, -4]);
