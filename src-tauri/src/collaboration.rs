@@ -1173,7 +1173,12 @@ struct AuthMessage {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase", tag = "type")]
+#[serde(
+    deny_unknown_fields,
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 enum ClientCommand {
     #[serde(rename = "presence")]
     Presence { v: u8, data: Value },
@@ -1418,14 +1423,28 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<RelayState>) {
             last_seen = Instant::now();
             match incoming {
               Message::Text(text) => {
-                let parsed = serde_json::from_str::<ClientCommand>(text.as_str());
-                let Ok(command) = parsed else {
-                  state.send_error(&participant.id, "invalid_message", "Message does not match protocol v1.");
-                  break;
+                let command = match serde_json::from_str::<ClientCommand>(text.as_str()) {
+                  Ok(command) => command,
+                  Err(_) => {
+                    let _ = socket_tx
+                      .send(error_message("invalid_message", "Message does not match protocol v1."))
+                      .await;
+                    let _ = socket_tx.send(Message::Close(Some(CloseFrame {
+                      code: close_code::POLICY,
+                      reason: "Invalid collaboration message".into(),
+                    }))).await;
+                    break;
+                  }
                 };
                 let is_presence = matches!(command, ClientCommand::Presence { .. });
                 if !rate_limit.accept_message(is_presence, text.len()) {
-                  state.send_error(&participant.id, "rate_limited", "Too many collaboration messages.");
+                  let _ = socket_tx
+                    .send(error_message("rate_limited", "Too many collaboration messages."))
+                    .await;
+                  let _ = socket_tx.send(Message::Close(Some(CloseFrame {
+                    code: close_code::POLICY,
+                    reason: "Too many collaboration messages".into(),
+                  }))).await;
                   break;
                 }
                 if let Err((code, message)) = handle_command(&state, &participant.id, command) {
@@ -1434,7 +1453,13 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<RelayState>) {
               }
               Message::Binary(binary) => {
                 if !rate_limit.accept_message(false, binary.len()) {
-                  state.send_error(&participant.id, "rate_limited", "Too many collaboration messages.");
+                  let _ = socket_tx
+                    .send(error_message("rate_limited", "Too many collaboration messages."))
+                    .await;
+                  let _ = socket_tx.send(Message::Close(Some(CloseFrame {
+                    code: close_code::POLICY,
+                    reason: "Too many collaboration messages".into(),
+                  }))).await;
                   break;
                 }
                 if let Err((code, message)) = handle_binary_update(&state, &participant.id, binary.as_ref()) {
@@ -1880,24 +1905,69 @@ mod tests {
         socket
     }
 
-    async fn next_test_live_update(
+    async fn next_test_json_message(
         socket: &mut tokio_tungstenite::WebSocketStream<
             tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
         >,
+        expected_type: &str,
     ) -> Value {
         timeout(Duration::from_secs(2), async {
             loop {
                 let message = socket.next().await.expect("relay frame").expect("valid frame");
                 if let ClientWsMessage::Text(text) = message {
                     let value: Value = serde_json::from_str(text.as_ref()).expect("relay json");
-                    if value.get("type").and_then(Value::as_str) == Some("update") {
+                    if value.get("type").and_then(Value::as_str) == Some(expected_type) {
                         break value;
                     }
                 }
             }
         })
         .await
-        .expect("live update timeout")
+        .unwrap_or_else(|_| panic!("{expected_type} timeout"))
+    }
+
+    async fn next_test_live_update(
+        socket: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) -> Value {
+        next_test_json_message(socket, "update").await
+    }
+
+    async fn start_test_relay(
+        session_id: &str,
+        host_secret: &str,
+        join_secret: &str,
+    ) -> (Arc<RelayState>, CancellationToken, JoinHandle<()>, String) {
+        let cancellation = CancellationToken::new();
+        let state = Arc::new(RelayState {
+            session_id: session_id.into(),
+            credentials: CredentialHashes::new(host_secret, join_secret),
+            default_role: CollaborationRole::Editor,
+            participants: RwLock::new(HashMap::new()),
+            kicked_clients: RwLock::new(HashSet::new()),
+            assets: RwLock::new(HashMap::new()),
+            asset_rate_limit: Mutex::new(AssetDownloadLimit::new()),
+            asset_concurrency: Arc::new(Semaphore::new(MAX_SESSION_ASSET_CONCURRENCY)),
+            pending_connections: AtomicUsize::new(0),
+            cancellation: cancellation.clone(),
+            shutdown_reason: RwLock::new(RelayShutdownReason::SessionEnded),
+        });
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind loopback relay");
+        let address = listener.local_addr().expect("relay address");
+        let router = Router::new()
+            .route("/collaboration/ws", get(websocket_route))
+            .with_state(state.clone());
+        let shutdown = cancellation.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async move { shutdown.cancelled().await })
+                .await
+                .expect("serve loopback relay");
+        });
+        (state, cancellation, server, format!("ws://{address}/collaboration/ws"))
     }
 
     #[test]
@@ -1991,6 +2061,38 @@ mod tests {
         let presence: ClientCommand =
             serde_json::from_str(r#"{"v":1,"type":"presence","data":{"cursor":[10,20]}}"#).unwrap();
         assert_eq!(presence.version(), PROTOCOL_VERSION);
+        let sync_state: ClientCommand = serde_json::from_value(json!({
+          "v": PROTOCOL_VERSION,
+          "type": "syncState",
+          "targetId": "guest-1",
+          "update": BASE64.encode([1_u8, 2, 3]),
+        }))
+        .expect("frontend syncState fields");
+        assert!(matches!(
+            sync_state,
+            ClientCommand::SyncState { target_id, .. } if target_id == "guest-1"
+        ));
+        let set_role: ClientCommand = serde_json::from_value(json!({
+          "v": PROTOCOL_VERSION,
+          "type": "setRole",
+          "participantId": "guest-1",
+          "role": "viewer",
+        }))
+        .expect("frontend setRole fields");
+        assert!(matches!(
+            set_role,
+            ClientCommand::SetRole { participant_id, .. } if participant_id == "guest-1"
+        ));
+        let kick: ClientCommand = serde_json::from_value(json!({
+          "v": PROTOCOL_VERSION,
+          "type": "kick",
+          "participantId": "guest-1",
+        }))
+        .expect("frontend kick fields");
+        assert!(matches!(
+            kick,
+            ClientCommand::Kick { participant_id, .. } if participant_id == "guest-1"
+        ));
         assert!(serde_json::from_str::<ClientCommand>(
             r#"{"v":1,"type":"presence","data":{},"surprise":true}"#
         )
@@ -2033,35 +2135,8 @@ mod tests {
         let session_id = "relay-session-0123456789";
         let host_secret = "host-secret-0123456789-abcdefghijklmnopqrstuvwxyz";
         let join_secret = "join-secret-0123456789-abcdefghijklmnopqrstuvwxyz";
-        let cancellation = CancellationToken::new();
-        let state = Arc::new(RelayState {
-            session_id: session_id.into(),
-            credentials: CredentialHashes::new(host_secret, join_secret),
-            default_role: CollaborationRole::Editor,
-            participants: RwLock::new(HashMap::new()),
-            kicked_clients: RwLock::new(HashSet::new()),
-            assets: RwLock::new(HashMap::new()),
-            asset_rate_limit: Mutex::new(AssetDownloadLimit::new()),
-            asset_concurrency: Arc::new(Semaphore::new(MAX_SESSION_ASSET_CONCURRENCY)),
-            pending_connections: AtomicUsize::new(0),
-            cancellation: cancellation.clone(),
-            shutdown_reason: RwLock::new(RelayShutdownReason::SessionEnded),
-        });
-        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-            .await
-            .expect("bind loopback relay");
-        let address = listener.local_addr().expect("relay address");
-        let router = Router::new()
-            .route("/collaboration/ws", get(websocket_route))
-            .with_state(state);
-        let shutdown = cancellation.clone();
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router)
-                .with_graceful_shutdown(async move { shutdown.cancelled().await })
-                .await
-                .expect("serve loopback relay");
-        });
-        let url = format!("ws://{address}/collaboration/ws");
+        let (state, cancellation, server, url) =
+            start_test_relay(session_id, host_secret, join_secret).await;
 
         let mut host = authenticate_test_client(
             &url,
@@ -2079,6 +2154,40 @@ mod tests {
             "editor-client-1",
         )
         .await;
+
+        editor
+            .send(ClientWsMessage::Text(
+                json!({ "v": PROTOCOL_VERSION, "type": "syncRequest" })
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("editor requests initial state");
+        let sync_request = next_test_json_message(&mut host, "syncRequest").await;
+        let editor_participant_id = sync_request
+            .get("participantId")
+            .and_then(Value::as_str)
+            .expect("sync target");
+        let initial_state = BASE64.encode([5_u8, 4, 3, 2, 1]);
+        host.send(ClientWsMessage::Text(
+            json!({
+              "v": PROTOCOL_VERSION,
+              "type": "syncState",
+              "targetId": editor_participant_id,
+              "update": initial_state,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("host returns initial state");
+        assert_eq!(
+            next_test_json_message(&mut editor, "syncState")
+                .await
+                .get("update"),
+            Some(&Value::String(initial_state)),
+        );
+        assert_eq!(state.roster().len(), 2);
 
         let host_update = BASE64.encode([9_u8, 8, 7, 6]);
         host.send(ClientWsMessage::Text(
@@ -2106,6 +2215,64 @@ mod tests {
             next_test_live_update(&mut host).await.get("update"),
             Some(&Value::String(editor_update)),
         );
+
+        cancellation.cancel();
+        let _ = timeout(Duration::from_secs(2), server).await;
+    }
+
+    #[tokio::test]
+    async fn rate_limited_client_receives_an_explicit_policy_close() {
+        let session_id = "rate-session-0123456789";
+        let host_secret = "host-secret-0123456789-abcdefghijklmnopqrstuvwxyz";
+        let join_secret = "join-secret-0123456789-abcdefghijklmnopqrstuvwxyz";
+        let (_state, cancellation, server, url) =
+            start_test_relay(session_id, host_secret, join_secret).await;
+        let mut editor = authenticate_test_client(
+            &url,
+            session_id,
+            join_secret,
+            "Fast editor",
+            "fast-editor-client-1",
+        )
+        .await;
+
+        for sequence in 0..=30 {
+            editor
+                .send(ClientWsMessage::Text(
+                    json!({
+                      "v": PROTOCOL_VERSION,
+                      "type": "presence",
+                      "data": { "lastSeenAt": sequence },
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .expect("send presence burst");
+        }
+
+        timeout(Duration::from_secs(2), async {
+            let mut saw_rate_limit_error = false;
+            loop {
+                match editor.next().await.expect("terminal relay frame").expect("valid frame") {
+                    ClientWsMessage::Text(text) => {
+                        let value: Value = serde_json::from_str(text.as_ref()).expect("relay json");
+                        if value.get("code").and_then(Value::as_str) == Some("rate_limited") {
+                            saw_rate_limit_error = true;
+                        }
+                    }
+                    ClientWsMessage::Close(Some(frame)) => {
+                        assert!(saw_rate_limit_error);
+                        assert_eq!(u16::from(frame.code), close_code::POLICY);
+                        break;
+                    }
+                    ClientWsMessage::Close(None) => panic!("rate limit close had no reason"),
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("rate limit close timeout");
 
         cancellation.cancel();
         let _ = timeout(Duration::from_secs(2), server).await;
