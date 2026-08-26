@@ -181,8 +181,11 @@ export class CollaborationWebSocketProvider {
     this.role = options.initialRole;
     this.socketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
     this.random = options.random ?? Math.random;
-    this.setTimer = options.setTimer ?? setTimeout;
-    this.clearTimer = options.clearTimer ?? clearTimeout;
+    // Firefox brand-checks Window timers. Storing `window.setTimeout` and later calling it as
+    // `this.setTimer(...)` changes its receiver to the provider instance and throws before auth or
+    // presence can run. Bind native timers once; injected test clocks keep their supplied receiver.
+    this.setTimer = options.setTimer ?? globalThis.setTimeout.bind(globalThis);
+    this.clearTimer = options.clearTimer ?? globalThis.clearTimeout.bind(globalThis);
     options.doc.on('update', this.onDocumentUpdate);
     this.connect();
   }

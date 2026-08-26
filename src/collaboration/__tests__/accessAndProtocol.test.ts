@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   canEditCollaborativeProject,
   canUseHostOnlyFeatures,
@@ -14,7 +14,10 @@ import {
   encodeCollaborationUpdateMessage,
 } from '../provider';
 
-afterEach(resetCollaborationAccessForTests);
+afterEach(() => {
+  resetCollaborationAccessForTests();
+  vi.unstubAllGlobals();
+});
 
 describe('collaboration roles and update protocol', () => {
   it('allows editors to author but reserves save/play/filesystem work for the host', () => {
@@ -40,6 +43,58 @@ describe('collaboration roles and update protocol', () => {
     const update = new Uint8Array([8, 5, 3, 2, 1]);
     expect(decodeCollaborationUpdateMessage(encodeCollaborationUpdateMessage(update))).toEqual(update);
     expect(decodeCollaborationUpdateMessage('{"v":1,"type":"update","update":"not base64!"}')).toBeNull();
+  });
+
+  it('binds native Window timers before using them as provider callbacks', () => {
+    const timerReceivers: unknown[] = [];
+    const brandedSetTimer = function (this: unknown) {
+      timerReceivers.push(this);
+      if (this !== globalThis) throw new TypeError('Timer receiver must be Window');
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    } as unknown as typeof setTimeout;
+    const brandedClearTimer = function (this: unknown) {
+      timerReceivers.push(this);
+      if (this !== globalThis) throw new TypeError('Timer receiver must be Window');
+    } as typeof clearTimeout;
+    vi.stubGlobal('setTimeout', brandedSetTimer);
+    vi.stubGlobal('clearTimeout', brandedClearTimer);
+
+    class FakeSocket {
+      readyState = 0;
+      binaryType = '';
+      private readonly listeners = new Map<string, Array<(event: never) => void>>();
+      addEventListener(type: string, listener: EventListener) {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener as (event: never) => void]);
+      }
+      send() { /* transport payload is irrelevant to the timer receiver regression */ }
+      close() { this.readyState = 3; }
+      open() {
+        this.readyState = 1;
+        for (const listener of this.listeners.get('open') ?? []) listener({} as never);
+      }
+    }
+
+    const socket = new FakeSocket();
+    const provider = new CollaborationWebSocketProvider({
+      doc: new Y.Doc(),
+      websocketUrl: 'wss://example.test/collaboration/ws',
+      sessionId: 'session_0123456789',
+      credential: 'secret_0123456789abcdefghijklmnopqrstuvwxyz',
+      displayName: 'Firefox',
+      clientId: 'firefox-client-1',
+      initialRole: 'editor',
+      onStatus: () => undefined,
+      onWelcome: () => undefined,
+      onRoster: () => undefined,
+      onPresence: () => undefined,
+      webSocketFactory: () => socket as unknown as WebSocket,
+    });
+
+    expect(() => socket.open()).not.toThrow();
+    expect(() => provider.updatePresence({ activeSceneId: 'scene-main' })).not.toThrow();
+    expect(() => provider.destroy()).not.toThrow();
+    expect(timerReceivers.length).toBeGreaterThanOrEqual(4);
+    expect(timerReceivers.every((receiver) => receiver === globalThis)).toBe(true);
   });
 
   it('authenticates, publishes Yjs updates and replays offline edits after reconnect', () => {
