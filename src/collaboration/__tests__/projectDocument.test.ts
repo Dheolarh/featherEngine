@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { blankProject } from '../../project/serialize';
 import {
   CollaborationProjectBinding,
+  LOCAL_COLLABORATION_ORIGIN,
   REMOTE_COLLABORATION_ORIGIN,
   readProjectFromCollaborationDoc,
   sanitizeProjectForCollaboration,
@@ -130,6 +131,58 @@ describe('collaboration project document', () => {
     expect(leftPosition).toEqual(rightPosition);
     expect(leftPosition).toHaveLength(3);
     expect([[1, 2, 3], [4, 5, 6]]).toContainEqual(leftPosition);
+  });
+
+  it('syncs edit-mode object transforms in both directions without echoing remote updates', async () => {
+    const initial = blankProject('Live transforms');
+    initial.scenes[0].objects.push({
+      id: 'cube-one',
+      name: 'Cube',
+      kind: 'cube',
+      transform: {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+    });
+    useEditorStore.getState().loadProject(initial);
+    useEditorStore.setState({ isPlaying: false });
+    setCollaborationAccess(true, 'host');
+    const doc = new Y.Doc();
+    const binding = new CollaborationProjectBinding(doc, { seed: initial, manageUndo: false });
+    let localUpdateCount = 0;
+    const countLocalUpdate = (_update: Uint8Array, origin: unknown) => {
+      if (origin === LOCAL_COLLABORATION_ORIGIN) localUpdateCount += 1;
+    };
+    doc.on('update', countLocalUpdate);
+    try {
+      useEditorStore.getState().updateTransform('cube-one', 'position', [3, 4, 5]);
+      await new Promise((resolve) => setTimeout(resolve, 45));
+      expect(readProjectFromCollaborationDoc(doc)?.scenes[0].objects[0].transform.position).toEqual([3, 4, 5]);
+      expect(localUpdateCount).toBeGreaterThan(0);
+
+      const localCountBeforeRemote = localUpdateCount;
+      const remoteDoc = new Y.Doc();
+      Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+      const stateBeforeRemoteEdit = Y.encodeStateVector(doc);
+      const remoteProject = readProjectFromCollaborationDoc(remoteDoc)!;
+      remoteProject.scenes[0].objects[0].transform.rotation = [0.1, 0.2, 0.3];
+      writeProjectToCollaborationDoc(remoteDoc, remoteProject);
+      Y.applyUpdate(
+        doc,
+        Y.encodeStateAsUpdate(remoteDoc, stateBeforeRemoteEdit),
+        REMOTE_COLLABORATION_ORIGIN,
+      );
+      await Promise.resolve();
+
+      expect(useEditorStore.getState().selectedObject()?.transform.rotation).toEqual([0.1, 0.2, 0.3]);
+      await new Promise((resolve) => setTimeout(resolve, 45));
+      expect(localUpdateCount).toBe(localCountBeforeRemote);
+    } finally {
+      doc.off('update', countLocalUpdate);
+      binding.destroy();
+      resetCollaborationAccessForTests();
+    }
   });
 
   it('defers collaborator edits during host Play and applies them immediately after Stop', async () => {

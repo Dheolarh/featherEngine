@@ -30,8 +30,13 @@ or if authentication fails.
   content-hash-verified requests and become temporary guest blob URLs.
 - Only the host can Play, save, import packages/assets, or use linked FeatherScript files. This keeps
   simulation and filesystem writes authoritative on one machine.
-- Each collaborator has independent selection and scene navigation. Presence shares where people are
-  working without serializing local paths or transient editor state into the project.
+- Each collaborator has independent selection and scene navigation. Colored avatars mark remote
+  selections and transform drags on the matching viewport object and hierarchy row, and mark people
+  viewing the same Blueprint or graph node. This presence stays ephemeral and never enters the saved
+  project.
+- Edit-mode object transforms are projected at roughly 30 Hz while dragging, with the exact pointer-up
+  pose flushed immediately. These authored changes travel through the same reconnect-safe CRDT as the
+  rest of the project.
 
 ## Security and limits
 

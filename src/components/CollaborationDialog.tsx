@@ -48,9 +48,25 @@ function participantPresenceLabel(presence: {
   activeSceneId?: string;
   selectedObjectId?: string;
   activePanel?: string;
+  activeBlueprintId?: string;
+  surface?: 'viewport' | 'inspector' | 'graph' | 'script';
+  editing?: { kind?: 'transform' | 'inspector' | 'graph' | 'code'; mode?: string };
   lastSeenAt?: number;
 } | undefined) {
+  if (presence?.editing?.kind === 'transform') {
+    const action = presence.editing.mode === 'rotate'
+      ? 'Rotating'
+      : presence.editing.mode === 'scale'
+        ? 'Scaling'
+        : 'Moving';
+    return `${action} an object`;
+  }
+  if (presence?.editing?.kind === 'graph') return 'Editing a Blueprint node';
+  if (presence?.editing?.kind === 'code') return 'Editing FeatherScript';
+  if (presence?.activeBlueprintId && presence.surface === 'script') return 'In Blueprint code';
+  if (presence?.activeBlueprintId) return 'In a Blueprint';
   if (presence?.activePanel) return `In ${titleCase(presence.activePanel.replace(/[-_]/g, ' '))}`;
+  if (presence?.selectedObjectId) return 'Editing an object';
   if (presence?.activeSceneId) return 'In the scene';
   return 'In the editor';
 }

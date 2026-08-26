@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { ContactShadows, Edges, Grid, PerformanceMonitor, TransformControls } from '@react-three/drei';
+import { ContactShadows, Edges, Grid, Html, PerformanceMonitor, TransformControls } from '@react-three/drei';
 import { ArrowDownToLine, Aperture, Camera, Globe, Magnet, Maximize2, Minimize2, Move3D, Play, Rotate3D, Scaling, Sparkles, Square, View } from 'lucide-react';
 import { useViewportPrefs } from '../store/viewportPrefsStore';
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
@@ -86,6 +86,8 @@ import { highestTerrainWorldHeight } from '../terrain/terrain';
 import type { MaterialOverrides, SceneObject, SceneObjectKind } from '../types';
 import { GameView } from '../player/GameView';
 import { RuntimeOverlays } from '../runtime/RuntimeOverlays';
+import { useCollaborationStore, type CollaborationParticipant } from '../store/collaborationStore';
+import { CollaboratorAvatars } from './CollaboratorAvatars';
 
 type DropContext = { camera: THREE.Camera; canvas: HTMLCanvasElement };
 
@@ -163,11 +165,20 @@ const EMPTY_BATCHES: Map<string, SceneObject[]> = new Map();
 
 const hideInRuntime = (object: SceneObject) => object.renderer?.hideInPlay ?? Boolean(object.physics?.isTrigger);
 
-function Primitive({ object, selected }: { object: SceneObject; selected: boolean }) {
+function Primitive({
+  object,
+  selected,
+  selectedColor,
+}: {
+  object: SceneObject;
+  selected: boolean;
+  selectedColor?: string;
+}) {
   // Selection outlines follow the editor accent. They were hardcoded amber, picked back when the
   // default theme was warm — against Nova's cool palette that reads as a stray colour rather than
   // "this thing is selected".
-  const selectionColor = useEditorPrefs((s) => s.accent);
+  const localSelectionColor = useEditorPrefs((s) => s.accent);
+  const selectionColor = selectedColor ?? localSelectionColor;
   // Floating combat damage number.
   if (object.effect?.kind === 'damage') return <DamageNumber effect={object.effect} />;
   // Runtime particle burst (bullet impact, etc.) — render the points effect, nothing else.
@@ -491,6 +502,7 @@ function Primitive({ object, selected }: { object: SceneObject; selected: boolea
 type SceneObjectViewProps = {
   object: SceneObject;
   selected: boolean;
+  collaborators?: readonly CollaborationParticipant[];
   registerObject: (id: string, object: THREE.Group | null) => void;
   /** True when the pointer is over (or dragging) a transform-gizmo handle — selection must yield to it. */
   isGizmoEngaged?: () => boolean;
@@ -511,6 +523,7 @@ type SceneObjectViewProps = {
 function sceneObjectPropsEqual(prev: SceneObjectViewProps, next: SceneObjectViewProps): boolean {
   if (
     prev.selected !== next.selected ||
+    prev.collaborators !== next.collaborators ||
     prev.drawSelf !== next.drawSelf ||
     prev.registerObject !== next.registerObject ||
     prev.isGizmoEngaged !== next.isGizmoEngaged ||
@@ -535,6 +548,7 @@ function sceneObjectPropsEqual(prev: SceneObjectViewProps, next: SceneObjectView
 export const SceneObjectView = memo(function SceneObjectView({
   object,
   selected,
+  collaborators = EMPTY_COLLABORATORS,
   registerObject,
   isGizmoEngaged,
   drawSelf = true,
@@ -547,6 +561,29 @@ export const SceneObjectView = memo(function SceneObjectView({
   // object for objects that didn't move (only moved ones get a fresh `{...object, transform}`), so a
   // ref match means "static this frame" → skip the writes entirely. Reset on Stop via the null below.
   const lastApplied = useRef<unknown>(null);
+  const remotelySelected = collaborators.length > 0;
+  const highlighted = selected || remotelySelected;
+  const collaboratorColor = selected ? undefined : collaborators[0]?.color;
+  const remoteTransform = collaborators.find(
+    (participant) => participant.presence.editing?.kind === 'transform',
+  )?.presence.editing;
+  const collaborationAction = remoteTransform?.mode === 'rotate'
+    ? 'rotating'
+    : remoteTransform?.mode === 'scale'
+      ? 'scaling'
+      : remoteTransform
+        ? 'moving'
+        : collaborators.some((participant) => participant.presence.editing)
+          ? 'editing'
+          : 'selected';
+  const collaborationBadge = !isPlaying && remotelySelected ? (
+    <Html center position={[0, 0.8, 0]} zIndexRange={[40, 20]}>
+      <span className="viewport-collaborator-badge" data-testid={`viewport-collaborator-${object.id}`}>
+        <CollaboratorAvatars participants={collaborators} compact label={`is editing ${object.name}`} />
+        <span>{collaborationAction}</span>
+      </span>
+    </Html>
+  ) : null;
 
   // Imperative transform application during Play: read this object's final transform from the
   // runtime buffer and write it straight to the group. Paired with sceneObjectPropsEqual (which
@@ -588,8 +625,9 @@ export const SceneObjectView = memo(function SceneObjectView({
   if (object.attachment) {
     return (
       <BoneAttachment object={object} onSelect={() => !isPlaying && selectObject(object.id)}>
-        {drawSelf && <Primitive object={object} selected={selected} />}
+        {drawSelf && <Primitive object={object} selected={highlighted} selectedColor={collaboratorColor} />}
         {object.particles && <ParticleSystem object={object} />}
+        {collaborationBadge}
         {children}
       </BoneAttachment>
     );
@@ -608,6 +646,7 @@ export const SceneObjectView = memo(function SceneObjectView({
       onPointerDown={(event: ThreeEvent<PointerEvent>) => {
         // While playing, clicks belong to the game (mouse-look / shooting), not editor selection.
         if (isPlaying) return;
+        useCollaborationStore.getState().setPresenceSurface('viewport');
         // Alt+LMB drives the orbit camera; don't hijack it for selection.
         if (event.nativeEvent.altKey || event.nativeEvent.button !== 0) return;
         // Pointer is on a transform-gizmo handle (which raycasts separately): let the gizmo grab it
@@ -622,11 +661,12 @@ export const SceneObjectView = memo(function SceneObjectView({
         }
       }}
     >
-      {drawSelf && <Primitive object={object} selected={selected} />}
+      {drawSelf && <Primitive object={object} selected={highlighted} selectedColor={collaboratorColor} />}
       {object.reflectionProbe?.enabled && (
         <ReflectionProbeCapture objectId={object.id} probe={object.reflectionProbe} showHelper={selected} />
       )}
       {object.particles && <ParticleSystem object={object} />}
+      {collaborationBadge}
       {children}
     </group>
   );
@@ -642,6 +682,7 @@ type TreeRenderOpts = {
   selectedObjectId: string;
   /** Every selected object id (multi-select) — drives the highlight outline. */
   selectedSet: Set<string>;
+  collaboratorsByObject: ReadonlyMap<string, readonly CollaborationParticipant[]>;
   registerObject: (id: string, object: THREE.Group | null) => void;
   isGizmoEngaged: () => boolean;
 };
@@ -703,6 +744,7 @@ function renderObjectTree(objects: SceneObject[], opts: TreeRenderOpts): ReactNo
         key={object.id}
         object={visibleObject}
         selected={opts.selectedSet.has(object.id)}
+        collaborators={opts.collaboratorsByObject.get(object.id) ?? EMPTY_COLLABORATORS}
         registerObject={opts.registerObject}
         isGizmoEngaged={opts.isGizmoEngaged}
         drawSelf={drawSelf}
@@ -720,6 +762,7 @@ function renderObjectTree(objects: SceneObject[], opts: TreeRenderOpts): ReactNo
 // re-render every VFX whenever the editor's selection changes.
 const NOOP_REGISTER = () => {};
 const NOOP_GIZMO = () => false;
+const EMPTY_COLLABORATORS: readonly CollaborationParticipant[] = [];
 
 /**
  * Renders the scene's transient runtime VFX — impact sparks, muzzle flashes, dust, splashes, floating
@@ -898,6 +941,7 @@ function SceneContent({
     [sceneSignature],
   );
   const sceneEnvironment = useEditorStore((state) => state.scenes.find((scene) => scene.id === state.activeSceneId)?.environment);
+  const activeSceneId = useEditorStore((state) => state.activeSceneId);
   const runtimeHidden = useEditorStore((state) => state.runtimeHidden);
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId);
   const selectedObjectIds = useEditorStore((state) => state.selectedObjectIds);
@@ -906,6 +950,25 @@ function SceneContent({
     () => new Set(selectedObjectIds.includes(selectedObjectId) ? selectedObjectIds : selectedObjectId ? [selectedObjectId] : []),
     [selectedObjectId, selectedObjectIds],
   );
+  const collaborationParticipants = useCollaborationStore((state) => state.participants);
+  const setEditingActivity = useCollaborationStore((state) => state.setEditingActivity);
+  const setPresenceSurface = useCollaborationStore((state) => state.setPresenceSurface);
+  const flushProjectChanges = useCollaborationStore((state) => state.flushProjectChanges);
+  const collaboratorsByObject = useMemo(() => {
+    const result = new Map<string, CollaborationParticipant[]>();
+    for (const participant of collaborationParticipants) {
+      if (participant.isSelf || participant.presence.activeSceneId !== activeSceneId) continue;
+      const objectIds = new Set(participant.presence.selectedObjectIds ?? []);
+      if (participant.presence.selectedObjectId) objectIds.add(participant.presence.selectedObjectId);
+      if (participant.presence.editing?.kind === 'transform') {
+        objectIds.add(participant.presence.editing.targetId);
+      }
+      for (const objectId of objectIds) {
+        result.set(objectId, [...(result.get(objectId) ?? []), participant]);
+      }
+    }
+    return result;
+  }, [activeSceneId, collaborationParticipants]);
   const selectObject = useEditorStore((state) => state.selectObject);
   const updateTransform = useEditorStore((state) => state.updateTransform);
   const isPlaying = useEditorStore((state) => state.isPlaying);
@@ -1101,13 +1164,20 @@ function SceneContent({
     } else {
       multiDragRef.current = null;
     }
+    setPresenceSurface('viewport');
+    if (selectedObjectId) {
+      setEditingActivity({ kind: 'transform', targetId: selectedObjectId, mode: transformMode });
+    }
     setDraggingGizmo(true);
-  }, [recording, previewingCinematic, cinematicPreviewTransforms, selectedObjectId, updateTransform]);
+  }, [recording, previewingCinematic, cinematicPreviewTransforms, selectedObjectId, setEditingActivity, setPresenceSurface, transformMode, updateTransform]);
 
   // Record mode: on release, drop/refresh a transform keyframe at the playhead from the dragged pose.
   const endGizmoDrag = useCallback(() => {
     setDraggingGizmo(false);
     multiDragRef.current = null;
+    // Publish the exact pointer-up pose before clearing the transient "moving" badge.
+    flushProjectChanges();
+    setEditingActivity(undefined);
     const store = useEditorStore.getState();
     if (!store.cinematicRecording || store.isPlaying) return;
     const target = objectRefs.current.get(selectedObjectId);
@@ -1120,7 +1190,9 @@ function SceneContent({
       rotation: [target.rotation.x, target.rotation.y, target.rotation.z],
       scale: [target.scale.x, target.scale.y, target.scale.z],
     });
-  }, [selectedObjectId]);
+  }, [flushProjectChanges, selectedObjectId, setEditingActivity]);
+
+  useEffect(() => () => setEditingActivity(undefined), [setEditingActivity]);
 
   // Expose box-select to the DOM-side ViewportPanel: project each object's world position to screen
   // and select everything inside the dragged rectangle. Reads the scene fresh so deps stay stable.
@@ -1209,6 +1281,7 @@ function SceneContent({
           cinematicPreviewMaterials,
           selectedObjectId,
           selectedSet,
+          collaboratorsByObject,
           registerObject,
           isGizmoEngaged,
         })}

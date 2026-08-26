@@ -14,6 +14,7 @@ import {
 } from '../collaboration/invite';
 import {
   CollaborationWebSocketProvider,
+  type CollaborationEditingPresence,
   type CollaborationPresence,
   type ProtocolParticipant,
   type ProviderConnectionStatus,
@@ -72,6 +73,9 @@ interface CollaborationState {
   setParticipantRole: (id: string, role: CollaborationJoinRole) => void;
   kickParticipant: (id: string) => void;
   updatePresence: (presence: CollaborationPresence) => void;
+  setEditingActivity: (editing?: CollaborationEditingPresence) => void;
+  setPresenceSurface: (surface: CollaborationPresence['surface']) => void;
+  flushProjectChanges: () => void;
 }
 
 let provider: CollaborationWebSocketProvider | null = null;
@@ -88,6 +92,8 @@ let hostAssetTimer: ReturnType<typeof setTimeout> | null = null;
 let hostAssetRegistrationChain = Promise.resolve();
 const registeredHostAssets = new Map<string, string>();
 const presenceByParticipant = new Map<string, CollaborationPresence>();
+let localEditingPresence: CollaborationEditingPresence | undefined;
+let localPresenceSurface: CollaborationPresence['surface'];
 
 interface GuestWorkspaceSnapshot {
   project: NodeForgeProject;
@@ -180,8 +186,11 @@ function currentPresence(): CollaborationPresence {
   return {
     activeSceneId: state.activeSceneId,
     selectedObjectId: state.selectedObjectId || undefined,
+    selectedObjectIds: state.selectedObjectIds.length > 0 ? state.selectedObjectIds : undefined,
     activeBlueprintId: state.activeBlueprintId || undefined,
     selectedGraphNodeId: state.selectedGraphNodeId || undefined,
+    surface: localPresenceSurface ?? (state.activeBlueprintId ? 'graph' : 'viewport'),
+    editing: localEditingPresence,
     lastSeenAt: Date.now(),
   };
 }
@@ -193,6 +202,7 @@ function startPresenceTracking(): void {
     const key = JSON.stringify([
       presence.activeSceneId,
       presence.selectedObjectId,
+      presence.selectedObjectIds,
       presence.activeBlueprintId,
       presence.selectedGraphNodeId,
     ]);
@@ -224,6 +234,8 @@ function destroyClient(): void {
   document = null;
   selfId = null;
   presenceByParticipant.clear();
+  localEditingPresence = undefined;
+  localPresenceSurface = undefined;
   setCollaborationAccess(false, null);
   clearHistory();
 }
@@ -283,7 +295,16 @@ function installProvider(args: {
 
   const updateRoster = (roster: ProtocolParticipant[]) => {
     if (operation !== args.currentOperation) return;
+    const participantIds = new Set(roster.map((participant) => participant.id));
+    for (const participantId of presenceByParticipant.keys()) {
+      if (!participantIds.has(participantId)) presenceByParticipant.delete(participantId);
+    }
     useCollaborationStore.setState({ participants: participantsForUi(roster) });
+    // Presence is intentionally ephemeral at the relay. Re-publish when membership changes so a
+    // newcomer immediately sees what everyone already in the session is selecting/editing.
+    if (selfId && participantIds.has(selfId)) {
+      useCollaborationStore.getState().updatePresence(currentPresence());
+    }
   };
   const onProviderStatus = (status: ProviderConnectionStatus, error?: string) => {
     if (operation !== args.currentOperation) return;
@@ -626,4 +647,17 @@ export const useCollaborationStore = create<CollaborationState>((set, get) => ({
       ),
     }));
   },
+
+  setEditingActivity: (editing) => {
+    localEditingPresence = editing;
+    get().updatePresence(currentPresence());
+  },
+
+  setPresenceSurface: (surface) => {
+    if (localPresenceSurface === surface) return;
+    localPresenceSurface = surface;
+    get().updatePresence(currentPresence());
+  },
+
+  flushProjectChanges: () => binding?.flushLocalChanges(),
 }));

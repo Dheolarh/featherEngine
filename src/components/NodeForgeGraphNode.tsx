@@ -66,6 +66,9 @@ import {
 import type { GraphNodeKind, GraphNodeTone, GraphValueType, NodeForgeNode } from '../types';
 import { keyLabelByCode } from '../utils/keyboardCodes';
 import { inputTypeForHandle, outputTypeOf, valueProducerKinds } from '../store/editor/wireTypes';
+import { useCollaborationStore } from '../store/collaborationStore';
+import { collaboratorsOnGraphNode } from '../collaboration/presence';
+import { CollaboratorAvatars } from './CollaboratorAvatars';
 
 export { outputTypeOf, outputTypeForHandle, inputTypeForHandle, valueTypesCompatible, valueProducerKinds } from '../store/editor/wireTypes';
 
@@ -625,6 +628,9 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
   const dataAssets = useEditorStore((state) => state.dataAssets);
   const detail = nodeDetail(data, variables, dataAssets);
   const storeSelected = useEditorStore((state) => state.selectedGraphNodeId === id);
+  const activeBlueprintId = useEditorStore((state) => state.activeBlueprintId);
+  const collaborationParticipants = useCollaborationStore((state) => state.participants);
+  const collaborators = collaboratorsOnGraphNode(collaborationParticipants, activeBlueprintId, id);
   const isSelected = selected || storeSelected;
   // Runtime error this node threw during the current Play session (see tickRuntime executeFrom) — paint
   // a badge so the user sees exactly which node failed, not just a console line.
@@ -639,11 +645,20 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
       <>
         <NodeResizer minWidth={160} minHeight={90} isVisible={isSelected} lineStyle={{ borderColor: accent }} handleStyle={{ background: accent }} />
         <div
-          className={`nf-comment ${isSelected ? 'selected' : ''}`}
-          style={{ borderColor: accent, background: `${accent}14` }}
+          className={`nf-comment ${isSelected ? 'selected' : ''} ${collaborators.length > 0 ? 'has-collaborator' : ''}`}
+          style={{
+            borderColor: accent,
+            background: `${accent}14`,
+            '--collaborator-color': collaborators[0]?.color,
+          } as React.CSSProperties}
           onClick={() => useEditorStore.getState().selectGraphNode(id)}
           onPointerDown={() => useEditorStore.getState().selectGraphNode(id)}
         >
+          {collaborators.length > 0 && (
+            <span className="nfn-collaborators">
+              <CollaboratorAvatars participants={collaborators} compact label="is editing this comment" />
+            </span>
+          )}
           <textarea
             // `nodrag` stops React Flow from treating typing/drag-select inside the text as a node drag.
             className="nodrag nf-comment-text"
@@ -708,14 +723,22 @@ export function NodeForgeGraphNode({ id, data, selected }: NodeProps<NodeForgeNo
 
   return (
     <div
-      className={`nodeforge-node ${data.tone} ${isEvent ? 'is-event' : ''} ${isValueProducer ? 'is-pure' : ''} ${valueInputs.length ? 'has-value-inputs' : ''} ${isSelected ? 'selected' : ''} ${runtimeError ? 'has-error' : ''}`}
-      style={pinBottom ? { minHeight: pinBottom } : undefined}
+      className={`nodeforge-node ${data.tone} ${isEvent ? 'is-event' : ''} ${isValueProducer ? 'is-pure' : ''} ${valueInputs.length ? 'has-value-inputs' : ''} ${isSelected ? 'selected' : ''} ${runtimeError ? 'has-error' : ''} ${collaborators.length > 0 ? 'has-collaborator' : ''}`}
+      style={{
+        ...(pinBottom ? { minHeight: pinBottom } : {}),
+        '--collaborator-color': collaborators[0]?.color,
+      } as React.CSSProperties}
       title={runtimeError ? `Runtime error: ${runtimeError}` : `${data.label} · ${data.description}`}
       // Select directly so the inspector always opens, independent of ReactFlow's
       // pointer-based selection (which can be unreliable inside a docked panel).
       onClick={() => useEditorStore.getState().selectGraphNode(id)}
       onPointerDown={() => useEditorStore.getState().selectGraphNode(id)}
     >
+      {collaborators.length > 0 && (
+        <span className="nfn-collaborators">
+          <CollaboratorAvatars participants={collaborators} compact label={`is editing ${data.label}`} />
+        </span>
+      )}
       {runtimeError && (
         <span className="nfn-error-badge" title={runtimeError} aria-label={`Runtime error: ${runtimeError}`}>
           <AlertTriangle size={12} aria-hidden /> error

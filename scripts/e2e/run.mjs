@@ -31,6 +31,23 @@ async function openScripting(app) {
   await app.waitFor(`document.querySelector('.nodeforge-node')`, { label: 'graph nodes rendered' });
 }
 
+/** Retry an async module evaluation if Vite finishes a cold-start reload while CDP is awaiting it. */
+async function evaluateAfterReload(app, expression) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await app.evaluate(expression);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('Promise was collected') || attempt === 3) throw error;
+      await app.waitFor(`document.readyState === 'complete' && document.querySelector('.toolbar')`, {
+        label: 'editor stable after Vite reload',
+      });
+      await delay(500);
+    }
+  }
+  throw new Error('Editor evaluation did not complete.');
+}
+
 /** Open a named entry in the View menu (built-in panels and plugin panels alike). */
 async function clickViewMenuEntry(app, title) {
   await app.evaluate(`document.querySelector('[data-menu=view] .file-menu-trigger')?.click()`);
@@ -1168,6 +1185,84 @@ spec('collaboration dialog exposes safe host setup and validates join invites wi
     assert.equal(guestControls.toolbarState, 'connected');
 
     await app.evaluate(`(async () => {
+      const { useCollaborationStore } = await import('/src/store/collaborationStore.ts');
+      useCollaborationStore.setState({ status: 'idle', role: null, sessionName: '', participants: [] });
+    })()`);
+  } finally {
+    await app.dispose();
+  }
+});
+
+spec('collaboration awareness follows the same scene object and Blueprint node', async () => {
+  const app = await openEditor({ baseUrl: BASE_URL, query: '?demo=timeline', width: 1440, height: 900 });
+  try {
+    const objectId = await evaluateAfterReload(app, `(async () => {
+      const { useCollaborationStore } = await import('/src/store/collaborationStore.ts');
+      const editor = window.__featherStore;
+      const scene = editor.scenes.find((candidate) => candidate.id === editor.activeSceneId);
+      const object = scene.objects.find((candidate) => !candidate.viewModel && !candidate.effect && !candidate.projectile);
+      useCollaborationStore.setState({
+        status: 'connected',
+        role: 'editor',
+        sessionName: 'Mock awareness',
+        participants: [{
+          id: 'remote-alex',
+          name: 'Alex',
+          role: 'editor',
+          color: '#f05da8',
+          presence: {
+            activeSceneId: editor.activeSceneId,
+            selectedObjectId: object.id,
+            editing: { kind: 'transform', targetId: object.id, mode: 'translate' },
+          },
+          isSelf: false,
+        }],
+      });
+      return object.id;
+    })()`);
+
+    await app.waitFor(
+      `document.querySelector(${JSON.stringify(`[data-testid="viewport-collaborator-${objectId}"]`)})`,
+      { label: 'remote collaborator badge follows the viewport object' },
+    );
+    await app.waitFor(
+      `document.querySelector('.hierarchy-row.has-collaborator [data-testid="collaborator-avatars"]')`,
+      { label: 'remote collaborator badge appears in the hierarchy' },
+    );
+
+    await openScripting(app);
+    const graphTarget = await evaluateAfterReload(app, `(async () => {
+      const { useCollaborationStore } = await import('/src/store/collaborationStore.ts');
+      const editor = window.__featherStore;
+      const graph = editor.activeGraph();
+      const node = graph.nodes[0];
+      useCollaborationStore.setState({
+        participants: [{
+          id: 'remote-alex',
+          name: 'Alex',
+          role: 'editor',
+          color: '#f05da8',
+          presence: {
+            activeBlueprintId: editor.activeBlueprintId,
+            selectedGraphNodeId: node.id,
+            surface: 'graph',
+          },
+          isSelf: false,
+        }],
+      });
+      return { blueprintId: editor.activeBlueprintId, nodeId: node.id };
+    })()`);
+    assert.ok(graphTarget.blueprintId && graphTarget.nodeId, 'fixture exposes an active Blueprint node');
+    await app.waitFor(
+      `document.querySelector('.nodeforge-node.has-collaborator .nfn-collaborators [data-testid="collaborator-avatars"]')`,
+      { label: 'remote collaborator badge appears on the same graph node' },
+    );
+    await app.waitFor(
+      `document.querySelector('.graph-actions > [data-testid="collaborator-avatars"]')`,
+      { label: 'same-file collaborator appears in the Blueprint header' },
+    );
+
+    await evaluateAfterReload(app, `(async () => {
       const { useCollaborationStore } = await import('/src/store/collaborationStore.ts');
       useCollaborationStore.setState({ status: 'idle', role: null, sessionName: '', participants: [] });
     })()`);

@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as Y from 'yjs';
 import { blankProject } from '../../project/serialize';
 import { resetCollaborationAccessForTests } from '../access';
+import { readProjectFromCollaborationDoc } from '../projectDocument';
+import { decodeCollaborationUpdate } from '../provider';
 
 const platformMocks = vi.hoisted(() => ({
   startCollaboration: vi.fn(),
@@ -84,7 +87,14 @@ describe('collaboration host startup lifecycle', () => {
     }));
     platformMocks.stopCollaboration.mockResolvedValue(undefined);
     platformMocks.registerCollaborationAssets.mockResolvedValue([]);
-    useEditorStore.getState().loadProject(blankProject('Host project'));
+    const hostProject = blankProject('Host project');
+    hostProject.scenes[0].objects.push({
+      id: 'cube-one',
+      name: 'Cube',
+      kind: 'cube',
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    });
+    useEditorStore.getState().loadProject(hostProject);
     useProjectStore.setState({
       hasProject: true,
       projectDir: null,
@@ -136,6 +146,31 @@ describe('collaboration host startup lifecycle', () => {
 
     expect(useCollaborationStore.getState().status).toBe('hosting');
     expect(platformMocks.stopCollaboration).not.toHaveBeenCalled();
+  });
+
+  it('publishes host transform edits after the provider welcomes the host', async () => {
+    await useCollaborationStore.getState().startSession(hostInput);
+    const socket = FakeSocket.instances.at(-1)!;
+    socket.open();
+    socket.message(JSON.stringify({
+      v: 1,
+      type: 'welcome',
+      sessionId: platformMocks.startCollaboration.mock.calls[0][0].sessionId,
+      participant: { id: 'host-1', name: 'Host', role: 'host' },
+      participants: [{ id: 'host-1', name: 'Host', role: 'host' }],
+      assetToken: 'asset_0123456789abcdefghijklmnopqrstuvwxyz',
+      serverTime: 1,
+    }));
+
+    useEditorStore.getState().updateTransform('cube-one', 'position', [8, 1, -4]);
+    await new Promise((resolve) => setTimeout(resolve, 45));
+
+    const peer = new Y.Doc();
+    for (const frame of socket.sent.filter((value): value is Uint8Array => value instanceof Uint8Array)) {
+      const update = decodeCollaborationUpdate(frame);
+      if (update) Y.applyUpdate(peer, update);
+    }
+    expect(readProjectFromCollaborationDoc(peer)?.scenes[0].objects[0].transform.position).toEqual([8, 1, -4]);
   });
 
   it('preserves a critical startup error while closing the native host exactly once', async () => {

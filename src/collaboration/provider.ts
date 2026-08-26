@@ -23,11 +23,28 @@ const rosterSchema = z.object({
   type: z.literal('roster'),
   participants: z.array(participantSchema),
 });
+const collaborationEditingSchema = z.object({
+  kind: z.enum(['transform', 'inspector', 'graph', 'code']),
+  targetId: z.string().min(1).max(128),
+  mode: z.enum(['translate', 'rotate', 'scale']).optional(),
+  field: z.string().min(1).max(80).optional(),
+});
+const collaborationPresenceSchema = z.object({
+  activeSceneId: z.string().min(1).max(128).optional(),
+  selectedObjectId: z.string().min(1).max(128).optional(),
+  selectedObjectIds: z.array(z.string().min(1).max(128)).max(128).optional(),
+  activeBlueprintId: z.string().min(1).max(128).optional(),
+  selectedGraphNodeId: z.string().min(1).max(128).optional(),
+  activePanel: z.string().min(1).max(80).optional(),
+  surface: z.enum(['viewport', 'inspector', 'graph', 'script']).optional(),
+  editing: collaborationEditingSchema.optional(),
+  lastSeenAt: z.number().finite().nonnegative().optional(),
+});
 const presenceSchema = z.object({
   v: z.literal(1),
   type: z.literal('presence'),
   participantId: z.string(),
-  data: z.record(z.string(), z.unknown()),
+  data: collaborationPresenceSchema,
 });
 const syncRequestSchema = z.object({
   v: z.literal(1),
@@ -46,7 +63,8 @@ const errorSchema = z.object({
   message: z.string().max(500),
 });
 
-export type CollaborationPresence = Record<string, unknown>;
+export type CollaborationEditingPresence = z.infer<typeof collaborationEditingSchema>;
+export type CollaborationPresence = z.infer<typeof collaborationPresenceSchema>;
 
 export interface ProtocolParticipant {
   id: string;

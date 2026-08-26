@@ -463,13 +463,25 @@ export class CollaborationProjectBinding {
     if (this.localSyncTimer || this.destroyed) return;
     this.localSyncTimer = setTimeout(() => {
       this.localSyncTimer = null;
-      if (this.destroyed || !canEditCollaborativeProject()) return;
-      writeProjectToCollaborationDoc(
-        this.doc,
-        useEditorStore.getState().exportProject(),
-        LOCAL_COLLABORATION_ORIGIN,
-      );
+      this.flushLocalChanges();
     }, 32);
+  }
+
+  /** Commit a final drag/scrub value immediately so pointer-up cannot strand it behind a timer. */
+  flushLocalChanges(): void {
+    if (this.localSyncTimer) clearTimeout(this.localSyncTimer);
+    this.localSyncTimer = null;
+    if (
+      this.destroyed
+      || useEditorStore.getState().isPlaying
+      || !canEditCollaborativeProject()
+      || !collaborationDocumentInitialized(this.doc)
+    ) return;
+    writeProjectToCollaborationDoc(
+      this.doc,
+      useEditorStore.getState().exportProject(),
+      LOCAL_COLLABORATION_ORIGIN,
+    );
   }
 
   applyNow(): void {

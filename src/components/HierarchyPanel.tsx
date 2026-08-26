@@ -7,6 +7,9 @@ import { useProjectStore } from '../store/projectStore';
 import { focusWorkspacePanel } from './workspacePanels';
 import { ContextMenu, type ContextMenuEntry, type ContextMenuState } from './ContextMenu';
 import type { SceneObject, SceneObjectKind } from '../types';
+import { useCollaborationStore, type CollaborationParticipant } from '../store/collaborationStore';
+import { collaboratorsOnObject } from '../collaboration/presence';
+import { CollaboratorAvatars } from './CollaboratorAvatars';
 
 const objectIcon: Record<SceneObjectKind, typeof Box> = {
   empty: Square,
@@ -43,6 +46,7 @@ function HierarchyRow({
   onCommitRename,
   onCancelRename,
   onStartRename,
+  collaborators,
 }: {
   object: SceneObject;
   depth: number;
@@ -56,6 +60,7 @@ function HierarchyRow({
   onCommitRename: () => void;
   onCancelRename: () => void;
   onStartRename: (object: SceneObject) => void;
+  collaborators: readonly CollaborationParticipant[];
 }) {
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId);
   const selectedObjectIds = useEditorStore((state) => state.selectedObjectIds);
@@ -77,8 +82,11 @@ function HierarchyRow({
 
   return (
     <button
-      className={clsx('hierarchy-row', isSelected && 'selected')}
-      style={{ paddingLeft: 8 + depth * 14 }}
+      className={clsx('hierarchy-row', isSelected && 'selected', collaborators.length > 0 && 'has-collaborator')}
+      style={{
+        paddingLeft: 8 + depth * 14,
+        '--collaborator-color': collaborators[0]?.color,
+      } as React.CSSProperties}
       onClick={(event) => {
         if (renaming) return;
         // Shift/Ctrl/Cmd-click extends the selection; a plain click replaces it.
@@ -166,6 +174,7 @@ function HierarchyRow({
         </span>
       )}
       {hasChildren && collapsed && <small className="hierarchy-count">{childCount}</small>}
+      <CollaboratorAvatars participants={collaborators} compact label={`is editing ${object.name}`} />
     </button>
   );
 }
@@ -181,6 +190,7 @@ export function HierarchyPanel() {
   // a structural change re-rendering all rows — the hierarchy is display-only, 250ms latency is fine.
   const sceneObjects = useThrottledActiveObjects();
   const activeSceneName = useEditorStore((state) => state.activeScene()?.name ?? 'Scene');
+  const activeSceneId = useEditorStore((state) => state.activeSceneId);
   const editingPrefabId = useEditorStore((state) => state.editingPrefabId);
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId);
   const createObject = useEditorStore((state) => state.createObject);
@@ -199,6 +209,15 @@ export function HierarchyPanel() {
   const revertInstanceToPrefab = useEditorStore((state) => state.revertInstanceToPrefab);
   const renameObject = useEditorStore((state) => state.renameObject);
   const prefabs = useEditorStore((state) => state.prefabs);
+  const collaborationParticipants = useCollaborationStore((state) => state.participants);
+  const collaboratorsByObject = useMemo(() => {
+    const result = new Map<string, CollaborationParticipant[]>();
+    for (const object of sceneObjects) {
+      const collaborators = collaboratorsOnObject(collaborationParticipants, activeSceneId, object.id);
+      if (collaborators.length > 0) result.set(object.id, collaborators);
+    }
+    return result;
+  }, [activeSceneId, collaborationParticipants, sceneObjects]);
 
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -414,6 +433,7 @@ export function HierarchyPanel() {
             onCommitRename={commitRename}
             onCancelRename={cancelRename}
             onStartRename={startRename}
+            collaborators={collaboratorsByObject.get(object.id) ?? []}
           />
           {kids.length > 0 && !isCollapsed && renderRows(object.id, depth + 1)}
         </div>
@@ -484,6 +504,7 @@ export function HierarchyPanel() {
                 onCommitRename={commitRename}
                 onCancelRename={cancelRename}
                 onStartRename={startRename}
+                collaborators={collaboratorsByObject.get(object.id) ?? []}
               />
             ))
           ) : (

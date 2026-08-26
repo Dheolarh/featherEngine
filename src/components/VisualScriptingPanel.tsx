@@ -68,6 +68,9 @@ import {
   onWorkspacePanelMaximizedChange,
   toggleWorkspacePanelMaximized,
 } from './workspacePanels';
+import { useCollaborationStore } from '../store/collaborationStore';
+import { collaboratorsInBlueprint } from '../collaboration/presence';
+import { CollaboratorAvatars } from './CollaboratorAvatars';
 
 const nodeTypes: NodeTypes = {
   nodeforge: NodeForgeGraphNode,
@@ -2765,6 +2768,16 @@ export function VisualScriptingPanel() {
   const [compactCodePane, setCompactCodePane] = useState<'reference' | 'editor'>('editor');
   const [isFocusMode, setIsFocusMode] = useState(() => isWorkspacePanelMaximized('scripting'));
   const externalEditingAvailable = Boolean(projectDir && projectDir !== 'web');
+  const collaborationParticipants = useCollaborationStore((state) => state.participants);
+  const setPresenceSurface = useCollaborationStore((state) => state.setPresenceSurface);
+  const blueprintCollaborators = useMemo(
+    () => collaboratorsInBlueprint(collaborationParticipants, activeBlueprintId),
+    [activeBlueprintId, collaborationParticipants],
+  );
+
+  useEffect(() => {
+    setPresenceSurface(editorMode === 'script' ? 'script' : 'graph');
+  }, [editorMode, setPresenceSurface]);
 
   const { fitView, screenToFlowPosition } = useReactFlow();
   const flowShellRef = useRef<HTMLDivElement | null>(null);
@@ -3871,6 +3884,10 @@ export function VisualScriptingPanel() {
           </div>
         </div>
         <div className="panel-actions graph-actions">
+          <CollaboratorAvatars
+            participants={blueprintCollaborators}
+            label={`also ${blueprintCollaborators.length === 1 ? 'has' : 'have'} ${activeBlueprint.name} open`}
+          />
           <span
             className={`blueprint-instances${instanceCount === 0 ? ' is-unattached' : ''}`}
             title={`${instanceCount} scene ${instanceCount === 1 ? 'object uses' : 'objects use'} this behavior`}
