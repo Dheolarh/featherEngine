@@ -348,7 +348,20 @@ function installProvider(args: {
     },
     onTerminated: (message) => terminateSession(message, args.currentOperation),
   });
-  startPresenceTracking();
+  try {
+    startPresenceTracking();
+  } catch (presenceError) {
+    unsubscribePresence?.();
+    unsubscribePresence = null;
+    // Presence is useful context, not part of the authoritative project stream. Keep live editing
+    // connected if the local editor cannot start its presence watcher.
+    useProjectStore.setState({
+      toast: {
+        kind: 'error',
+        message: `Live editing started, but presence could not be shared: ${safeError(presenceError)}`,
+      },
+    });
+  }
 }
 
 async function registerHostAssetBatch(
@@ -472,6 +485,8 @@ export const useCollaborationStore = create<CollaborationState>((set, get) => ({
     const hostSecret = randomCollaborationToken();
     setCollaborationAccess(true, 'host');
     set({ ...idleState, status: 'starting', role: 'host', sessionName });
+    let nativeStarted = false;
+    let startupPhase = 'opening the ngrok endpoint';
     try {
       const platform = await getPlatform();
       if (!platform.startCollaboration) throw new Error('Collaboration hosting is unavailable in this build.');
@@ -483,12 +498,14 @@ export const useCollaborationStore = create<CollaborationState>((set, get) => ({
         defaultRole: input.defaultRole,
         domain: input.domain?.trim() || undefined,
       });
+      nativeStarted = true;
       if (operation !== currentOperation) {
         await platform.stopCollaboration?.();
         return;
       }
-      hosted = true;
+      startupPhase = 'creating the collaboration invite';
       const inviteUrl = buildCollaborationInvite(started.publicUrl, started.sessionId, joinSecret);
+      startupPhase = 'preparing the shared project';
       document = new Y.Doc();
       set({ status: 'hosting', publicUrl: started.publicUrl, inviteUrl, error: null });
       installProvider({
@@ -501,14 +518,39 @@ export const useCollaborationStore = create<CollaborationState>((set, get) => ({
         initialRole: 'host',
         currentOperation,
       });
+      hosted = true;
+      startupPhase = 'starting project asset sharing';
       // Asset hashing can be expensive, so it runs behind the live editing connection. Guests
       // retry authenticated asset requests while the host registers verified content hashes.
-      startHostAssetTracking(currentOperation);
+      try {
+        startHostAssetTracking(currentOperation);
+      } catch (assetError) {
+        // Asset registration is an optional companion to the live CRDT connection. A local file
+        // watcher problem must not tear down an otherwise healthy collaboration session.
+        useProjectStore.setState({
+          toast: {
+            kind: 'error',
+            message: `Live editing started, but project assets could not be shared: ${safeError(assetError)}`,
+          },
+        });
+      }
     } catch (error) {
-      if (hosted) await (await getPlatform()).stopCollaboration?.().catch(() => undefined);
+      const failure = safeError(error, [authtoken, joinSecret, hostSecret]);
+      // Tear down the provider before stopping the native relay. Otherwise the deliberate cleanup
+      // close frame races back through onTerminated and hides this original startup failure behind
+      // the misleading message "The collaboration session stopped unexpectedly."
       hosted = false;
       destroyClient();
-      if (operation === currentOperation) set({ ...idleState, status: 'error', error: safeError(error, [authtoken, joinSecret, hostSecret]) });
+      if (operation === currentOperation) {
+        set({
+          ...idleState,
+          status: 'error',
+          error: `Could not finish ${startupPhase}: ${failure}`,
+        });
+      }
+      if (nativeStarted) {
+        await (await getPlatform()).stopCollaboration?.().catch(() => undefined);
+      }
     }
   },
 

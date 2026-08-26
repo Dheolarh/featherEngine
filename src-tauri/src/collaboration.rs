@@ -392,6 +392,7 @@ impl CollaborationManager {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
         {
+            log::info!("Collaboration host stopping because the main window was destroyed.");
             session
                 .relay
                 .set_shutdown_reason(RelayShutdownReason::SessionEnded);
@@ -591,6 +592,7 @@ pub(crate) async fn start_collaboration(
             .with_graceful_shutdown(async move { shutdown.cancelled().await })
             .await;
         if result.is_err() && !local_cancellation.is_cancelled() {
+            log::error!("The local collaboration relay exited unexpectedly.");
             local_relay.set_shutdown_reason(RelayShutdownReason::RelayUnavailable);
             local_cancellation.cancel();
         }
@@ -607,6 +609,7 @@ pub(crate) async fn start_collaboration(
         };
         if forwarding_exit.is_some() {
             if !tunnel_cancellation.is_cancelled() {
+                log::error!("The ngrok collaboration forwarder exited unexpectedly.");
                 tunnel_relay.set_shutdown_reason(RelayShutdownReason::TunnelUnavailable);
                 tunnel_cancellation.cancel();
             }
@@ -673,6 +676,7 @@ pub(crate) async fn start_collaboration(
 pub(crate) async fn stop_collaboration(
     manager: TauriState<'_, CollaborationManager>,
 ) -> Result<(), String> {
+    log::info!("Collaboration host stop requested by the frontend.");
     let session = manager
         .session
         .lock()
