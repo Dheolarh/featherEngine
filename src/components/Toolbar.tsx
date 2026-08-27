@@ -42,6 +42,7 @@ import { askPackageDetails } from '../store/packageDetailsStore';
 import { useExtensionSnapshot } from '../extensions/react';
 import { useCollaborationStore } from '../store/collaborationStore';
 import { CollaborationDialog } from './CollaborationDialog';
+import { WebMcpIndicator } from './WebMcpIndicator';
 
 /** Parametric trees aren't a SceneObjectKind (they're a component), so they get their own Add entries. */
 const treeTools: Array<{ archetype: TreeArchetype; label: string }> = [
@@ -552,6 +553,7 @@ export function Toolbar() {
       {/* No settings cog: View → Preferences… opens the same modal. */}
 
       <CollaborationToolbarButton open={collaborationOpen} onClick={() => setCollaborationOpen(true)} />
+      <WebMcpIndicator />
 
       <div className="tool-group" aria-label="Runtime controls">
         <button

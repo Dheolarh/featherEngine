@@ -61,6 +61,33 @@ Feather keeps the complete game-making loop in one live workspace:
 There is no separate runtime authoring toolchain to learn: the web editor, Tauri desktop app, and
 exported player share the same React, Three.js, and Rapier foundation.
 
+## 🌐 WebMCP Browser-Native AI Integration
+
+Feather Engine implements the emerging **[W3C WebMCP Standard](https://webmachinelearning.github.io/webmcp/)** (supported in **Google Chrome** with `chrome://flags/#enable-webmcp-testing` and **ChatGPT’s in-app browser**). 
+
+Visiting AI agents can directly discover, inspect, and invoke over **205 3D game engine tools** right inside the browser tab:
+
+```javascript
+document.modelContext.registerTool({
+  name: "create_object",
+  description: "Create a 3D scene object (cube, sphere, plane, light, camera, terrain, etc.)",
+  inputSchema: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: ["cube", "sphere", "plane", "terrain", "light", "camera"] },
+      name: { type: "string" },
+      position: { type: "array", items: { type: "number" } }
+    }
+  },
+  execute: async (input) => {
+    // Spawns 3D object directly in the active Zustand/Three.js scene
+    return { content: [{ type: "text", text: `Created object ${input.name}` }] };
+  }
+});
+```
+
+When an external browser agent connects, the editor displays a live **WebMCP Status Pill** (`● WebMCP 205 tools`) and a real-time **Agent Activity HUD** showing each tool call as the agent builds the world collaboratively with the human developer.
+
 ## See it in action
 
 <table>

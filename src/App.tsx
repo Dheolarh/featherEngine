@@ -14,6 +14,7 @@ import { RuntimeConsole } from './components/RuntimeConsole';
 import { VariableWatch } from './components/VariableWatch';
 import { PrefabThumbnailHost } from './components/PrefabThumbnailer';
 import { ModelThumbnailHost } from './components/ModelThumbnailHost';
+import { WebMcpAgentBar } from './components/WebMcpAgentBar';
 import { useEditorStore } from './store/editorStore';
 import { useMarketplaceStore } from './store/marketplaceStore';
 import { useEditorPrefs } from './store/editorPrefsStore';
@@ -265,6 +266,7 @@ export default function App() {
       <PackageDetailsDialog />
       <ShortcutsOverlay />
       <CommandPalette />
+      <WebMcpAgentBar />
     </div>
   );
 }
