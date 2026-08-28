@@ -166,11 +166,37 @@ export const useWebMcpStore = create<WebMcpState>((set, get) => ({
 }));
 
 /**
- * Derives JSON Schemas and prepares WebMCP-compliant tool definitions for all engineTools.
+ * Curated high-leverage 3D engine tools exposed to browser AI agents over WebMCP.
+ * External browser controllers (like ChatGPT's in-app browser) enforce strict payload
+ * and tool-count limits (typically <= 16 tools). This focused catalog gives agents full 3D
+ * creative, physical, atmospheric, scripting, and playtest authority while keeping the
+ * schema payload lightweight and fast.
  */
-export function buildWebMcpToolDefinitions(): WebMcpToolDefinition[] {
+export const CORE_WEBMCP_TOOL_NAMES: readonly string[] = [
+  'create_object',
+  'update_transform',
+  'update_renderer',
+  'set_physics',
+  'create_meadow',
+  'create_water_volume',
+  'set_scene_environment',
+  'apply_lighting_preset',
+  'apply_render_preset',
+  'set_blueprint_script',
+  'set_character_controller',
+  'set_vehicle',
+  'list_scene',
+  'inspect_object',
+  'set_playing',
+];
+
+/**
+ * Derives JSON Schemas and prepares WebMCP-compliant tool definitions.
+ */
+export function buildWebMcpToolDefinitions(includeAll = false): WebMcpToolDefinition[] {
+  const allowedSet = new Set(CORE_WEBMCP_TOOL_NAMES);
   return Object.entries(looseTools)
-    .filter(([, def]) => typeof def.execute === 'function')
+    .filter(([name, def]) => (includeAll || allowedSet.has(name)) && typeof def.execute === 'function')
     .map(([name, def]) => {
       const inputSchema = isZodSchema(def.inputSchema)
         ? (z.toJSONSchema(def.inputSchema, {

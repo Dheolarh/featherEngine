@@ -65,7 +65,7 @@ exported player share the same React, Three.js, and Rapier foundation.
 
 Feather Engine implements the emerging **[W3C WebMCP Standard](https://webmachinelearning.github.io/webmcp/)** (supported in **Google Chrome** with `chrome://flags/#enable-webmcp-testing` and **ChatGPT’s in-app browser**). 
 
-Visiting AI agents can directly discover, inspect, and invoke over **205 3D game engine tools** right inside the browser tab:
+Visiting AI agents can directly discover, inspect, and invoke **15 high-leverage 3D game engine tools** right inside the browser tab:
 
 ```javascript
 document.modelContext.registerTool({
@@ -86,7 +86,7 @@ document.modelContext.registerTool({
 });
 ```
 
-When an external browser agent connects, the editor displays a live **WebMCP Status Pill** (`● WebMCP 205 tools`) and a real-time **Agent Activity HUD** showing each tool call as the agent builds the world collaboratively with the human developer.
+When an external browser agent connects, the editor displays a live **WebMCP Status Pill** (`● WebMCP 15 tools`) and a real-time **Agent Activity HUD** showing each tool call as the agent builds the world collaboratively with the human developer.
 
 ## See it in action
 
