@@ -63,9 +63,9 @@ exported player share the same React, Three.js, and Rapier foundation.
 
 ## 🌐 WebMCP Browser-Native AI Integration
 
-Feather Engine implements the emerging **[W3C WebMCP Standard](https://webmachinelearning.github.io/webmcp/)** (supported in **Google Chrome** with `chrome://flags/#enable-webmcp-testing` and **ChatGPT’s in-app browser**). 
+Feather Engine implements the emerging **[W3C WebMCP Standard](https://webmachinelearning.github.io/webmcp/)**. 
 
-Visiting AI agents can directly discover, inspect, and invoke **16 high-leverage 3D game engine tools** right inside the browser tab:
+Visiting AI agents can directly discover, inspect, and invoke **200+ 3D game engine tools** right inside the browser tab:
 
 ```javascript
 document.modelContext.registerTool({
