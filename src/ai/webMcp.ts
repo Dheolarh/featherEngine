@@ -173,6 +173,7 @@ export const useWebMcpStore = create<WebMcpState>((set, get) => ({
  * schema payload lightweight and fast.
  */
 export const CORE_WEBMCP_TOOL_NAMES: readonly string[] = [
+  'create_new_project',
   'create_object',
   'update_transform',
   'update_renderer',

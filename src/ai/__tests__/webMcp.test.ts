@@ -27,11 +27,12 @@ describe('WebMCP Core Bridge', () => {
 
   it('generates valid WebMCP tool definitions and JSON schemas from engineTools', () => {
     const tools = buildWebMcpToolDefinitions();
-    expect(tools.length).toBe(15);
+    expect(tools.length).toBe(16);
     expect(buildWebMcpToolDefinitions(true).length).toBeGreaterThan(50);
 
     // Verify key 3D engine tools are present
     const toolNames = tools.map((t) => t.name);
+    expect(toolNames).toContain('create_new_project');
     expect(toolNames).toContain('list_scene');
     expect(toolNames).toContain('create_object');
     expect(toolNames).toContain('update_transform');
@@ -63,7 +64,7 @@ describe('WebMCP Core Bridge', () => {
     useWebMcpStore.setState({ isRegistered: false, registeredTools: [] });
 
     const result = initWebMcpBridge();
-    expect(result.registeredCount).toBe(15);
+    expect(result.registeredCount).toBe(16);
     expect(mockModelContext.registerTool).toHaveBeenCalled();
     expect(registered.length).toBe(result.registeredCount);
 

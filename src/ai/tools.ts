@@ -919,6 +919,18 @@ const rawEngineTools = {
     },
   }),
 
+  create_new_project: tool({
+    description: 'Create a brand new blank project with a clean scene, resetting the canvas. Call this when the user asks to start a new project or create a game from scratch.',
+    inputSchema: z.object({
+      name: z.string().optional().describe('Project name. Defaults to "New Game".'),
+    }),
+    execute: async ({ name }) => {
+      const projectName = name ?? 'New Game';
+      await useProjectStore.getState().newProject(projectName);
+      return `Created a new blank project "${projectName}". The canvas has been reset and is ready for building.`;
+    },
+  }),
+
   create_scene: tool({
     description: 'Create a new empty scene. Returns its id. Does NOT switch to it — call switch_scene to make it active.',
     inputSchema: z.object({ name: z.string().optional() }),
