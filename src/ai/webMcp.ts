@@ -46,6 +46,9 @@ interface WebMcpState {
   lastToolExecuted: string | null;
   totalCalls: number;
   totalErrors: number;
+  showAgentBar: boolean;
+  setShowAgentBar: (show: boolean) => void;
+  toggleShowAgentBar: () => void;
   setRegistered: (registered: boolean, tools: WebMcpToolManifest[], isNative: boolean) => void;
   recordCallStart: (call: { id: string; tool: string; input: unknown; startedAt: number }) => void;
   recordCallEnd: (log: WebMcpCallLog) => void;
@@ -73,6 +76,18 @@ export const useWebMcpStore = create<WebMcpState>((set, get) => ({
   lastToolExecuted: null,
   totalCalls: 0,
   totalErrors: 0,
+  showAgentBar: typeof localStorage !== 'undefined' ? localStorage.getItem('nodeforge.showAgentBar') !== 'false' : true,
+
+  setShowAgentBar: (showAgentBar: boolean) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('nodeforge.showAgentBar', String(showAgentBar));
+    set({ showAgentBar });
+  },
+
+  toggleShowAgentBar: () => {
+    const next = !get().showAgentBar;
+    if (typeof localStorage !== 'undefined') localStorage.setItem('nodeforge.showAgentBar', String(next));
+    set({ showAgentBar: next });
+  },
 
   setRegistered: (registered, tools, isNative) =>
     set({
@@ -182,21 +197,171 @@ export const CORE_WEBMCP_TOOL_NAMES: readonly string[] = [
   'create_water_volume',
   'set_scene_environment',
   'apply_lighting_preset',
-  'apply_render_preset',
   'set_blueprint_script',
   'set_character_controller',
   'set_vehicle',
   'list_scene',
-  'inspect_object',
   'set_playing',
 ];
+
+/**
+ * Gateway tools that allow the AI agent to dynamically discover and execute any of the
+ * 200+ advanced Feather Engine tools without overloading the browser's context window.
+ */
+function buildGatewayTools(): WebMcpToolDefinition[] {
+  const searchTool: WebMcpToolDefinition = {
+    name: 'search_engine_tools',
+    description:
+      'Search across all 200+ advanced Feather Engine tools by keyword (e.g. "ragdoll", "joint", "cinematic", "audio", "ui", "particle", "timeline", "material", "prefab", "terrain", "vehicle"). Returns matching tool names, descriptions, and input parameters so you can call them using execute_engine_tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Keyword, system, or feature to search for (e.g. "ragdoll", "camera", "water", "cloth", "score", "light"). Pass empty string or "categories" to list all categories.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of tool definitions to return (default 8).',
+        },
+      },
+      required: ['query'],
+    },
+    execute: async (rawInput: unknown): Promise<WebMcpToolExecutionResponse> => {
+      const input = (rawInput ?? {}) as { query?: string; limit?: number };
+      const q = (input.query ?? '').toLowerCase().trim();
+      const limit = Math.max(1, Math.min(20, input.limit ?? 8));
+
+      if (!q || q === 'categories' || q === 'list') {
+        const categories = {
+          '3D Scene & Objects': ['create_object', 'set_object_parent', 'duplicate_object', 'delete_object', 'list_scene', 'inspect_object'],
+          'Physics, Ragdoll & Joints': ['set_physics', 'add_joint', 'set_ragdoll', 'set_ragdoll_body', 'generate_ragdoll_bodies', 'attach_to_socket'],
+          'Characters, Controllers & Vehicles': ['set_character_controller', 'set_vehicle', 'customize_vehicle', 'set_anim_parameter'],
+          'Nature, Terrain & Water': ['create_meadow', 'create_water_volume', 'apply_tree_preset', 'update_terrain_layer'],
+          'Atmosphere, Lighting & Post-FX': ['set_scene_environment', 'apply_lighting_preset', 'apply_render_preset'],
+          'Visual Scripting & Blueprints': ['set_blueprint_script', 'open_object_script', 'attach_blueprint', 'add_node', 'connect_nodes'],
+          'Cinematics, Shots & Timeline': ['create_cinematic', 'add_cinematic_shot', 'add_cinematic_transition', 'set_cinematic_look', 'play_cinematic'],
+          'UI, Menus & HUD': ['create_ui_document', 'add_ui_element', 'update_ui_element', 'set_ui_text', 'set_ui_binding'],
+          'Materials, Shaders & Particles': ['create_material', 'set_object_material', 'add_particle_emitter', 'set_particle_system'],
+          'Project & Play': ['create_new_project', 'create_scene', 'switch_scene', 'set_playing', 'fire_event', 'capture_screenshot'],
+        };
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `Feather Engine Tool Catalog (${Object.keys(looseTools).length} total tools available in engine):\n` +
+                JSON.stringify(categories, null, 2) +
+                `\n\nRun search_engine_tools with a keyword (e.g. query: "ragdoll" or query: "cinematic") to see full tool schemas, then call execute_engine_tool.`,
+            },
+          ],
+        };
+      }
+
+      const matches = Object.entries(looseTools)
+        .filter(([name, def]) => {
+          const desc = def.description?.toLowerCase() ?? '';
+          return name.toLowerCase().includes(q) || desc.includes(q);
+        })
+        .slice(0, limit)
+        .map(([name, def]) => {
+          const schema = isZodSchema(def.inputSchema)
+            ? (z.toJSONSchema(def.inputSchema, {
+                io: 'input',
+                unrepresentable: 'any',
+                reused: 'inline',
+              }) as Record<string, unknown>)
+            : { type: 'object' };
+          return {
+            name,
+            description: def.description ?? '',
+            inputSchema: schema,
+          };
+        });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              matches.length > 0
+                ? `Found ${matches.length} matching tool(s) for "${q}":\n` +
+                  JSON.stringify(matches, null, 2) +
+                  `\n\nYou can execute any of these tools right now using: execute_engine_tool({ toolName: "<name>", parameters: { ... } })`
+                : `No tools matched "${q}". Available categories include: physics, ragdoll, joints, vehicle, cinematic, ui, audio, terrain, water, script, material.`,
+          },
+        ],
+      };
+    },
+  };
+
+  const executeTool: WebMcpToolDefinition = {
+    name: 'execute_engine_tool',
+    description:
+      'Execute any advanced Feather Engine tool from the full 200+ tool catalog by name (e.g. tools discovered via search_engine_tools like add_joint, set_ragdoll, create_cinematic, add_cinematic_shot, create_ui_document, add_ui_element, customize_vehicle, etc.).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toolName: {
+          type: 'string',
+          description:
+            'The exact name of the engine tool to execute (from search_engine_tools or the engine tool catalog).',
+        },
+        parameters: {
+          type: 'object',
+          description: 'JSON dictionary of arguments for the specified tool.',
+        },
+      },
+      required: ['toolName'],
+    },
+    execute: async (rawInput: unknown): Promise<WebMcpToolExecutionResponse> => {
+      const input = (rawInput ?? {}) as {
+        toolName?: string;
+        parameters?: Record<string, unknown>;
+      };
+      if (!input.toolName) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: 'Error: "toolName" parameter is required.' }],
+        };
+      }
+
+      const outcome = await useWebMcpStore
+        .getState()
+        .executeToolDirectly(input.toolName, input.parameters ?? {});
+      if (!outcome.ok) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error executing ${input.toolName}: ${outcome.error}`,
+            },
+          ],
+        };
+      }
+
+      const serialized =
+        typeof outcome.result === 'string'
+          ? outcome.result
+          : JSON.stringify(outcome.result, null, 2);
+
+      return {
+        content: [{ type: 'text', text: `[${input.toolName}] ${serialized}` }],
+      };
+    },
+  };
+
+  return [searchTool, executeTool];
+}
 
 /**
  * Derives JSON Schemas and prepares WebMCP-compliant tool definitions.
  */
 export function buildWebMcpToolDefinitions(includeAll = false): WebMcpToolDefinition[] {
   const allowedSet = new Set(CORE_WEBMCP_TOOL_NAMES);
-  return Object.entries(looseTools)
+  const directTools = Object.entries(looseTools)
     .filter(([name, def]) => (includeAll || allowedSet.has(name)) && typeof def.execute === 'function')
     .map(([name, def]) => {
       const inputSchema = isZodSchema(def.inputSchema)
@@ -236,6 +401,9 @@ export function buildWebMcpToolDefinitions(includeAll = false): WebMcpToolDefini
         execute,
       };
     });
+
+  const gatewayTools = buildGatewayTools();
+  return [...directTools, ...gatewayTools];
 }
 
 declare global {
@@ -340,6 +508,8 @@ export function initWebMcpBridge(): { registeredCount: number; isNative: boolean
       tools: toolManifests,
       execute: (toolName: string, input: unknown) =>
         useWebMcpStore.getState().executeToolDirectly(toolName, input),
+      invoke: (toolName: string, input?: unknown) =>
+        useWebMcpStore.getState().executeToolDirectly(toolName, input ?? {}),
       getStore: () => useWebMcpStore.getState(),
     };
   }

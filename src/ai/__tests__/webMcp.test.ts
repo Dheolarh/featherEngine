@@ -30,7 +30,7 @@ describe('WebMCP Core Bridge', () => {
     expect(tools.length).toBe(16);
     expect(buildWebMcpToolDefinitions(true).length).toBeGreaterThan(50);
 
-    // Verify key 3D engine tools are present
+    // Verify key 3D engine tools and gateways are present
     const toolNames = tools.map((t) => t.name);
     expect(toolNames).toContain('create_new_project');
     expect(toolNames).toContain('list_scene');
@@ -40,6 +40,8 @@ describe('WebMCP Core Bridge', () => {
     expect(toolNames).toContain('set_physics');
     expect(toolNames).toContain('set_scene_environment');
     expect(toolNames).toContain('set_blueprint_script');
+    expect(toolNames).toContain('search_engine_tools');
+    expect(toolNames).toContain('execute_engine_tool');
 
     // Verify schema structure on create_object
     const createObjectTool = tools.find((t) => t.name === 'create_object');
@@ -139,5 +141,45 @@ describe('WebMCP Core Bridge', () => {
     const state = useWebMcpStore.getState();
     expect(state.totalErrors).toBe(1);
     expect(state.callHistory[0].isError).toBe(true);
+  });
+
+  it('searches the engine tool catalog via search_engine_tools gateway', async () => {
+    const tools = buildWebMcpToolDefinitions();
+    const searchTool = tools.find((t) => t.name === 'search_engine_tools');
+    expect(searchTool).toBeDefined();
+
+    // 1. Search for cinematics
+    const response = await searchTool!.execute({ query: 'cinematic' });
+    expect(response.isError).toBeFalsy();
+    expect(response.content[0].text).toContain('create_cinematic');
+
+    // 2. Search categories
+    const catResponse = await searchTool!.execute({ query: 'categories' });
+    expect(catResponse.content[0].text).toContain('Feather Engine Tool Catalog');
+  });
+
+  it('executes arbitrary advanced engine tools via execute_engine_tool gateway', async () => {
+    const tools = buildWebMcpToolDefinitions();
+    const execTool = tools.find((t) => t.name === 'execute_engine_tool');
+    expect(execTool).toBeDefined();
+
+    // Execute create_object through the gateway
+    const response = await execTool!.execute({
+      toolName: 'create_object',
+      parameters: {
+        kind: 'sphere',
+        name: 'GatewaySpawnedSphere',
+        position: [0, 5, 0],
+      },
+    });
+
+    expect(response.isError).toBeFalsy();
+    expect(response.content[0].text).toContain('GatewaySpawnedSphere');
+
+    const activeScene = useEditorStore
+      .getState()
+      .scenes.find((s) => s.id === useEditorStore.getState().activeSceneId);
+    const sphere = activeScene?.objects.find((o) => o.name === 'GatewaySpawnedSphere');
+    expect(sphere).toBeDefined();
   });
 });

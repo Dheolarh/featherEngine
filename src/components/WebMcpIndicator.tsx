@@ -1,25 +1,144 @@
 import { useState, useRef, useEffect } from 'react';
-import { Sparkles, Check, Copy, Activity, Terminal, ChevronDown, Wrench } from 'lucide-react';
+import {
+  X,
+  Code2,
+  Copy,
+  Check,
+  ShieldCheck,
+  ChevronDown,
+} from 'lucide-react';
 import { useWebMcpStore } from '../ai/webMcp';
 
-const SAMPLE_PROMPTS = [
-  'Build a neon obstacle course with bouncy platforms and low gravity',
-  'Create an interactive meadow with wind, wildflowers, and swaying trees',
-  'Spawn a water volume with realistic Gerstner waves and floating crates',
-  'Set up a physics lab with dominoes and a rolling sphere',
-];
+const SAMPLE_TOOL_SNIPPETS: Record<string, string> = {
+  create_object: `await window.__featherWebMcp.invoke(
+  "create_object",
+  {
+    kind: "sphere",
+    name: "Golden Sphere",
+    position: [0, 5, 0],
+    color: "#4ade80"
+  }
+);`,
+  update_transform: `await window.__featherWebMcp.invoke(
+  "update_transform",
+  {
+    id: "obj-1",
+    position: [0, 3, 5],
+    rotation: [0, 1.57, 0]
+  }
+);`,
+  update_renderer: `await window.__featherWebMcp.invoke(
+  "update_renderer",
+  {
+    objectId: "obj-1",
+    color: "#38bdf8",
+    roughness: 0.2,
+    metalness: 0.8
+  }
+);`,
+  set_physics: `await window.__featherWebMcp.invoke(
+  "set_physics",
+  {
+    objectId: "obj-1",
+    bodyType: "dynamic",
+    collider: "sphere",
+    restitution: 0.85
+  }
+);`,
+  create_meadow: `await window.__featherWebMcp.invoke(
+  "create_meadow",
+  {
+    density: 1.2,
+    wildflowers: true,
+    windStrength: 0.6
+  }
+);`,
+  create_water_volume: `await window.__featherWebMcp.invoke(
+  "create_water_volume",
+  {
+    position: [0, -1, 0],
+    size: [60, 8, 60],
+    waves: true
+  }
+);`,
+  set_scene_environment: `await window.__featherWebMcp.invoke(
+  "set_scene_environment",
+  {
+    fogDensity: 0.02,
+    fogColor: "#182030",
+    ambientColor: "#6ee7b7"
+  }
+);`,
+  apply_lighting_preset: `await window.__featherWebMcp.invoke(
+  "apply_lighting_preset",
+  {
+    preset: "cyberpunk"
+  }
+);`,
+  set_character_controller: `await window.__featherWebMcp.invoke(
+  "set_character_controller",
+  {
+    objectId: "hero-1",
+    moveSpeed: 6.5,
+    jumpStrength: 8.0,
+    cameraFollow: true
+  }
+);`,
+  set_vehicle: `await window.__featherWebMcp.invoke(
+  "set_vehicle",
+  {
+    objectId: "car-1",
+    maxSpeed: 45,
+    gripFactor: 0.92,
+    cameraFollow: true
+  }
+);`,
+  list_scene: `await window.__featherWebMcp.invoke(
+  "list_scene",
+  {
+    detail: "compact"
+  }
+);`,
+  search_engine_tools: `await window.__featherWebMcp.invoke(
+  "search_engine_tools",
+  {
+    query: "cinematic",
+    limit: 5
+  }
+);`,
+  execute_engine_tool: `await window.__featherWebMcp.invoke(
+  "execute_engine_tool",
+  {
+    toolName: "add_joint",
+    parameters: {
+      type: "hinge",
+      bodyAId: "obj-1",
+      bodyBId: "obj-2"
+    }
+  }
+);`,
+};
+
+const DEFAULT_SNIPPET = `await window.__featherWebMcp.invoke(
+  "create_object",
+  {
+    kind: "sphere",
+    name: "Golden-hour orb",
+    position: [0, 4, 0],
+    color: "#4ade80"
+  }
+);`;
 
 export function WebMcpIndicator() {
   const [open, setOpen] = useState(false);
-  const [copiedPrompt, setCopiedPrompt] = useState<string | null>(null);
+  const [selectedTool, setSelectedTool] = useState<string>('create_object');
+  const [copied, setCopied] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const isNative = useWebMcpStore((state) => state.isNativeSupported);
   const isRegistered = useWebMcpStore((state) => state.isRegistered);
   const registeredTools = useWebMcpStore((state) => state.registeredTools);
   const activeCall = useWebMcpStore((state) => state.activeCall);
-  const totalCalls = useWebMcpStore((state) => state.totalCalls);
-  const callHistory = useWebMcpStore((state) => state.callHistory);
 
   const toolCount = registeredTools.length;
 
@@ -35,11 +154,16 @@ export function WebMcpIndicator() {
     }
   }, [open]);
 
-  const copyPrompt = (prompt: string) => {
-    navigator.clipboard.writeText(prompt);
-    setCopiedPrompt(prompt);
-    setTimeout(() => setCopiedPrompt(null), 2000);
+  const activeSnippet = SAMPLE_TOOL_SNIPPETS[selectedTool] ?? DEFAULT_SNIPPET;
+
+  const copySnippet = () => {
+    navigator.clipboard.writeText(activeSnippet);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
+
+  const isReadOnlyTool = (name: string) =>
+    ['list_scene', 'inspect_object', 'search_engine_tools'].includes(name);
 
   return (
     <div className="webmcp-indicator-wrapper" ref={popoverRef}>
@@ -62,79 +186,74 @@ export function WebMcpIndicator() {
       </button>
 
       {open && (
-        <div className="webmcp-popover">
-          <div className="webmcp-popover-header">
-            <div className="webmcp-header-title">
-              <Sparkles size={16} className="text-emerald-400" />
-              <strong>WebMCP Browser Bridge</strong>
+        <div className="webmcp-wn-popover">
+          {/* Header area */}
+          <div className="webmcp-wn-header">
+            <div className="webmcp-wn-header-left">
+              <h2 className="webmcp-wn-title">
+                Engine <em>WebMCP</em> Tools
+              </h2>
+              <span className="webmcp-wn-tool-count-badge">{toolCount} tools</span>
             </div>
-            <span className={`webmcp-badge ${isNative ? 'native' : 'emulated'}`}>
-              {isNative ? '● Native W3C WebMCP' : '● Browser Standard Ready'}
-            </span>
+            <button
+              className="webmcp-wn-close"
+              onClick={() => setOpen(false)}
+              title="Close WebMCP details"
+              aria-label="Close WebMCP details"
+            >
+              <X size={15} />
+            </button>
           </div>
 
-          <p className="webmcp-popover-desc">
-            This 3D engine exposes <strong>{toolCount} tools</strong> directly to visiting browser agents
-            via <code>document.modelContext</code>.
+          <p className="webmcp-wn-desc">
+            An agent can inspect your scene, spawn 3D objects, configure physics, and build the world right here.
           </p>
 
-          <div className="webmcp-stats-grid">
-            <div className="webmcp-stat">
-              <span className="stat-label">Registered Tools</span>
-              <span className="stat-value">{toolCount}</span>
-            </div>
-            <div className="webmcp-stat">
-              <span className="stat-label">Agent Calls</span>
-              <span className="stat-value">{totalCalls}</span>
-            </div>
-            <div className="webmcp-stat">
-              <span className="stat-label">Status</span>
-              <span className="stat-value text-emerald-400">
-                {activeCall ? 'Executing...' : 'Listening'}
-              </span>
-            </div>
-          </div>
-
-          <div className="webmcp-section-title">
-            <Terminal size={13} />
-            <span>Copy prompts for ChatGPT / Chrome</span>
-          </div>
-
-          <div className="webmcp-prompts-list">
-            {SAMPLE_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                className="webmcp-prompt-chip"
-                onClick={() => copyPrompt(prompt)}
-                title="Click to copy for ChatGPT"
-              >
-                <span className="prompt-text">"{prompt}"</span>
-                {copiedPrompt === prompt ? (
-                  <Check size={13} className="text-emerald-400 shrink-0" />
-                ) : (
-                  <Copy size={13} className="text-zinc-400 shrink-0" />
-                )}
-              </button>
-            ))}
-          </div>
-
-          {callHistory.length > 0 && (
-            <>
-              <div className="webmcp-section-title mt-3">
-                <Activity size={13} />
-                <span>Recent Agent Invocations</span>
-              </div>
-              <div className="webmcp-recent-calls">
-                {callHistory.slice(0, 4).map((call) => (
-                  <div key={call.id} className="webmcp-call-item">
-                    <Wrench size={12} className="text-zinc-400" />
-                    <span className="call-name">{call.tool}</span>
-                    <span className="call-time">{call.durationMs}ms</span>
+          {/* Tool list card */}
+          <div className="webmcp-wn-tool-list">
+            {registeredTools.map((tool) => {
+              const readOnly = isReadOnlyTool(tool.name);
+              const isSelected = selectedTool === tool.name;
+              return (
+                <div
+                  key={tool.name}
+                  className={`webmcp-wn-tool-row ${isSelected ? 'selected' : ''}`}
+                  onClick={() => setSelectedTool(tool.name)}
+                >
+                  <div className="webmcp-wn-tool-icon">
+                    <Code2 size={13} />
                   </div>
-                ))}
-              </div>
-            </>
-          )}
+                  <div className="webmcp-wn-tool-info">
+                    <div className="webmcp-wn-tool-header">
+                      <span className="webmcp-wn-tool-name">{tool.name}</span>
+                      {readOnly && <span className="webmcp-wn-readonly-badge">read only</span>}
+                    </div>
+                    <p className="webmcp-wn-tool-desc">{tool.description}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Try a little agent magic code box */}
+          <div className="webmcp-wn-code-section">
+            <div className="webmcp-wn-code-header">
+              <span className="webmcp-wn-code-eyebrow">TRY A LITTLE AGENT MAGIC</span>
+              <button className="webmcp-wn-copy-btn" onClick={copySnippet} title="Copy code snippet">
+                {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+            <pre className="webmcp-wn-code-block">
+              <code>{activeSnippet}</code>
+            </pre>
+          </div>
+
+          {/* Footer note */}
+          <div className="webmcp-wn-footer">
+            <ShieldCheck size={14} className="text-emerald-400" />
+            <span>Human edits are always protected.</span>
+          </div>
         </div>
       )}
     </div>

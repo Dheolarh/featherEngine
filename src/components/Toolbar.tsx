@@ -43,6 +43,8 @@ import { useExtensionSnapshot } from '../extensions/react';
 import { useCollaborationStore } from '../store/collaborationStore';
 import { CollaborationDialog } from './CollaborationDialog';
 import { WebMcpIndicator } from './WebMcpIndicator';
+import { useAISettings } from '../store/aiSettingsStore';
+import { useWebMcpStore } from '../ai/webMcp';
 
 /** Parametric trees aren't a SceneObjectKind (they're a component), so they get their own Add entries. */
 const treeTools: Array<{ archetype: TreeArchetype; label: string }> = [
@@ -227,6 +229,10 @@ function ViewMenu({ onOpenPrefs }: { onOpenPrefs: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const customLayouts = useEditorPrefs((s) => s.customLayouts);
   const extensionPanels = useExtensionSnapshot().panels;
+  const aiEnabled = useAISettings((state) => state.enabled);
+  const toggleAiEnabled = useAISettings((state) => state.toggleEnabled);
+  const showAgentBar = useWebMcpStore((state) => state.showAgentBar);
+  const toggleShowAgentBar = useWebMcpStore((state) => state.toggleShowAgentBar);
   const customList = useMemo(
     () => Object.values(customLayouts).sort((a, b) => b.savedAt - a.savedAt),
     [customLayouts],
@@ -293,6 +299,33 @@ function ViewMenu({ onOpenPrefs }: { onOpenPrefs: () => void }) {
               ))}
             </>
           )}
+          <hr />
+          <button
+            className="file-menu-check-item"
+            onClick={run(toggleAiEnabled)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+            }}
+          >
+            <span>Enable AI</span>
+            {aiEnabled && <Check size={14} className="text-accent" />}
+          </button>
+          <button
+            className="file-menu-check-item"
+            onClick={run(toggleShowAgentBar)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+            }}
+          >
+            <span>WebMCP Agent Bar</span>
+            {showAgentBar && <Check size={14} className="text-accent" />}
+          </button>
           <hr />
           <button onClick={run(() => window.dispatchEvent(new CustomEvent('nf:open-command-palette')))}>Command palette (⌘K)</button>
           <button onClick={run(resetWorkspaceLayout)}>Reset layout</button>

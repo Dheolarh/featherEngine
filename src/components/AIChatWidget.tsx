@@ -124,6 +124,8 @@ export function AIChatWidget() {
   const activeModel = useAISettings((state) => state.models[state.provider]);
   const providerLabel = PROVIDERS[provider].label;
 
+  const enabled = useAISettings((state) => state.enabled);
+
   useEffect(() => {
     if (!hasKey && open) setShowSettings(true);
   }, [hasKey, open]);
@@ -141,6 +143,7 @@ export function AIChatWidget() {
   useEffect(() => {
     const onAsk = (event: Event) => {
       const prompt = (event as CustomEvent<{ prompt?: string }>).detail?.prompt?.trim();
+      useAISettings.getState().setEnabled(true);
       setOpen(true);
       if (!prompt) return;
       // With no API key we cannot send. Park the text in the draft so the user's typing survives the
@@ -157,6 +160,8 @@ export function AIChatWidget() {
     setDraft('');
     void sendMessage(text);
   };
+
+  if (!enabled) return null;
 
   return (
     <>
